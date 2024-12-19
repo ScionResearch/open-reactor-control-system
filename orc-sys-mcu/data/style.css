@@ -1,0 +1,198 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    background-color: #f4f4f4;
+}
+
+.container {
+    display: flex;
+    min-height: 100vh;
+}
+
+nav {
+    width: 200px;
+    background-color: #333;
+    padding: 20px 0;
+}
+
+nav ul {
+    list-style: none;
+}
+
+nav a {
+    color: white;
+    text-decoration: none;
+    padding: 10px 20px;
+    display: block;
+}
+
+nav a:hover, nav a.active {
+    background-color: #555;
+}
+
+main {
+    flex: 1;
+    padding: 20px;
+}
+
+.page {
+    display: none;
+}
+
+.page.active {
+    display: block;
+}
+
+h1 {
+    margin-bottom: 20px;
+    color: #333;
+}
+
+.sensor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.sensor-card {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.sensor-card h3 {
+    margin-bottom: 10px;
+    color: #555;
+}
+
+.value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2196F3;
+}
+
+.chart-container {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-top: 20px;
+}
+
+.settings-section {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+}
+
+.form-group label {
+    width: 120px;
+    margin-right: 1rem;
+    display: block;
+    margin-bottom: 5px;
+    color: #555;
+}
+
+.form-group input,
+.form-group select {
+    flex: 1;
+    max-width: 300px;
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.form-group input[disabled] {
+    background-color: #e9ecef;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.checkbox-wrapper {
+    margin-left: 120px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin-right: 0.5rem;
+}
+
+.checkbox-label span {
+    user-select: none;
+}
+
+.live-clock {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+#liveClock {
+    font-family: monospace;
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #333;
+}
+
+.static-value {
+    display: inline-block;
+    padding: 5px 10px;
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: monospace;
+    min-width: 120px;
+}
+
+.btn {
+    background-color: #2196F3;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 1rem;
+    margin-left: 120px;
+}
+
+.btn:hover {
+    background-color: #1976D2;
+}
+
+.hidden {
+    display: none;
+}
+
+#staticSettings.hidden {
+    display: none;
+}
+
+.live-clock-display {
+    font-family: monospace;
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #333;
+}
