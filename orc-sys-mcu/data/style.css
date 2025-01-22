@@ -99,17 +99,21 @@ h1 {
     margin-bottom: 1rem;
     display: flex;
     align-items: center;
+    vertical-align: middle;
 }
 
 .form-group label {
     width: 120px;
     margin-right: 1rem;
     display: block;
-    margin-bottom: 5px;
     color: #555;
 }
 
-.form-group input,
+.form-group input[type=checkbox] {
+    width: auto;
+    align-items: left;
+}
+
 .form-group select {
     flex: 1;
     max-width: 300px;
@@ -123,24 +127,6 @@ h1 {
     background-color: #e9ecef;
     cursor: not-allowed;
     opacity: 0.7;
-}
-
-.checkbox-wrapper {
-    margin-left: 120px;
-}
-
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-}
-
-.checkbox-label input[type="checkbox"] {
-    margin-right: 0.5rem;
-}
-
-.checkbox-label span {
-    user-select: none;
 }
 
 .live-clock {

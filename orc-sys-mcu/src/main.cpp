@@ -25,11 +25,7 @@ bool getGlobalDateTime(DateTime &dt);
 // Debug functions
 void osDebugPrint(HardwareSerial &serialDebug);
 
-NetworkConfig networkConfig;
-char deviceMacAddress[18];
-SemaphoreHandle_t dateTimeMutex = NULL;
-DateTime globalDateTime = {0};
-QueueHandle_t ntpUpdateQueue = NULL;
+
 
 // Function to convert epoch time to DateTime
 DateTime epochToDateTime(time_t epochTime)
@@ -67,48 +63,76 @@ void ntpSyncTask(void *parameter)
   }
 }
 
-// Handle NTP updates in the main loop
-void handleNTPUpdates()
+// Carry out an NTP update
+void ntpUpdate(void)
 {
   static WiFiUDP udp;
   static NTPClient timeClient(udp, networkConfig.ntpServer);
   static bool clientInitialized = false;
+
+  
+  if (!clientInitialized)
+  {
+    timeClient.begin();
+    clientInitialized = true;
+  }
+
+  if (!eth.linkStatus()) return;
+
+  if (!timeClient.update()) {
+    Serial.println("Failed to get time from NTP server, retrying");
+    bool updateSuccessful = false;
+    for (int i = 0; i < 3; i++) {
+      if (timeClient.update()) {
+        updateSuccessful = true;
+        break;
+      }
+      delay(10);
+   }
+    if (!updateSuccessful) {
+      Serial.println("Failed to get time from NTP server, giving up");
+      return;
+    }
+  }
+  // Get NTP time
+  time_t epochTime = timeClient.getEpochTime();
+
+  // Apply timezone offset
+  int tzHours = 0, tzMinutes = 0, tzDSToffset = 0;
+  if (networkConfig.dstEnabled) {
+    tzDSToffset = 3600;
+  }
+  sscanf(networkConfig.timezone, "%d:%d", &tzHours, &tzMinutes);
+  epochTime += (tzHours * 3600 + tzMinutes * 60 + tzDSToffset);
+
+  // Convert to DateTime and update using thread-safe function
+  DateTime newTime = epochToDateTime(epochTime);
+  if (!updateGlobalDateTime(newTime))
+  {
+    Serial.println("Failed to update time from NTP");
+  }
+  else
+  {
+    Serial.println("Time updated from NTP server");
+  }
+}
+
+// Handle NTP updates in the main loop
+void handleNTPUpdates(bool forceUpdate = false)
+{
+  if (!networkConfig.ntpEnabled) return;
   uint8_t dummy;
+  uint32_t timeSinceLastUpdate = millis() - ntpUpdateTimestamp;
 
   // Check if there's an NTP update request
-  if (xQueueReceive(ntpUpdateQueue, &dummy, 0) == pdTRUE)
+  if ((xQueueReceive(ntpUpdateQueue, &dummy, 0) == pdTRUE) || forceUpdate)
   {
-    if (!clientInitialized)
-    {
-      timeClient.begin();
-      clientInitialized = true;
+    if (timeSinceLastUpdate < NTP_MIN_SYNC_INTERVAL) {
+      Serial.printf("Time since last NTP update: %ds - skipping\n", timeSinceLastUpdate/1000);
+      return;
     }
-
-    if (eth.linkStatus() == LinkON && timeClient.update())
-    {
-      // Get NTP time
-      time_t epochTime = timeClient.getEpochTime();
-
-      // Apply timezone offset
-      int tzHours = 0, tzMinutes = 0;
-      sscanf(networkConfig.timezone, "%d:%d", &tzHours, &tzMinutes);
-      epochTime += (tzHours * 3600 + tzMinutes * 60);
-
-      // Convert to DateTime and update using thread-safe function
-      DateTime newTime = epochToDateTime(epochTime);
-      if (!updateGlobalDateTime(newTime))
-      {
-        Serial.println("Failed to update time from NTP");
-      }
-      else
-      {
-        Serial.println("Time updated from NTP server");
-      }
-    }
-    else
-    {
-      Serial.println("Failed to get time from NTP server");
-    }
+    ntpUpdate();
+    ntpUpdateTimestamp = millis();
   }
 }
 
@@ -120,8 +144,10 @@ void debugPrintNetConfig(NetworkConfig config)
   Serial.printf("Gateway: %s\n", config.gateway.toString().c_str());
   Serial.printf("DNS: %s\n", config.dns.toString().c_str());
   Serial.printf("Timezone: %s\n", config.timezone);
+  Serial.printf("Hostname: %s\n", config.hostname);
   Serial.printf("NTP Server: %s\n", config.ntpServer);
   Serial.printf("NTP Enabled: %s\n", config.ntpEnabled ? "true" : "false");
+  Serial.printf("DST Enabled: %s\n", config.dstEnabled ? "true" : "false");
 }
 
 void checkTerminal(void)
@@ -161,10 +187,6 @@ void saveNetworkConfig()
   EEPROM.put(EE_NETWORK_CONFIG_ADDRESS, networkConfig);
   EEPROM.update(0, EE_MAGIC_NUMBER);
   EEPROM.commit();
-  Serial.println("Configuration saved, checking stored values:");
-  NetworkConfig config;
-  EEPROM.get(EE_NETWORK_CONFIG_ADDRESS, config);
-  debugPrintNetConfig(config);
   EEPROM.end();
 }
 
@@ -203,7 +225,9 @@ void setupEthernet()
     networkConfig.gateway = IPAddress(192, 168, 1, 1);
     networkConfig.dns = IPAddress(8, 8, 8, 8);
     strcpy(networkConfig.timezone, "+13:00");
+    strcpy(networkConfig.hostname, "open-reactor");
     strcpy(networkConfig.ntpServer, "pool.ntp.org");
+    networkConfig.dstEnabled = false;
     saveNetworkConfig();
   }
 
@@ -213,6 +237,8 @@ void setupEthernet()
   SPI.setCS(PIN_ETH_CS);
 
   eth.setSPISpeed(30000000);
+
+  eth.hostname(networkConfig.hostname);
 
   // Apply network configuration
   if (!applyNetworkConfig())
@@ -230,15 +256,19 @@ void setupEthernet()
     Serial.println(deviceMacAddress);
   }
 
-  // Wait until Ethernet is connected
-  while (eth.linkStatus() == LinkOFF)
-  {
-    Serial.println("Ethernet cable is not connected.");
-    delay(1000);
+  // Wait for Ethernet to connect
+  delay(2000);
+
+  if (eth.linkStatus() == LinkOFF) {
+    Serial.println("Ethernet not connected");
+    ethernetConnected = false;
   }
-  Serial.printf("Ethernet connected, IP address: %s, Gateway: %s\n",
+  else {
+    Serial.printf("Ethernet connected, IP address: %s, Gateway: %s\n",
                 eth.localIP().toString().c_str(),
                 eth.gatewayIP().toString().c_str());
+    ethernetConnected = true;
+  }
 }
 
 // API endpoint to get current network settings
@@ -272,7 +302,9 @@ void setupNetworkAPI()
         doc["dns"] = dnsStr;
 
         doc["mac"] = deviceMacAddress;
+        doc["hostname"] = networkConfig.hostname;
         doc["ntp"] = networkConfig.ntpServer;
+        doc["dst"] = networkConfig.dstEnabled;
         
         String response;
         serializeJson(doc, response);
@@ -323,8 +355,14 @@ void setupNetworkAPI()
                 }
               }
 
+              // Update hostname
+              strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor", sizeof(networkConfig.hostname));
+
               // Update NTP server
               strlcpy(networkConfig.ntpServer, doc["ntp"] | "pool.ntp.org", sizeof(networkConfig.ntpServer));
+
+              // Update DST setting
+              networkConfig.dstEnabled = doc["dst"] | false;
 
               // Save configuration to EEPROM
               saveNetworkConfig();
@@ -357,81 +395,101 @@ void setupTimeAPI()
             
             doc["timezone"] = networkConfig.timezone;
             doc["ntpEnabled"] = networkConfig.ntpEnabled;
+            doc["dst"] = networkConfig.dstEnabled;
             
             String response;
             serializeJson(doc, response);
             server.send(200, "application/json", response);
         } else {
             server.send(500, "application/json", "{\"error\": \"Failed to get current time\"}");
-        } });
+        }
+    });
 
-  server.on("/api/time", HTTP_POST, []()
-            {
+  server.on("/api/time", HTTP_POST, []() {
         StaticJsonDocument<200> doc;
         String json = server.arg("plain");
         DeserializationError error = deserializeJson(doc, json);
+
+        Serial.printf("Received JSON: %s\n", json.c_str());
         
         if (error) {
-            server.send(400, "application/json", "{\"error\": \"Invalid JSON\"}");
+            server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            Serial.printf("JSON parsing error: %s\n", error.c_str());
             return;
         }
 
         // Validate required fields
         if (!doc.containsKey("date") || !doc.containsKey("time")) {
-            server.send(400, "application/json", "{\"error\": \"Missing required fields\"}");
+            server.send(400, "application/json", "{\"error\":\"Missing required fields\"}");
+            Serial.printf("Missing required fields in JSON\n");
             return;
         }
 
-        // Parse date string (format: YYYY-MM-DD)
+        // Update timezone if provided
+        if (doc.containsKey("timezone")) {
+          const char* tz = doc["timezone"];
+          Serial.printf("Received timezone: %s\n", tz);
+          // Basic timezone format validation (+/-HH:MM)
+          int tzHour, tzMin;
+          if (sscanf(tz, "%d:%d", &tzHour, &tzMin) != 2 ||
+              tzHour < -12 || tzHour > 14 || tzMin < 0 || tzMin > 59) {
+              server.send(400, "application/json", "{\"error\":\"Invalid timezone format\"}");
+              return;
+          }
+          strncpy(networkConfig.timezone, tz, sizeof(networkConfig.timezone) - 1);
+          networkConfig.timezone[sizeof(networkConfig.timezone) - 1] = '\0';
+          Serial.printf("Updated timezone: %s\n", networkConfig.timezone);
+        }
+
+        // Update NTP enabled status if provided
+        if (doc.containsKey("ntpEnabled")) {
+          bool ntpWasEnabled = networkConfig.ntpEnabled;
+          networkConfig.ntpEnabled = doc["ntpEnabled"];
+          if (networkConfig.ntpEnabled) {
+            // Update DST setting if provided
+            if (doc.containsKey("dstEnabled")) {
+              networkConfig.dstEnabled = doc["dstEnabled"];
+            }
+            handleNTPUpdates(true);
+            server.send(200, "application/json", "{\"status\": \"success\", \"message\": \"NTP enabled, manual time update ignored\"}");
+            saveNetworkConfig(); // Save to EEPROM when NTP settings change
+            return;
+          }
+          if (ntpWasEnabled) {
+            server.send(200, "application/json", "{\"status\": \"success\", \"message\": \"NTP disabled, manual time update required\"}");
+            saveNetworkConfig(); // Save to EEPROM when NTP settings change
+          }
+        }
+
+        // Validate and parse date and time
         const char* dateStr = doc["date"];
         uint16_t year;
         uint8_t month, day;
+        const char* timeStr = doc["time"];
+        uint8_t hour, minute;
+
+        // Parse date string (format: YYYY-MM-DD)
         if (sscanf(dateStr, "%hu-%hhu-%hhu", &year, &month, &day) != 3 ||
             year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) {
             server.send(400, "application/json", "{\"error\": \"Invalid date format or values\"}");
+            Serial.printf("Invalid date format or values in JSON\n");
             return;
         }
 
-        // Parse time string (format: HH:MM)
-        const char* timeStr = doc["time"];
-        uint8_t hour, minute;
+        // Parse time string (format: HH:MM)          
         if (sscanf(timeStr, "%hhu:%hhu", &hour, &minute) != 2 ||
             hour > 23 || minute > 59) {
             server.send(400, "application/json", "{\"error\": \"Invalid time format or values\"}");
             return;
         }
 
-        // Update timezone if provided
-        if (doc.containsKey("timezone")) {
-            const char* tz = doc["timezone"];
-            // Basic timezone format validation (+/-HH:MM)
-            int tzHour, tzMin;
-            if (sscanf(tz, "%d:%d", &tzHour, &tzMin) != 2 ||
-                tzHour < -12 || tzHour > 14 || tzMin < 0 || tzMin > 59) {
-                server.send(400, "application/json", "{\"error\": \"Invalid timezone format\"}");
-                return;
-            }
-            strncpy(networkConfig.timezone, tz, sizeof(networkConfig.timezone) - 1);
-            networkConfig.timezone[sizeof(networkConfig.timezone) - 1] = '\0';
-        }
-
-        // Update NTP enabled status if provided
-        if (doc.containsKey("ntpEnabled")) {
-            networkConfig.ntpEnabled = doc["ntpEnabled"];
-            saveNetworkConfig(); // Save to EEPROM when NTP settings change
-        }
-
-        // Only update time if NTP is disabled
-        if (!networkConfig.ntpEnabled) {
-            DateTime newDateTime = {year, month, day, hour, minute, 0};
-            if (updateGlobalDateTime(newDateTime)) {
+        DateTime newDateTime = {year, month, day, hour, minute, 0};
+        if (updateGlobalDateTime(newDateTime)) {
                 server.send(200, "application/json", "{\"status\": \"success\"}");
-            } else {
-                server.send(500, "application/json", "{\"error\": \"Failed to update time\"}");
-            }
         } else {
-            server.send(200, "application/json", "{\"status\": \"success\", \"message\": \"NTP enabled, manual time update ignored\"}");
-        } });
+                server.send(500, "application/json", "{\"error\": \"Failed to update time\"}");
+        }
+  } );
 }
 
 void setup()
@@ -454,20 +512,33 @@ void setup()
   setupNetworkAPI();
   setupTimeAPI();
 
-  // Start NTP sync task if enabled
-  if (networkConfig.ntpEnabled)
-  {
-    xTaskCreate(ntpSyncTask, "NTP Sync", 4096, NULL, 1, NULL);
-    Serial.println("NTP sync task started");
-  }
+  // Start NTP sync task
+  xTaskCreate(ntpSyncTask, "NTP Sync", 4096, NULL, 1, NULL);
+  Serial.println("NTP sync task started");
+  if (networkConfig.ntpEnabled && eth.linkStatus() == LinkON ) ntpUpdate();
 
   Serial.println("Core 0 setup complete");
 }
 
 void loop()
 {
-  handleWebServer();
-  handleNTPUpdates();  // Process any pending NTP updates
+  // Do network tasks if ethernet is connected
+  if (ethernetConnected) {
+    if (eth.linkStatus() == LinkOFF) {
+      ethernetConnected = false;
+      Serial.println("Ethernet disconnected, waiting for reconnect");
+    }
+    else {
+      handleWebServer();
+      handleNTPUpdates(false);  // Process any pending NTP updates
+    }
+  }
+  else if (eth.linkStatus() == LinkON) {
+    ethernetConnected = true;
+    Serial.printf("Ethernet re-connected, IP address: %s, Gateway: %s\n",
+                eth.localIP().toString().c_str(),
+                eth.gatewayIP().toString().c_str());
+  }
 }
 
 void setup1()
@@ -632,7 +703,7 @@ void setupWebServer()
 
         char json[128];
         snprintf(json, sizeof(json),
-                "{\"temperature\":25.5,\"ph\":7.2,\"dissolvedOxygen\":6.8,\"timestamp\":\"%04d-%02d-%02dT%02d:%02d:%02d\"}",
+                "{\"temp\":25.5,\"ph\":7.2,\"do\":6.8,\"timestamp\":\"%04d-%02d-%02dT%02d:%02d:%02d\"}",
                 dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
         server.send(200, "application/json", json); });
 
@@ -678,6 +749,8 @@ void handleFile(const char *path)
     contentType = "application/javascript";
   else if (strstr(path, ".json"))
     contentType = "application/json";
+  else if (strstr(path, ".ico"))
+    contentType = "image/x-icon";
   else
     contentType = "text/plain";
 

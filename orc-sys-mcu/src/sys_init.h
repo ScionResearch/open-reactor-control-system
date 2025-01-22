@@ -81,8 +81,11 @@
 #define LED_STATUS_OFF LED_COLOR_OFF
 
 // EEPROM addresses
-#define EE_MAGIC_NUMBER 0xA5
+#define EE_MAGIC_NUMBER 0x55
 #define EE_NETWORK_CONFIG_ADDRESS 1
+
+// Timing defines
+#define NTP_MIN_SYNC_INTERVAL 70000
 
 // Object definitions
 Adafruit_NeoPixel leds(4, PIN_LED_DAT, NEO_GRB + NEO_KHZ800);
@@ -102,20 +105,23 @@ struct NetworkConfig
     IPAddress gateway;
     IPAddress dns;
     bool useDHCP;
+    char hostname[32];
     char ntpServer[64];
     bool ntpEnabled;
     char timezone[8]; // Format: "+13:00"
+    bool dstEnabled;  // Daylight Saving Time enabled
 };
 
 // Global DateTime protection
-extern SemaphoreHandle_t dateTimeMutex;
-extern DateTime globalDateTime;
+SemaphoreHandle_t dateTimeMutex;
+DateTime globalDateTime;
 
 // NTP update queue
-extern QueueHandle_t ntpUpdateQueue;
+QueueHandle_t ntpUpdateQueue;
+uint32_t ntpUpdateTimestamp = 0;
 
 // Global variables
-extern NetworkConfig networkConfig;
+NetworkConfig networkConfig;
 uint8_t systemStatus[] = {STATUS_STARTUP, STATUS_STARTUP, STATUS_STARTUP, STATUS_STARTUP};
 uint32_t statusColours[] = {
     LED_STATUS_STARTUP,
@@ -127,4 +133,6 @@ uint32_t statusColours[] = {
 };
 
 // Device MAC address (stored as string)
-extern char deviceMacAddress[18];
+char deviceMacAddress[18];
+
+bool ethernetConnected = false;

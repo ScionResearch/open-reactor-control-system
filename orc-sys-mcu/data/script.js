@@ -87,6 +87,7 @@ async function saveTimeSettings() {
     const time = `${timeParts[0]}:${timeParts[1]}`; // HH:MM format
     const timezone = document.getElementById('timezone').value;
     const ntpEnabled = document.getElementById('enableNTP').checked;
+    const dstEnabled = document.getElementById('enableDST').checked;
 
     try {
         const response = await fetch('/api/time', {
@@ -98,7 +99,8 @@ async function saveTimeSettings() {
                 date,
                 time,
                 timezone,
-                ntpEnabled
+                ntpEnabled,
+                dstEnabled
             }),
         });
 
@@ -120,23 +122,24 @@ async function updateLiveClock() {
         try {
             const response = await fetch('/api/time');
             const data = await response.json();
-            
-            if (data.date && data.time) {
-                // Time now includes seconds from the API
+            console.log('Time data received:', data);
+
+            if (data.date && data.time && data.timezone) {
                 const isoDateTime = `${data.date}T${data.time}${data.timezone}`;
-                
-                const now = new Date(isoDateTime);
-                const options = {
-                    weekday: 'long',
+
+               const now = new Date(isoDateTime);
+
+               const formattedTime = new Intl.DateTimeFormat('en-NZ', {
                     year: 'numeric',
                     month: 'long',
                     day: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit',
-                    timeZoneName: 'short'
-                };
-                clockElement.textContent = now.toLocaleString('en-NZ', options);
+                    timeZone: data.timezone
+                }).format(now) + ' ' + data.timezone + (data.dst ? ' (DST)' : '');
+           
+                clockElement.textContent = formattedTime;
             }
         } catch (error) {
             console.error('Error updating clock:', error);
@@ -164,6 +167,7 @@ async function loadInitialSettings() {
         
         if (data) {
             document.getElementById('enableNTP').checked = data.ntpEnabled;
+            document.getElementById('enableDST').checked = data.dst;
             document.getElementById('timezone').value = data.timezone;
             updateInputStates();
         }
@@ -195,6 +199,7 @@ async function loadNetworkSettings() {
             document.getElementById('dns').value = data.dns || '';
 
             // Set NTP server
+            document.getElementById('hostName').value = data.hostname || '';
             document.getElementById('ntpServer').value = data.ntp || '';
         }
     } catch (error) {
@@ -242,8 +247,6 @@ setInterval(updateLiveClock, 1000);    // Update clock every second
 setInterval(updateSensorData, 1000);   // Update sensor data every second
 setInterval(updateNetworkInfo, 5000);  // Update network info every 5 seconds
 
-
-
 // Network settings handling
 document.getElementById('networkForm').addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -268,6 +271,7 @@ document.getElementById('networkForm').addEventListener('submit', async function
         subnet: document.getElementById('subnetMask').value,
         gateway: document.getElementById('gateway').value,
         dns: document.getElementById('dns').value,
+        hostname: document.getElementById('hostName').value,
         ntp: document.getElementById('ntpServer').value
     };
 

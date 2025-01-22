@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
     <title>Bio-Reactor Dashboard</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -50,18 +51,58 @@
                     </div>
                     <div class="form-group">
                         <label for="currentTime">Change Time:</label>
-                        <input type="time" id="currentTime">
+                        <input type="time" id="currentTime" step="1">
                     </div>
                     <div class="form-group">
                         <label for="timezone">Timezone:</label>
                         <select id="timezone">
-                            <option value="+13:00">UTC+13:00 (Auckland DST)</option>
+                            <option value="-12:00">UTC-12:00 (Baker Island)</option>
+                            <option value="-11:00">UTC-11:00 (American Samoa)</option>
+                            <option value="-10:00">UTC-10:00 (Hawaii)</option>
+                            <option value="-09:30">UTC-09:30 (Marquesas Islands)</option>
+                            <option value="-09:00">UTC-09:00 (Alaska)</option>
+                            <option value="-08:00">UTC-08:00 (Pacific Time)</option>
+                            <option value="-07:00">UTC-07:00 (Mountain Time)</option>
+                            <option value="-06:00">UTC-06:00 (Central Time)</option>
+                            <option value="-05:00">UTC-05:00 (Eastern Time)</option>
+                            <option value="-04:00">UTC-04:00 (Atlantic Time)</option>
+                            <option value="-03:30">UTC-03:30 (Newfoundland)</option>
+                            <option value="-03:00">UTC-03:00 (Brazil, Argentina)</option>
+                            <option value="-02:00">UTC-02:00 (South Georgia)</option>
+                            <option value="-01:00">UTC-01:00 (Cape Verde)</option>
+                            <option value="+00:00">UTC+00:00 (London, Dublin)</option>
+                            <option value="+01:00">UTC+01:00 (Paris, Berlin)</option>
+                            <option value="+02:00">UTC+02:00 (Cairo, Athens)</option>
+                            <option value="+03:00">UTC+03:00 (Moscow, Istanbul)</option>
+                            <option value="+03:30">UTC+03:30 (Tehran)</option>
+                            <option value="+04:00">UTC+04:00 (Dubai)</option>
+                            <option value="+04:30">UTC+04:30 (Kabul)</option>
+                            <option value="+05:00">UTC+05:00 (Karachi)</option>
+                            <option value="+05:30">UTC+05:30 (India)</option>
+                            <option value="+05:45">UTC+05:45 (Nepal)</option>
+                            <option value="+06:00">UTC+06:00 (Dhaka)</option>
+                            <option value="+06:30">UTC+06:30 (Yangon)</option>
+                            <option value="+07:00">UTC+07:00 (Bangkok)</option>
+                            <option value="+08:00">UTC+08:00 (Singapore, Beijing)</option>
+                            <option value="+08:45">UTC+08:45 (Eucla)</option>
+                            <option value="+09:00">UTC+09:00 (Tokyo)</option>
+                            <option value="+09:30">UTC+09:30 (Adelaide)</option>
+                            <option value="+10:00">UTC+10:00 (Sydney)</option>
+                            <option value="+10:30">UTC+10:30 (Lord Howe Island)</option>
+                            <option value="+11:00">UTC+11:00 (Solomon Islands)</option>
                             <option value="+12:00">UTC+12:00 (Auckland)</option>
+                            <option value="+12:45">UTC+12:45 (Chatham Islands)</option>
+                            <option value="+13:00">UTC+13:00 (Nuku'alofa)</option>
+                            <option value="+14:00">UTC+14:00 (Kiritimati)</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="enableNTP">Enable NTP time updates</label>
-                        <input type="checkbox" id="enableNTP" text-align="left">
+                        <label for="enableNTP">Enable NTP</label>
+                        <input type="checkbox" id="enableNTP">
+                    </div>
+                    <div class="form-group">
+                        <label for="enableDST">Daylight Saving Time</label>
+                        <input type="checkbox" id="enableDST">
                     </div>
                     <button id="saveTimeBtn" class="btn btn-primary">Save Date and Time Settings</button>
                 </div>
@@ -112,6 +153,10 @@
                         <div class="form-group">
                             <label>Current IP Address:</label>
                             <span id="currentIP" class="static-value"></span>
+                        </div>
+                        <div class="form-group">
+                            <label>Hostname:</label>
+                            <input type="text" id="hostName" value="open-reactor">
                         </div>
                         <div class="form-group">
                             <label>NTP Server:</label>
