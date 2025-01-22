@@ -376,6 +376,57 @@ void setupNetworkAPI()
             });
 }
 
+void setupMqttAPI()
+{
+    server.on("/api/mqtt", HTTP_GET, []() {
+        StaticJsonDocument<512> doc;
+        
+        doc["mqttBroker"] = networkConfig.mqttBroker;
+        doc["mqttPort"] = networkConfig.mqttPort;
+        doc["mqttUsername"] = networkConfig.mqttUsername;
+        // Don't send the password back for security
+        doc["mqttPassword"] = "";
+        
+        String response;
+        serializeJson(doc, response);
+        server.send(200, "application/json", response);
+    });
+
+    server.on("/api/mqtt", HTTP_POST, []() {
+        if (!server.hasArg("plain")) {
+            server.send(400, "application/json", "{\"error\":\"No data received\"}");
+            return;
+        }
+
+        StaticJsonDocument<512> doc;
+        DeserializationError error = deserializeJson(doc, server.arg("plain"));
+
+        if (error) {
+            server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+
+        // Update MQTT configuration
+        strlcpy(networkConfig.mqttBroker, doc["mqttBroker"] | "", sizeof(networkConfig.mqttBroker));
+        networkConfig.mqttPort = doc["mqttPort"] | 1883;
+        strlcpy(networkConfig.mqttUsername, doc["mqttUsername"] | "", sizeof(networkConfig.mqttUsername));
+        
+        // Only update password if one is provided
+        const char* newPassword = doc["mqttPassword"] | "";
+        if (strlen(newPassword) > 0) {
+            strlcpy(networkConfig.mqttPassword, newPassword, sizeof(networkConfig.mqttPassword));
+        }
+
+        // Save configuration to EEPROM
+        saveNetworkConfig();
+
+        // Send success response
+        server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"MQTT configuration saved\"}");
+        
+        // TODO: Trigger MQTT reconnect here if needed
+    });
+}
+
 void setupTimeAPI()
 {
   server.on("/api/time", HTTP_GET, []()
@@ -510,6 +561,7 @@ void setup()
   setupEthernet();
   setupWebServer();
   setupNetworkAPI();
+  setupMqttAPI();
   setupTimeAPI();
 
   // Start NTP sync task

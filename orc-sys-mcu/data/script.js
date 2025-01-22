@@ -207,10 +207,26 @@ async function loadNetworkSettings() {
     }
 }
 
+// Function to load MQTT settings
+async function loadMqttSettings() {
+    try {
+        const response = await fetch('/api/mqtt');
+        const data = await response.json();
+        
+        document.getElementById('mqttBroker').value = data.mqttBroker || '';
+        document.getElementById('mqttPort').value = data.mqttPort || '1883';
+        document.getElementById('mqttUsername').value = data.mqttUsername || '';
+        document.getElementById('mqttPassword').value = data.mqttPassword || '';
+    } catch (error) {
+        console.error('Error loading MQTT settings:', error);
+    }
+}
+
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
     loadInitialSettings();  // Load initial NTP and timezone settings
     loadNetworkSettings();  // Load initial network settings
+    loadMqttSettings();    // Load initial MQTT settings
     updateLiveClock();
     updateSensorData();
     updateNetworkInfo();
@@ -310,5 +326,44 @@ document.getElementById('ipConfig').addEventListener('change', function() {
         staticSettings.classList.remove('hidden');
     } else {
         staticSettings.classList.add('hidden');
+    }
+});
+
+// Add MQTT form submission handler
+document.getElementById('mqttForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const mqttData = {
+        mqttBroker: document.getElementById('mqttBroker').value,
+        mqttPort: parseInt(document.getElementById('mqttPort').value) || 1883,
+        mqttUsername: document.getElementById('mqttUsername').value,
+        mqttPassword: document.getElementById('mqttPassword').value
+    };
+
+    try {
+        const response = await fetch('/api/mqtt', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(mqttData)
+        });
+
+        if (response.ok) {
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'status-message success';
+            statusDiv.textContent = 'MQTT settings saved successfully';
+            document.getElementById('mqttForm').appendChild(statusDiv);
+            setTimeout(() => statusDiv.remove(), 3000);
+        } else {
+            throw new Error('Failed to save MQTT settings');
+        }
+    } catch (error) {
+        console.error('Error saving MQTT settings:', error);
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'status-message error';
+        statusDiv.textContent = 'Failed to save MQTT settings';
+        document.getElementById('mqttForm').appendChild(statusDiv);
+        setTimeout(() => statusDiv.remove(), 3000);
     }
 });

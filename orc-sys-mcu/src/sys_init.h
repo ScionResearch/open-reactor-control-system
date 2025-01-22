@@ -110,6 +110,11 @@ struct NetworkConfig
     bool ntpEnabled;
     char timezone[8]; // Format: "+13:00"
     bool dstEnabled;  // Daylight Saving Time enabled
+    // MQTT Configuration
+    char mqttBroker[64];
+    uint16_t mqttPort;
+    char mqttUsername[32];
+    char mqttPassword[32];
 };
 
 // Global DateTime protection
