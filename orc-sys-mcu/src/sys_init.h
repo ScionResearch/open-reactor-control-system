@@ -86,6 +86,7 @@
 
 // Timing defines
 #define NTP_MIN_SYNC_INTERVAL 70000
+#define NTP_UPDATE_INTERVAL 600000
 
 // Buffer sizes
 #define DEBUG_PRINTF_BUFFER_SIZE 256
@@ -120,6 +121,22 @@ struct NetworkConfig
     char mqttPassword[32];
 };
 
+// Status variables structure
+struct StatusVariables
+{
+    uint32_t LEDcolour[4]; // 0 = MQTT, 1 = Webserver, 2 = Modbus, 3 = System
+    float Vpsu;
+    float V20;
+    float V5;
+    bool psuOK;
+    bool V20OK;
+    bool V5OK;
+};
+
+// Status variables
+StatusVariables status;
+SemaphoreHandle_t statusMutex = NULL;
+
 // Serial port mutex
 SemaphoreHandle_t serialMutex = NULL;
 
@@ -133,18 +150,10 @@ uint32_t ntpUpdateTimestamp = 0;
 
 // Global variables
 NetworkConfig networkConfig;
-uint8_t systemStatus[] = {STATUS_STARTUP, STATUS_STARTUP, STATUS_STARTUP, STATUS_STARTUP};
-uint32_t statusColours[] = {
-    LED_STATUS_STARTUP,
-    LED_STATUS_OK,
-    LED_STATUS_ERROR,
-    LED_STATUS_WARNING,
-    LED_STATUS_BUSY,
-    LED_STATUS_OFF
-};
 
 // Device MAC address (stored as string)
 char deviceMacAddress[18];
 
 bool ethernetConnected = false;
 bool serialReady = false;
+bool core0setupComplete = false, core1setupComplete = false;

@@ -3,10 +3,13 @@
 // ---------------------- RTOS tasks ---------------------- //
 
 // Core 0 tasks
+void ntpSyncTask(void *param);
 
 // Core 1 tasks
 void statusLEDs(void *param);
 void manageRTC(void *param);
+void manageTerminal(void *param);
+void managePower(void *param);
 
 // -------------------- Non-RTOS tasks -------------------- //
 
@@ -21,9 +24,10 @@ void handleFile(const char *path);
 // Global threadsafe functions
 bool updateGlobalDateTime(const DateTime &dt);
 bool getGlobalDateTime(DateTime &dt);
-void debug_printf(const char* format, ...);
+bool setLEDcolour(uint8_t led, uint32_t colour);
 
 // Debug functions
+void debug_printf(const char* format, ...);
 void osDebugPrint(void);
 
 // Function to convert epoch time to DateTime
@@ -38,28 +42,6 @@ DateTime epochToDateTime(time_t epochTime)
       .minute = (uint8_t)timeinfo->tm_min,
       .second = (uint8_t)timeinfo->tm_sec};
   return dt;
-}
-
-// NTP time sync task - only queues update requests
-void ntpSyncTask(void *parameter)
-{
-  const TickType_t ntpSyncInterval = pdMS_TO_TICKS(3600000); // Sync every hour
-  bool updateRequested = false;
-
-  for (;;)
-  {
-    if (networkConfig.ntpEnabled && !updateRequested && eth.linkStatus() == LinkON)
-    {
-      // Queue an NTP update request
-      uint8_t dummy = 1;
-      xQueueSend(ntpUpdateQueue, &dummy, 0);
-      updateRequested = true;
-    }
-
-    // Wait for the sync interval
-    vTaskDelay(ntpSyncInterval);
-    updateRequested = false;
-  }
 }
 
 // Carry out an NTP update
@@ -147,20 +129,6 @@ void debugPrintNetConfig(NetworkConfig config)
   debug_printf("NTP Server: %s\n", config.ntpServer);
   debug_printf("NTP Enabled: %s\n", config.ntpEnabled ? "true" : "false");
   debug_printf("DST Enabled: %s\n", config.dstEnabled ? "true" : "false");
-}
-
-void checkTerminal(void)
-{
-  if (Serial.available())
-  {
-    debug_printf("Command received: ");
-    char serialString[10];  // Buffer for incoming serial data
-    Serial.readBytesUntil('\n', serialString, sizeof(serialString));
-    debug_printf("%s\n", serialString);
-    if (strcmp(serialString, "ps") == 0) {
-      osDebugPrint();
-    }
-  }
 }
 
 // Function to load network configuration from EEPROM
@@ -573,10 +541,11 @@ void setup()
 
   // Start NTP sync task
   xTaskCreate(ntpSyncTask, "NTP Sync", 4096, NULL, 1, NULL);
-  debug_printf("NTP sync task started\n");
-  if (networkConfig.ntpEnabled && eth.linkStatus() == LinkON ) ntpUpdate();
 
   debug_printf("Core 0 setup complete\n");
+  core0setupComplete = true;
+  while (!core1setupComplete) delay(100);
+  debug_printf("<---System initialisation complete --->\n\n");
 }
 
 void loop()
@@ -609,34 +578,63 @@ void setup1()
   dateTimeMutex = xSemaphoreCreateMutex();
   if (dateTimeMutex == NULL) {
     debug_printf("Failed to create dateTimeMutex!\n");
-    while (true);
+    while (1);
+  }
+  statusMutex = xSemaphoreCreateMutex();
+  if (statusMutex == NULL) {
+    debug_printf("Failed to create statusMutex!\n");
+    while (1);
  }
   // Initialize Core 1 tasks
   xTaskCreate(statusLEDs, "LED stat", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-  debug_printf("LED status task started\n");
   xTaskCreate(manageRTC, "RTC updt", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+  xTaskCreate(manageTerminal, "Term updt", 4096, NULL, 1, NULL);
+
+    // Set System Status OK
+  setLEDcolour(LED_SYSTEM_STATUS, LED_STATUS_OK);
+  // Modbus not yet implemented
+  setLEDcolour(LED_MODBUS_STATUS,LED_STATUS_OFF);
+  // MQTT not yet implemented
+  setLEDcolour(LED_MQTT_STATUS, LED_STATUS_OFF); 
 
   debug_printf("Core 1 setup complete\n");
-
-  // Set System Status OK
-  statusColours[LED_SYSTEM_STATUS] = LED_STATUS_OK;
-
-  // Modbus not yet implemented
-  statusColours[LED_MODBUS_STATUS] = LED_STATUS_OFF;
-
-  // MQTT not yet implemented
-  statusColours[LED_MQTT_STATUS] = LED_STATUS_OFF;
-
-  debug_printf("Set status colours to: %d, modbus: %d, mqtt: %d\n", statusColours[3], statusColours[2], statusColours[0]);
+  core1setupComplete = true;
+  while (!core0setupComplete) delay(100);
 }
 
-void loop1()
-{
-  checkTerminal();
+void loop1() {
   delay(100);
 }
 
 // ---------------------- Core 0 tasks ---------------------- //
+
+// NTP time sync task - only queues update requests
+void ntpSyncTask(void *param)
+{
+  (void)param;
+
+  const TickType_t ntpSyncInterval = pdMS_TO_TICKS(NTP_UPDATE_INTERVAL);
+  bool updateRequested = false;
+
+  vTaskDelay(NTP_MIN_SYNC_INTERVAL);
+
+  debug_printf("NTP sync task started\n");
+
+  while (1)
+  {
+    if (networkConfig.ntpEnabled && !updateRequested && eth.linkStatus() == LinkON)
+    {
+      // Queue an NTP update request
+      uint8_t dummy = 1;
+      xQueueSend(ntpUpdateQueue, &dummy, 0);
+      updateRequested = true;
+    }
+
+    // Wait for the sync interval
+    vTaskDelay(ntpSyncInterval);
+    updateRequested = false;
+  }
+}
 
 // ---------------------- Core 1 tasks ---------------------- //
 void statusLEDs(void *param)
@@ -652,9 +650,17 @@ void statusLEDs(void *param)
   leds.setBrightness(50);
   leds.fill(LED_COLOR_OFF, 0, 4);
   leds.show();
+  debug_printf("LED status task started\n");
+
+  // Task loop
   while (1) {
-    for (int i = 0; i < 4; i++) {
-      if (!(i == 3 && statusColours[i] == LED_STATUS_OK)) leds.setPixelColor(i, statusColours[i]);
+    uint32_t statusLEDcolour = STATUS_WARNING;
+    if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      for (int i = 0; i < 4; i++) {
+        if (!(i == 3 && status.LEDcolour[i] == LED_STATUS_OK)) leds.setPixelColor(i, status.LEDcolour[i]);
+      }
+      statusLEDcolour = status.LEDcolour[3];
+      xSemaphoreGive(statusMutex);
     }
     leds.show();
     vTaskDelay(pdMS_TO_TICKS(ledRefreshInterval));
@@ -663,11 +669,12 @@ void statusLEDs(void *param)
     if (loopCounter >= loopCountsPerHalfSec) {
       loopCounter = 0;
       blinkState = !blinkState;
+
       if (blinkState) {
-        leds.setPixelColor(3, LED_STATUS_OK);
+        leds.setPixelColor(LED_SYSTEM_STATUS, statusLEDcolour);
         leds.show();
       } else {
-        leds.setPixelColor(3, LED_COLOR_OFF);
+        leds.setPixelColor(LED_SYSTEM_STATUS, LED_COLOR_OFF);
         leds.show();
       }
     }
@@ -692,7 +699,10 @@ void manageRTC(void *param)
   memcpy(&globalDateTime, &now, sizeof(DateTime)); // Initialize global DateTime directly
   debug_printf("Current date and time is: %04d-%02d-%02d %02d:%02d:%02d\n",
                 now.year, now.month, now.day, now.hour, now.minute, now.second);
+                
+  debug_printf("RTC update task started\n");
 
+  // Task loop
   while (1)
   {
     DateTime currentTime;
@@ -709,38 +719,27 @@ void manageRTC(void *param)
   }
 }
 
-void osDebugPrint(void)
+void manageTerminal(void *param)
 {
-  const char *taskStateName[5] = {
-      "Ready",
-      "Blocked",
-      "Suspended",
-      "Deleted",
-      "Invalid"};
-  int numberOfTasks = uxTaskGetNumberOfTasks();
+  (void)param;
+  while (!core1setupComplete || !core0setupComplete) vTaskDelay(pdMS_TO_TICKS(100));
 
-  DateTime current;
-  if (getGlobalDateTime(current))
-  {
-    // Use the current time safely
-    debug_printf("Time: %02d:%02d:%02d\n",
-                  current.hour, current.minute, current.second);
-  }
+  debug_printf("Terminal task started\n");
 
-  TaskStatus_t *pxTaskStatusArray = new TaskStatus_t[numberOfTasks];
-  uint32_t runtime;
-  numberOfTasks = uxTaskGetSystemState(pxTaskStatusArray, numberOfTasks, &runtime);
-  debug_printf("Tasks: %d\n", numberOfTasks);
-  for (int i = 0; i < numberOfTasks; i++)
-  {
-    debug_printf("ID: %d %s", i, pxTaskStatusArray[i].pcTaskName);
-    int currentState = pxTaskStatusArray[i].eCurrentState;
-    debug_printf(" Current state: %s", taskStateName[currentState]);
-    debug_printf(" Priority: %u\n", pxTaskStatusArray[i].uxBasePriority);
-    debug_printf(" Free stack: %u\n", pxTaskStatusArray[i].usStackHighWaterMark);
-    debug_printf(" Runtime: %u\n", pxTaskStatusArray[i].ulRunTimeCounter);
+  // Task loop
+  while (1) {
+    if (Serial.available())
+    {
+      debug_printf("Command received: ");
+      char serialString[10];  // Buffer for incoming serial data
+      Serial.readBytesUntil('\n', serialString, sizeof(serialString));
+      debug_printf("%s\n", serialString);
+      if (strcmp(serialString, "ps") == 0) {
+        osDebugPrint();
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
-  delete[] pxTaskStatusArray;
 }
 
 // ---------------------- Web Server Implementation ---------------------- //
@@ -778,17 +777,17 @@ void setupWebServer()
   debug_printf("HTTP server started\n");
   
   // Set Webserver Status LED
-  statusColours[LED_WEBSERVER_STATUS] = LED_STATUS_OK;
+  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
 }
 
 void handleWebServer()
 {
   if(eth.status() != WL_CONNECTED) {
-    statusColours[LED_WEBSERVER_STATUS] = LED_STATUS_OFF;
+    setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
     return;
   }
   server.handleClient();
-  statusColours[LED_WEBSERVER_STATUS] = LED_STATUS_OK;
+  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
 }
 
 void handleRoot()
@@ -799,10 +798,10 @@ void handleRoot()
 void handleFile(const char *path)
 {
   if(eth.status() != WL_CONNECTED) {
-    statusColours[LED_WEBSERVER_STATUS] = LED_STATUS_OFF;
+    setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
     return;
   }
-  statusColours[LED_WEBSERVER_STATUS] = LED_STATUS_BUSY;
+  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_BUSY);
   String contentType;
   if (strstr(path, ".html"))
     contentType = "text/html";
@@ -833,7 +832,7 @@ void handleFile(const char *path)
   {
     server.send(404, "text/plain", "File not found");
   }
-  statusColours[LED_WEBSERVER_STATUS] = LED_STATUS_OK;
+  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
 }
 
 // ---------------------- Utility functions ---------------------- //
@@ -885,7 +884,6 @@ bool updateGlobalDateTime(const DateTime &dt)
 
 // Thread-safe printf-like function
 void debug_printf(const char* format, ...) {
-    
     // Create a buffer to store the output
     static char buffer[DEBUG_PRINTF_BUFFER_SIZE];
     
@@ -911,4 +909,51 @@ void debug_printf(const char* format, ...) {
         // Error: Failed to acquire the Mutex. Print error message on the unprotected port
         Serial.println("Error: Failed to acquire Serial Mutex for debug_printf!");
     }
+}
+
+// Thread-safe LED colour setter
+bool setLEDcolour(uint8_t led, uint32_t colour) {
+  if (led > 3) {
+    debug_printf("Invalid LED number: %d\n", led);
+    return false;
+  }
+  if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    status.LEDcolour[led] = colour;
+    xSemaphoreGive(statusMutex);
+    return true;
+  }
+  return false;
+}
+void osDebugPrint(void)
+{
+  const char *taskStateName[5] = {
+      "Ready",
+      "Blocked",
+      "Suspended",
+      "Deleted",
+      "Invalid"};
+  int numberOfTasks = uxTaskGetNumberOfTasks();
+
+  DateTime current;
+  if (getGlobalDateTime(current))
+  {
+    // Use the current time safely
+    debug_printf("Time: %02d:%02d:%02d\n",
+                  current.hour, current.minute, current.second);
+  }
+
+  TaskStatus_t *pxTaskStatusArray = new TaskStatus_t[numberOfTasks];
+  uint32_t runtime;
+  numberOfTasks = uxTaskGetSystemState(pxTaskStatusArray, numberOfTasks, &runtime);
+  debug_printf("Tasks: %d\n", numberOfTasks);
+  for (int i = 0; i < numberOfTasks; i++)
+  {
+    debug_printf("ID: %d %s", i, pxTaskStatusArray[i].pcTaskName);
+    int currentState = pxTaskStatusArray[i].eCurrentState;
+    debug_printf(" Current state: %s", taskStateName[currentState]);
+    debug_printf(" Priority: %u\n", pxTaskStatusArray[i].uxBasePriority);
+    debug_printf(" Free stack: %u\n", pxTaskStatusArray[i].usStackHighWaterMark);
+    debug_printf(" Runtime: %u\n", pxTaskStatusArray[i].ulRunTimeCounter);
+  }
+  delete[] pxTaskStatusArray;
 }
