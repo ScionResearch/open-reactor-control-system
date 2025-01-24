@@ -18,14 +18,13 @@ void handleWebServer(void);
 void handleRoot(void);
 void handleFile(const char *path);
 
-// RTC threadsafe functions
+// Global threadsafe functions
 bool updateGlobalDateTime(const DateTime &dt);
 bool getGlobalDateTime(DateTime &dt);
+void debug_printf(const char* format, ...);
 
 // Debug functions
-void osDebugPrint(HardwareSerial &serialDebug);
-
-
+void osDebugPrint(void);
 
 // Function to convert epoch time to DateTime
 DateTime epochToDateTime(time_t epochTime)
@@ -80,7 +79,7 @@ void ntpUpdate(void)
   if (!eth.linkStatus()) return;
 
   if (!timeClient.update()) {
-    Serial.println("Failed to get time from NTP server, retrying");
+    debug_printf("Failed to get time from NTP server, retrying\n");
     bool updateSuccessful = false;
     for (int i = 0; i < 3; i++) {
       if (timeClient.update()) {
@@ -90,7 +89,7 @@ void ntpUpdate(void)
       delay(10);
    }
     if (!updateSuccessful) {
-      Serial.println("Failed to get time from NTP server, giving up");
+      debug_printf("Failed to get time from NTP server, giving up\n");
       return;
     }
   }
@@ -109,11 +108,11 @@ void ntpUpdate(void)
   DateTime newTime = epochToDateTime(epochTime);
   if (!updateGlobalDateTime(newTime))
   {
-    Serial.println("Failed to update time from NTP");
+    debug_printf("Failed to update time from NTP\n");
   }
   else
   {
-    Serial.println("Time updated from NTP server");
+    debug_printf("Time updated from NTP server\n");
   }
 }
 
@@ -128,7 +127,7 @@ void handleNTPUpdates(bool forceUpdate = false)
   if ((xQueueReceive(ntpUpdateQueue, &dummy, 0) == pdTRUE) || forceUpdate)
   {
     if (timeSinceLastUpdate < NTP_MIN_SYNC_INTERVAL) {
-      Serial.printf("Time since last NTP update: %ds - skipping\n", timeSinceLastUpdate/1000);
+      debug_printf("Time since last NTP update: %ds - skipping\n", timeSinceLastUpdate/1000);
       return;
     }
     ntpUpdate();
@@ -138,28 +137,28 @@ void handleNTPUpdates(bool forceUpdate = false)
 
 void debugPrintNetConfig(NetworkConfig config)
 {
-  Serial.printf("Mode: %s\n", config.useDHCP ? "DHCP" : "Static");
-  Serial.printf("IP: %s\n", config.ip.toString().c_str());
-  Serial.printf("Subnet: %s\n", config.subnet.toString().c_str());
-  Serial.printf("Gateway: %s\n", config.gateway.toString().c_str());
-  Serial.printf("DNS: %s\n", config.dns.toString().c_str());
-  Serial.printf("Timezone: %s\n", config.timezone);
-  Serial.printf("Hostname: %s\n", config.hostname);
-  Serial.printf("NTP Server: %s\n", config.ntpServer);
-  Serial.printf("NTP Enabled: %s\n", config.ntpEnabled ? "true" : "false");
-  Serial.printf("DST Enabled: %s\n", config.dstEnabled ? "true" : "false");
+  debug_printf("Mode: %s\n", config.useDHCP ? "DHCP" : "Static");
+  debug_printf("IP: %s\n", config.ip.toString().c_str());
+  debug_printf("Subnet: %s\n", config.subnet.toString().c_str());
+  debug_printf("Gateway: %s\n", config.gateway.toString().c_str());
+  debug_printf("DNS: %s\n", config.dns.toString().c_str());
+  debug_printf("Timezone: %s\n", config.timezone);
+  debug_printf("Hostname: %s\n", config.hostname);
+  debug_printf("NTP Server: %s\n", config.ntpServer);
+  debug_printf("NTP Enabled: %s\n", config.ntpEnabled ? "true" : "false");
+  debug_printf("DST Enabled: %s\n", config.dstEnabled ? "true" : "false");
 }
 
 void checkTerminal(void)
 {
   if (Serial.available())
   {
-    Serial.print("Command received: ");
+    debug_printf("Command received: ");
     char serialString[10];  // Buffer for incoming serial data
     Serial.readBytesUntil('\n', serialString, sizeof(serialString));
-    Serial.println(serialString);
+    debug_printf("%s\n", serialString);
     if (strcmp(serialString, "ps") == 0) {
-      osDebugPrint(Serial);
+      osDebugPrint();
     }
   }
 }
@@ -167,10 +166,10 @@ void checkTerminal(void)
 // Function to load network configuration from EEPROM
 bool loadNetworkConfig()
 {
-  Serial.println("Loading network configuration:");
+  debug_printf("Loading network configuration:\n");
   EEPROM.begin(512);
   uint8_t magicNumber = EEPROM.read(0);
-  Serial.printf("Magic number: %x\n", magicNumber);
+  debug_printf("Magic number: %x\n", magicNumber);
   if (magicNumber != EE_MAGIC_NUMBER) return false;
   EEPROM.get(EE_NETWORK_CONFIG_ADDRESS, networkConfig);
   EEPROM.end();
@@ -181,7 +180,7 @@ bool loadNetworkConfig()
 // Function to save network configuration to EEPROM
 void saveNetworkConfig()
 {
-  Serial.println("Saving network configuration:");
+  debug_printf("Saving network configuration:\n");
   debugPrintNetConfig(networkConfig);
   EEPROM.begin(512);
   EEPROM.put(EE_NETWORK_CONFIG_ADDRESS, networkConfig);
@@ -197,7 +196,7 @@ bool applyNetworkConfig()
   {
     if (!eth.begin())
     {
-      Serial.println("Failed to configure Ethernet using DHCP, falling back to 192.168.1.10");
+      debug_printf("Failed to configure Ethernet using DHCP, falling back to 192.168.1.10\n");
       IPAddress defaultIP = {192, 168, 1, 10};
       eth.config(defaultIP);
       if (!eth.begin()) return false;
@@ -217,7 +216,7 @@ void setupEthernet()
   if (!loadNetworkConfig())
   {
     // Set default configuration if load fails
-    Serial.println("Invalid network configuration, using defaults");
+    debug_printf("Invalid network configuration, using defaults\n");
     networkConfig.ntpEnabled = false;
     networkConfig.useDHCP = true;
     networkConfig.ip = IPAddress(192, 168, 1, 100);
@@ -243,7 +242,7 @@ void setupEthernet()
   // Apply network configuration
   if (!applyNetworkConfig())
   {
-    Serial.println("Failed to apply network configuration");
+    debug_printf("Failed to apply network configuration\n");
   }
 
   else {
@@ -252,19 +251,18 @@ void setupEthernet()
     eth.macAddress(mac);
     snprintf(deviceMacAddress, sizeof(deviceMacAddress), "%02X:%02X:%02X:%02X:%02X:%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    Serial.print("MAC Address: ");
-    Serial.println(deviceMacAddress);
+    debug_printf("MAC Address: %s\n", deviceMacAddress);
   }
 
   // Wait for Ethernet to connect
   delay(2000);
 
   if (eth.linkStatus() == LinkOFF) {
-    Serial.println("Ethernet not connected");
+    debug_printf("Ethernet not connected\n");
     ethernetConnected = false;
   }
   else {
-    Serial.printf("Ethernet connected, IP address: %s, Gateway: %s\n",
+    debug_printf("Ethernet connected, IP address: %s, Gateway: %s\n",
                 eth.localIP().toString().c_str(),
                 eth.gatewayIP().toString().c_str());
     ethernetConnected = true;
@@ -461,25 +459,25 @@ void setupTimeAPI()
         String json = server.arg("plain");
         DeserializationError error = deserializeJson(doc, json);
 
-        Serial.printf("Received JSON: %s\n", json.c_str());
+        debug_printf("Received JSON: %s\n", json.c_str());
         
         if (error) {
             server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
-            Serial.printf("JSON parsing error: %s\n", error.c_str());
+            debug_printf("JSON parsing error: %s\n", error.c_str());
             return;
         }
 
         // Validate required fields
         if (!doc.containsKey("date") || !doc.containsKey("time")) {
             server.send(400, "application/json", "{\"error\":\"Missing required fields\"}");
-            Serial.printf("Missing required fields in JSON\n");
+            debug_printf("Missing required fields in JSON\n");
             return;
         }
 
         // Update timezone if provided
         if (doc.containsKey("timezone")) {
           const char* tz = doc["timezone"];
-          Serial.printf("Received timezone: %s\n", tz);
+          debug_printf("Received timezone: %s\n", tz);
           // Basic timezone format validation (+/-HH:MM)
           int tzHour, tzMin;
           if (sscanf(tz, "%d:%d", &tzHour, &tzMin) != 2 ||
@@ -489,7 +487,7 @@ void setupTimeAPI()
           }
           strncpy(networkConfig.timezone, tz, sizeof(networkConfig.timezone) - 1);
           networkConfig.timezone[sizeof(networkConfig.timezone) - 1] = '\0';
-          Serial.printf("Updated timezone: %s\n", networkConfig.timezone);
+          debug_printf("Updated timezone: %s\n", networkConfig.timezone);
         }
 
         // Update NTP enabled status if provided
@@ -523,7 +521,7 @@ void setupTimeAPI()
         if (sscanf(dateStr, "%hu-%hhu-%hhu", &year, &month, &day) != 3 ||
             year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) {
             server.send(400, "application/json", "{\"error\": \"Invalid date format or values\"}");
-            Serial.printf("Invalid date format or values in JSON\n");
+            debug_printf("Invalid date format or values in JSON\n");
             return;
         }
 
@@ -549,11 +547,20 @@ void setup()
   while (!Serial)
     ;
 
+  Serial.println("Core 0 setup started");
+
+  // Create serial debug mutex
+  serialMutex = xSemaphoreCreateMutex();
+  if (serialMutex == NULL) {
+    Serial.println("Failed to create serial mutex");
+  }
+  else serialReady = true;
+
   // Initialize NTP update queue
   ntpUpdateQueue = xQueueCreate(1, sizeof(uint8_t));
   if (ntpUpdateQueue == NULL)
   {
-    Serial.println("Failed to create NTP update queue");
+    debug_printf("Failed to create NTP update queue\n");
     return;
   }
 
@@ -566,10 +573,10 @@ void setup()
 
   // Start NTP sync task
   xTaskCreate(ntpSyncTask, "NTP Sync", 4096, NULL, 1, NULL);
-  Serial.println("NTP sync task started");
+  debug_printf("NTP sync task started\n");
   if (networkConfig.ntpEnabled && eth.linkStatus() == LinkON ) ntpUpdate();
 
-  Serial.println("Core 0 setup complete");
+  debug_printf("Core 0 setup complete\n");
 }
 
 void loop()
@@ -578,7 +585,7 @@ void loop()
   if (ethernetConnected) {
     if (eth.linkStatus() == LinkOFF) {
       ethernetConnected = false;
-      Serial.println("Ethernet disconnected, waiting for reconnect");
+      debug_printf("Ethernet disconnected, waiting for reconnect\n");
     }
     else {
       handleWebServer();
@@ -587,7 +594,7 @@ void loop()
   }
   else if (eth.linkStatus() == LinkON) {
     ethernetConnected = true;
-    Serial.printf("Ethernet re-connected, IP address: %s, Gateway: %s\n",
+    debug_printf("Ethernet re-connected, IP address: %s, Gateway: %s\n",
                 eth.localIP().toString().c_str(),
                 eth.gatewayIP().toString().c_str());
   }
@@ -595,17 +602,21 @@ void loop()
 
 void setup1()
 {
-  while (!Serial)
-    ;
+  while (!serialReady) delay(100);
+  debug_printf("Core 1 setup started\n");
 
   // Create synchronization primitives
   dateTimeMutex = xSemaphoreCreateMutex();
+  if (dateTimeMutex == NULL) {
+    debug_printf("Failed to create dateTimeMutex!\n");
+    while (true);
+ }
   // Initialize Core 1 tasks
   xTaskCreate(statusLEDs, "LED stat", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-  Serial.println("LED status task started");
+  debug_printf("LED status task started\n");
   xTaskCreate(manageRTC, "RTC updt", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-  Serial.println("Core 1 setup complete");
+  debug_printf("Core 1 setup complete\n");
 
   // Set System Status OK
   statusColours[LED_SYSTEM_STATUS] = LED_STATUS_OK;
@@ -616,7 +627,7 @@ void setup1()
   // MQTT not yet implemented
   statusColours[LED_MQTT_STATUS] = LED_STATUS_OFF;
 
-  Serial.printf("Set status colours to: %d, modbus: %d, mqtt: %d\n", statusColours[3], statusColours[2], statusColours[0]);
+  debug_printf("Set status colours to: %d, modbus: %d, mqtt: %d\n", statusColours[3], statusColours[2], statusColours[0]);
 }
 
 void loop1()
@@ -671,7 +682,7 @@ void manageRTC(void *param)
 
   if (!rtc.begin())
   {
-    Serial.println("RTC initialization failed!");
+    debug_printf("RTC initialization failed!\n");
     return;
   }
 
@@ -679,7 +690,7 @@ void manageRTC(void *param)
   DateTime now;
   rtc.getDateTime(&now);
   memcpy(&globalDateTime, &now, sizeof(DateTime)); // Initialize global DateTime directly
-  Serial.printf("Current date and time is: %04d-%02d-%02d %02d:%02d:%02d\n",
+  debug_printf("Current date and time is: %04d-%02d-%02d %02d:%02d:%02d\n",
                 now.year, now.month, now.day, now.hour, now.minute, now.second);
 
   while (1)
@@ -698,7 +709,7 @@ void manageRTC(void *param)
   }
 }
 
-void osDebugPrint(HardwareSerial &serialDebug)
+void osDebugPrint(void)
 {
   const char *taskStateName[5] = {
       "Ready",
@@ -712,22 +723,22 @@ void osDebugPrint(HardwareSerial &serialDebug)
   if (getGlobalDateTime(current))
   {
     // Use the current time safely
-    Serial.printf("Time: %02d:%02d:%02d\n",
+    debug_printf("Time: %02d:%02d:%02d\n",
                   current.hour, current.minute, current.second);
   }
 
   TaskStatus_t *pxTaskStatusArray = new TaskStatus_t[numberOfTasks];
   uint32_t runtime;
   numberOfTasks = uxTaskGetSystemState(pxTaskStatusArray, numberOfTasks, &runtime);
-  serialDebug.printf("Tasks: %d\n", numberOfTasks);
+  debug_printf("Tasks: %d\n", numberOfTasks);
   for (int i = 0; i < numberOfTasks; i++)
   {
-    serialDebug.printf("ID: %d %s", i, pxTaskStatusArray[i].pcTaskName);
+    debug_printf("ID: %d %s", i, pxTaskStatusArray[i].pcTaskName);
     int currentState = pxTaskStatusArray[i].eCurrentState;
-    serialDebug.printf(" Current state: %s", taskStateName[currentState]);
-    serialDebug.printf(" Priority: %u\n", pxTaskStatusArray[i].uxBasePriority);
-    serialDebug.printf(" Free stack: %u\n", pxTaskStatusArray[i].usStackHighWaterMark);
-    serialDebug.printf(" Runtime: %u\n", pxTaskStatusArray[i].ulRunTimeCounter);
+    debug_printf(" Current state: %s", taskStateName[currentState]);
+    debug_printf(" Priority: %u\n", pxTaskStatusArray[i].uxBasePriority);
+    debug_printf(" Free stack: %u\n", pxTaskStatusArray[i].usStackHighWaterMark);
+    debug_printf(" Runtime: %u\n", pxTaskStatusArray[i].ulRunTimeCounter);
   }
   delete[] pxTaskStatusArray;
 }
@@ -739,7 +750,7 @@ void setupWebServer()
   // Initialize LittleFS for serving web files
   if (!LittleFS.begin())
   {
-    Serial.println("LittleFS Mount Failed");
+    debug_printf("LittleFS Mount Failed\n");
     return;
   }
 
@@ -764,7 +775,7 @@ void setupWebServer()
                     { handleFile(server.uri().c_str()); });
 
   server.begin();
-  Serial.println("HTTP server started");
+  debug_printf("HTTP server started\n");
   
   // Set Webserver Status LED
   statusColours[LED_WEBSERVER_STATUS] = LED_STATUS_OK;
@@ -845,7 +856,7 @@ bool updateGlobalDateTime(const DateTime &dt)
   if (xSemaphoreTake(dateTimeMutex, pdMS_TO_TICKS(100)) == pdTRUE)
   {
     // Update the RTC first
-    Serial.printf("Setting RTC to: %04d-%02d-%02d %02d:%02d:%02d\n",
+    debug_printf("Setting RTC to: %04d-%02d-%02d %02d:%02d:%02d\n",
                   dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
 
     rtc.setDateTime(dt); // Ignore return value since RTC appears to update anyway
@@ -854,7 +865,7 @@ bool updateGlobalDateTime(const DateTime &dt)
     DateTime currentTime;
     if (rtc.getDateTime(&currentTime))
     {
-      Serial.printf("RTC read back: %04d-%02d-%02d %02d:%02d:%02d\n",
+      debug_printf("RTC read back: %04d-%02d-%02d %02d:%02d:%02d\n",
                     currentTime.year, currentTime.month, currentTime.day,
                     currentTime.hour, currentTime.minute, currentTime.second);
     }
@@ -864,10 +875,40 @@ bool updateGlobalDateTime(const DateTime &dt)
     xSemaphoreGive(dateTimeMutex);
 
     // Signal that time was manually updated
-    Serial.printf("Time successfully set to: %04d-%02d-%02d %02d:%02d:%02d\n",
+    debug_printf("Time successfully set to: %04d-%02d-%02d %02d:%02d:%02d\n",
                   dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
     return true; // Return true since we know the RTC actually updates
   }
-  Serial.println("Failed to take dateTimeMutex in updateGlobalDateTime");
+  debug_printf("Failed to take dateTimeMutex in updateGlobalDateTime\n");
   return false;
+}
+
+// Thread-safe printf-like function
+void debug_printf(const char* format, ...) {
+    
+    // Create a buffer to store the output
+    static char buffer[DEBUG_PRINTF_BUFFER_SIZE];
+    
+    // Acquire the Mutex: Blocks until the Mutex becomes available.
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY) == pdTRUE) {
+        // Format the string into the buffer
+        va_list args;
+        va_start(args, format);
+        int len = vsnprintf(buffer, DEBUG_PRINTF_BUFFER_SIZE, format, args);
+        va_end(args);
+
+        // Check for errors or truncation.
+        if(len > 0) {
+            Serial.print(buffer);
+        } else {
+            Serial.println("Error during debug_printf: formatting error or buffer overflow");
+        }
+
+
+        // Release the mutex
+        xSemaphoreGive(serialMutex);
+    } else {
+        // Error: Failed to acquire the Mutex. Print error message on the unprotected port
+        Serial.println("Error: Failed to acquire Serial Mutex for debug_printf!");
+    }
 }

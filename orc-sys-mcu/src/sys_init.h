@@ -87,6 +87,9 @@
 // Timing defines
 #define NTP_MIN_SYNC_INTERVAL 70000
 
+// Buffer sizes
+#define DEBUG_PRINTF_BUFFER_SIZE 256
+
 // Object definitions
 Adafruit_NeoPixel leds(4, PIN_LED_DAT, NEO_GRB + NEO_KHZ800);
 MCP79410 rtc(Wire1);
@@ -117,8 +120,11 @@ struct NetworkConfig
     char mqttPassword[32];
 };
 
+// Serial port mutex
+SemaphoreHandle_t serialMutex = NULL;
+
 // Global DateTime protection
-SemaphoreHandle_t dateTimeMutex;
+SemaphoreHandle_t dateTimeMutex = NULL;
 DateTime globalDateTime;
 
 // NTP update queue
@@ -141,3 +147,4 @@ uint32_t statusColours[] = {
 char deviceMacAddress[18];
 
 bool ethernetConnected = false;
+bool serialReady = false;
