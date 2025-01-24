@@ -45,6 +45,18 @@
 #define PIN_PS_5V_FB 28
 #define PIN_SP_IO_6 29
 
+// Voltage divider constants
+#define V_PSU_MUL_V      0.01726436769
+#define V_5V_MUL_V       0.00240673828
+
+// Limits
+#define V_PSU_MIN        22.0
+#define V_PSU_MAX        29.0
+#define V_20V_MIN        19.5
+#define V_20V_MAX        20.5
+#define V_5V_MIN         4.5
+#define V_5V_MAX         5.5
+
 // LED colours
 #define LED_COLOR_GREEN 0x00FF00
 #define LED_COLOR_YELLOW 0xFFFF00
