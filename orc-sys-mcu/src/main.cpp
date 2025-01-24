@@ -584,17 +584,18 @@ void setup1()
   if (statusMutex == NULL) {
     debug_printf("Failed to create statusMutex!\n");
     while (1);
- }
+  }
+
+   // Set System Status
+  setLEDcolour(LED_SYSTEM_STATUS, LED_STATUS_STARTUP);
   // Initialize Core 1 tasks
   xTaskCreate(statusLEDs, "LED stat", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
   xTaskCreate(manageRTC, "RTC updt", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
   xTaskCreate(manageTerminal, "Term updt", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
   xTaskCreate(managePower, "Pwr updt", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-    // Set System Status OK
-  setLEDcolour(LED_SYSTEM_STATUS, LED_STATUS_OK);
   // Modbus not yet implemented
-  setLEDcolour(LED_MODBUS_STATUS,LED_STATUS_OFF);
+  setLEDcolour(LED_MODBUS_STATUS, LED_STATUS_OFF);
   // MQTT not yet implemented
   setLEDcolour(LED_MQTT_STATUS, LED_STATUS_OFF); 
 
@@ -657,8 +658,8 @@ void statusLEDs(void *param)
   while (1) {
     uint32_t statusLEDcolour = STATUS_WARNING;
     if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-      for (int i = 0; i < 4; i++) {
-        if (!(i == 3 && status.LEDcolour[i] == LED_STATUS_OK)) leds.setPixelColor(i, status.LEDcolour[i]);
+      for (int i = 0; i < 3; i++) {
+        leds.setPixelColor(i, status.LEDcolour[i]);
       }
       statusLEDcolour = status.LEDcolour[3];
       xSemaphoreGive(statusMutex);
@@ -751,6 +752,7 @@ void managePower(void *param) {
   debug_printf("Power monitoring task started\n");
 
   float Vpsu, V20, V5;
+  bool psuOK, V20OK, V5OK;
 
   // Task loop
   while (1) {
@@ -764,7 +766,34 @@ void managePower(void *param) {
     Vpsu /= 10.0;
     V20 /= 10.0;
     V5 /= 10.0;
-    debug_printf("Vpsu: %.2f V, V20: %.2f V, V5: %.2f V\n", Vpsu, V20, V5);
+    if (Vpsu > V_PSU_MAX || Vpsu < V_PSU_MIN) {
+      if (psuOK) debug_printf("PSU voltage out of range: %.2f V\n", Vpsu);
+      psuOK = false;
+    }
+    else psuOK = true;
+    if (V20 > V_20V_MAX || V20 < V_20V_MIN) {
+      if (V20OK) debug_printf("20V voltage out of range: %.2f V\n", V20);
+      V20OK = false;
+    }
+    else V20OK = true;
+    if (V5 > V_5V_MAX || V5 < V_5V_MIN) {
+      if (V5OK) debug_printf("5V voltage out of range: %.2f V\n", V5);
+      V5OK = false;
+    }
+    else V5OK = true;
+    if (!psuOK || !V20OK || !V5OK) {
+      setLEDcolour(LED_SYSTEM_STATUS, LED_STATUS_WARNING);
+    }
+    else setLEDcolour(LED_SYSTEM_STATUS, LED_STATUS_OK);
+    if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      status.Vpsu = Vpsu;
+      status.V20 = V20;
+      status.V5 = V5;
+      status.psuOK = psuOK;
+      status.V20OK = V20OK;
+      status.V5OK = V5OK;
+      xSemaphoreGive(statusMutex);
+    };
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
