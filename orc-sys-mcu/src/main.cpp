@@ -3,7 +3,6 @@
 // ---------------------- RTOS tasks ---------------------- //
 
 // Core 0 tasks
-void ntpSyncTask(void *param);
 
 // Core 1 tasks
 void statusLEDs(void *param);
@@ -98,15 +97,13 @@ void ntpUpdate(void)
   }
 }
 
-// Handle NTP updates in the main loop
 void handleNTPUpdates(bool forceUpdate = false)
 {
   if (!networkConfig.ntpEnabled) return;
-  uint8_t dummy;
   uint32_t timeSinceLastUpdate = millis() - ntpUpdateTimestamp;
 
   // Check if there's an NTP update request
-  if ((xQueueReceive(ntpUpdateQueue, &dummy, 0) == pdTRUE) || forceUpdate)
+  if (timeSinceLastUpdate > NTP_UPDATE_INTERVAL || forceUpdate)
   {
     if (timeSinceLastUpdate < NTP_MIN_SYNC_INTERVAL) {
       debug_printf("Time since last NTP update: %ds - skipping\n", timeSinceLastUpdate/1000);
@@ -525,12 +522,12 @@ void setup()
   else serialReady = true;
 
   // Initialize NTP update queue
-  ntpUpdateQueue = xQueueCreate(1, sizeof(uint8_t));
+  /*ntpUpdateQueue = xQueueCreate(1, sizeof(uint8_t));
   if (ntpUpdateQueue == NULL)
   {
     debug_printf("Failed to create NTP update queue\n");
     return;
-  }
+  }*/
 
   // Initialize hardware
   setupEthernet();
@@ -540,7 +537,7 @@ void setup()
   setupTimeAPI();
 
   // Start NTP sync task
-  xTaskCreate(ntpSyncTask, "NTP Sync", 4096, NULL, 1, NULL);
+  //xTaskCreate(ntpSyncTask, "NTP Sync", 4096, NULL, 1, NULL);
 
   debug_printf("Core 0 setup complete\n");
   core0setupComplete = true;
@@ -610,33 +607,7 @@ void loop1() {
 
 // ---------------------- Core 0 tasks ---------------------- //
 
-// NTP time sync task - only queues update requests
-void ntpSyncTask(void *param)
-{
-  (void)param;
 
-  const TickType_t ntpSyncInterval = pdMS_TO_TICKS(NTP_UPDATE_INTERVAL);
-  bool updateRequested = false;
-
-  vTaskDelay(NTP_MIN_SYNC_INTERVAL);
-
-  debug_printf("NTP sync task started\n");
-
-  while (1)
-  {
-    if (networkConfig.ntpEnabled && !updateRequested && eth.linkStatus() == LinkON)
-    {
-      // Queue an NTP update request
-      uint8_t dummy = 1;
-      xQueueSend(ntpUpdateQueue, &dummy, 0);
-      updateRequested = true;
-    }
-
-    // Wait for the sync interval
-    vTaskDelay(ntpSyncInterval);
-    updateRequested = false;
-  }
-}
 
 // ---------------------- Core 1 tasks ---------------------- //
 void statusLEDs(void *param)
@@ -906,7 +877,7 @@ bool getGlobalDateTime(DateTime &dt)
 }
 
 // Function to safely update the DateTime
-bool updateGlobalDateTime(const DateTime &dt)
+/*bool updateGlobalDateTime(const DateTime &dt)
 {
   if (xSemaphoreTake(dateTimeMutex, pdMS_TO_TICKS(100)) == pdTRUE)
   {
@@ -936,8 +907,65 @@ bool updateGlobalDateTime(const DateTime &dt)
   }
   debug_printf("Failed to take dateTimeMutex in updateGlobalDateTime\n");
   return false;
-}
+}*/
 
+// Modified updateGlobalDateTime function with retry
+bool updateGlobalDateTime(const DateTime &dt) {
+    const int maxRetries = 3; // Maximum number of retries
+    const int retryDelayMs = 100; // Delay between retries (milliseconds)
+
+    if (xSemaphoreTake(dateTimeMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        bool success = false;
+        for (int retry = 0; retry < maxRetries; ++retry) {
+            Serial.printf("Attempt %d: Setting RTC to: %04d-%02d-%02d %02d:%02d:%02d\n",
+                          retry + 1, dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+
+            rtc.setDateTime(dt); // Set RTC time
+
+            // Verify the time was set by reading it back
+            DateTime currentTime;
+            if (rtc.getDateTime(&currentTime)) {
+              // Check that time is correct before proceeding
+              if (currentTime.year == dt.year &&
+                  currentTime.month == dt.month &&
+                  currentTime.day == dt.day &&
+                  currentTime.hour == dt.hour &&
+                  currentTime.minute == dt.minute &&
+                  currentTime.second == dt.second) {
+                    Serial.printf("RTC verification successful after %d retries.\n", retry + 1);
+                    memcpy(&globalDateTime, &dt, sizeof(DateTime)); // Update global time after successful write
+                    success = true;
+                    break; // Exit retry loop on success
+              } else {
+                Serial.printf("RTC verification failed, current time: %04d-%02d-%02d %02d:%02d:%02d, expected time: %04d-%02d-%02d %02d:%02d:%02d\n", 
+                        currentTime.year, currentTime.month, currentTime.day,
+                        currentTime.hour, currentTime.minute, currentTime.second,
+                        dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+              }
+            } else {
+                Serial.println("Failed to read time from RTC during verification.");
+            }
+             
+            if(retry < maxRetries - 1) {
+              vTaskDelay(pdMS_TO_TICKS(retryDelayMs)); // Delay if retrying
+            }
+        }
+
+        xSemaphoreGive(dateTimeMutex); // Release the mutex
+        if(success) {
+           Serial.printf("Time successfully set to: %04d-%02d-%02d %02d:%02d:%02d\n",
+                          dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+           return true;
+        } else {
+            Serial.println("Failed to set RTC time after maximum retries.");
+            return false;
+        }
+
+    } else {
+        Serial.println("Failed to take dateTimeMutex in updateGlobalDateTime");
+        return false;
+    }
+}
 // Thread-safe printf-like function
 void debug_printf(const char* format, ...) {
     // Create a buffer to store the output
