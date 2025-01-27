@@ -932,7 +932,7 @@ bool updateGlobalDateTime(const DateTime &dt) {
                   currentTime.hour == dt.hour &&
                   currentTime.minute == dt.minute &&
                   currentTime.second == dt.second) {
-                    Serial.printf("RTC verification successful after %d retries.\n", retry + 1);
+                    Serial.printf("RTC verification successful after %d retries.\n", retry);
                     memcpy(&globalDateTime, &dt, sizeof(DateTime)); // Update global time after successful write
                     success = true;
                     break; // Exit retry loop on success
