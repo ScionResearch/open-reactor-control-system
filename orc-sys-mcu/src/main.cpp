@@ -948,7 +948,7 @@ void manageRTC(void *param)
   }
 }
 
-void manageTerminal(void *param)
+/*void manageTerminal(void *param)
 {
   (void)param;
   while (!core1setupComplete || !core0setupComplete) vTaskDelay(pdMS_TO_TICKS(100));
@@ -966,6 +966,34 @@ void manageTerminal(void *param)
         osDebugPrint();
       }
     }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}*/
+
+void manageTerminal(void *param)
+{
+  (void)param;  
+  while (!core1setupComplete || !core0setupComplete) vTaskDelay(pdMS_TO_TICKS(100));
+
+  debug_printf(LOG_INFO, "Terminal task started\n");
+
+  // Task loop
+  while (1) {
+    if (Serial.available())
+    {
+      char serialString[10];  // Buffer for incoming serial data
+      memset(serialString, 0, sizeof(serialString));
+      int bytesRead = Serial.readBytesUntil('\n', serialString, sizeof(serialString) - 1); // Leave room for null terminator
+      if (bytesRead > 0 ) {
+          serialString[bytesRead] = '\0'; // Add null terminator
+          debug_printf(LOG_INFO, "Command received:  %s\n", serialString);
+          if (strcmp(serialString, "ps") == 0) {
+            osDebugPrint();
+          }
+        }
+    }
+    // Clear the serial buffer each loop.
+    while(Serial.available()) Serial.read();
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
