@@ -506,7 +506,263 @@ void setupTimeAPI()
   } );
 }
 
-void setup()
+void setupWebServer()
+{
+  // Initialize LittleFS for serving web files
+  if (!LittleFS.begin())
+  {
+    debug_printf("LittleFS Mount Failed\n");
+    return;
+  }
+
+  // Route handlers
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/api/sensors", HTTP_GET, []()
+            {
+        DateTime dt;
+        if (!getGlobalDateTime(dt)) {
+            server.send(500, "application/json", "{\"error\":\"Failed to get time\"}");
+            return;
+        }
+
+        char json[128];
+        snprintf(json, sizeof(json),
+                "{\"temp\":25.5,\"ph\":7.2,\"do\":6.8,\"timestamp\":\"%04d-%02d-%02dT%02d:%02d:%02d\"}",
+                dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+        server.send(200, "application/json", json); });
+
+  // System status endpoints
+  server.on("/api/power", HTTP_GET, []() {
+        StaticJsonDocument<200> doc;
+        
+        xSemaphoreTake(statusMutex, portMAX_DELAY);
+        doc["mainVoltage"] = status.Vpsu;
+        doc["v20Voltage"] = status.V20;
+        doc["v5Voltage"] = status.V5;
+        doc["mainVoltageOK"] = status.psuOK;
+        doc["v20VoltageOK"] = status.V20OK;
+        doc["v5VoltageOK"] = status.V5OK;
+        xSemaphoreGive(statusMutex);
+        
+        String response;
+        serializeJson(doc, response);
+        server.send(200, "application/json", response);
+    });
+
+  // Handle static files
+  server.onNotFound([]()
+                    { handleFile(server.uri().c_str()); });
+
+  server.begin();
+  debug_printf("HTTP server started\n");
+  
+  // Set Webserver Status LED
+  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
+}
+
+void handleWebServer()
+{
+  if(eth.status() != WL_CONNECTED) {
+    setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
+    return;
+  }
+  server.handleClient();
+  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
+}
+
+void handleRoot()
+{
+  handleFile("/index.html");
+}
+
+void handleFile(const char *path)
+{
+  if(eth.status() != WL_CONNECTED) {
+    setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
+    return;
+  }
+  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_BUSY);
+  String contentType;
+  if (strstr(path, ".html"))
+    contentType = "text/html";
+  else if (strstr(path, ".css"))
+    contentType = "text/css";
+  else if (strstr(path, ".js"))
+    contentType = "application/javascript";
+  else if (strstr(path, ".json"))
+    contentType = "application/json";
+  else if (strstr(path, ".ico"))
+    contentType = "image/x-icon";
+  else
+    contentType = "text/plain";
+
+  String filePath = path;
+  if (filePath.endsWith("/"))
+    filePath += "index.html";
+  if (!filePath.startsWith("/"))
+    filePath = "/" + filePath;
+
+  if (LittleFS.exists(filePath))
+  {
+    File file = LittleFS.open(filePath, "r");
+    server.streamFile(file, contentType);
+    file.close();
+  }
+  else
+  {
+    server.send(404, "text/plain", "File not found");
+  }
+  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
+}
+
+// ---------------------- Utility functions ---------------------- //
+
+// Function to safely get the current DateTime
+bool getGlobalDateTime(DateTime &dt)
+{
+  if (xSemaphoreTake(dateTimeMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+  {
+    memcpy(&dt, &globalDateTime, sizeof(DateTime));
+    xSemaphoreGive(dateTimeMutex);
+    return true;
+  }
+  return false;
+}
+
+// Function to safely update the DateTime
+bool updateGlobalDateTime(const DateTime &dt) {
+    const int maxRetries = 3; // Maximum number of retries
+    const int retryDelayMs = 100; // Delay between retries (milliseconds)
+
+    if (xSemaphoreTake(dateTimeMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        bool success = false;
+        for (int retry = 0; retry < maxRetries; ++retry) {
+            Serial.printf("Attempt %d: Setting RTC to: %04d-%02d-%02d %02d:%02d:%02d\n",
+                          retry + 1, dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+
+            rtc.setDateTime(dt); // Set RTC time
+
+            // Verify the time was set by reading it back
+            DateTime currentTime;
+            if (rtc.getDateTime(&currentTime)) {
+              // Check that time is correct before proceeding
+              if (currentTime.year == dt.year &&
+                  currentTime.month == dt.month &&
+                  currentTime.day == dt.day &&
+                  currentTime.hour == dt.hour &&
+                  currentTime.minute == dt.minute &&
+                  currentTime.second == dt.second) {
+                    Serial.printf("RTC verification successful after %d retries.\n", retry);
+                    memcpy(&globalDateTime, &dt, sizeof(DateTime)); // Update global time after successful write
+                    success = true;
+                    break; // Exit retry loop on success
+              } else {
+                Serial.printf("RTC verification failed, current time: %04d-%02d-%02d %02d:%02d:%02d, expected time: %04d-%02d-%02d %02d:%02d:%02d\n", 
+                        currentTime.year, currentTime.month, currentTime.day,
+                        currentTime.hour, currentTime.minute, currentTime.second,
+                        dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+              }
+            } else {
+                Serial.println("Failed to read time from RTC during verification.");
+            }
+             
+            if(retry < maxRetries - 1) {
+              vTaskDelay(pdMS_TO_TICKS(retryDelayMs)); // Delay if retrying
+            }
+        }
+
+        xSemaphoreGive(dateTimeMutex); // Release the mutex
+        if(success) {
+           Serial.printf("Time successfully set to: %04d-%02d-%02d %02d:%02d:%02d\n",
+                          dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+           return true;
+        } else {
+            Serial.println("Failed to set RTC time after maximum retries.");
+            return false;
+        }
+
+    } else {
+        Serial.println("Failed to take dateTimeMutex in updateGlobalDateTime");
+        return false;
+    }
+}
+// Thread-safe printf-like function
+void debug_printf(const char* format, ...) {
+    // Create a buffer to store the output
+    static char buffer[DEBUG_PRINTF_BUFFER_SIZE];
+    
+    // Acquire the Mutex: Blocks until the Mutex becomes available.
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY) == pdTRUE) {
+        // Format the string into the buffer
+        va_list args;
+        va_start(args, format);
+        int len = vsnprintf(buffer, DEBUG_PRINTF_BUFFER_SIZE, format, args);
+        va_end(args);
+
+        // Check for errors or truncation.
+        if(len > 0) {
+            Serial.print(buffer);
+        } else {
+            Serial.println("Error during debug_printf: formatting error or buffer overflow");
+        }
+
+
+        // Release the mutex
+        xSemaphoreGive(serialMutex);
+    } else {
+        // Error: Failed to acquire the Mutex. Print error message on the unprotected port
+        Serial.println("Error: Failed to acquire Serial Mutex for debug_printf!");
+    }
+}
+
+// Thread-safe LED colour setter
+bool setLEDcolour(uint8_t led, uint32_t colour) {
+  if (led > 3) {
+    debug_printf("Invalid LED number: %d\n", led);
+    return false;
+  }
+  if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    status.LEDcolour[led] = colour;
+    xSemaphoreGive(statusMutex);
+    return true;
+  }
+  return false;
+}
+void osDebugPrint(void)
+{
+  const char *taskStateName[5] = {
+      "Ready",
+      "Blocked",
+      "Suspended",
+      "Deleted",
+      "Invalid"};
+  int numberOfTasks = uxTaskGetNumberOfTasks();
+
+  DateTime current;
+  if (getGlobalDateTime(current))
+  {
+    // Use the current time safely
+    debug_printf("Time: %02d:%02d:%02d\n",
+                  current.hour, current.minute, current.second);
+  }
+
+  TaskStatus_t *pxTaskStatusArray = new TaskStatus_t[numberOfTasks];
+  uint32_t runtime;
+  numberOfTasks = uxTaskGetSystemState(pxTaskStatusArray, numberOfTasks, &runtime);
+  debug_printf("Tasks: %d\n", numberOfTasks);
+  for (int i = 0; i < numberOfTasks; i++)
+  {
+    debug_printf("ID: %d %s", i, pxTaskStatusArray[i].pcTaskName);
+    int currentState = pxTaskStatusArray[i].eCurrentState;
+    debug_printf(" Current state: %s", taskStateName[currentState]);
+    debug_printf(" Priority: %u\n", pxTaskStatusArray[i].uxBasePriority);
+    debug_printf(" Free stack: %u\n", pxTaskStatusArray[i].usStackHighWaterMark);
+    debug_printf(" Runtime: %u\n", pxTaskStatusArray[i].ulRunTimeCounter);
+  }
+  delete[] pxTaskStatusArray;
+}
+
+void setup() // Eth interface (keep RTOS tasks out of core 0)
 {
   Serial.begin(115200);
   while (!Serial)
@@ -521,23 +777,12 @@ void setup()
   }
   else serialReady = true;
 
-  // Initialize NTP update queue
-  /*ntpUpdateQueue = xQueueCreate(1, sizeof(uint8_t));
-  if (ntpUpdateQueue == NULL)
-  {
-    debug_printf("Failed to create NTP update queue\n");
-    return;
-  }*/
-
   // Initialize hardware
   setupEthernet();
   setupWebServer();
   setupNetworkAPI();
   setupMqttAPI();
   setupTimeAPI();
-
-  // Start NTP sync task
-  //xTaskCreate(ntpSyncTask, "NTP Sync", 4096, NULL, 1, NULL);
 
   debug_printf("Core 0 setup complete\n");
   core0setupComplete = true;
@@ -767,277 +1012,4 @@ void managePower(void *param) {
     };
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
-}
-
-// ---------------------- Web Server Implementation ---------------------- //
-
-void setupWebServer()
-{
-  // Initialize LittleFS for serving web files
-  if (!LittleFS.begin())
-  {
-    debug_printf("LittleFS Mount Failed\n");
-    return;
-  }
-
-  // Route handlers
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/api/sensors", HTTP_GET, []()
-            {
-        DateTime dt;
-        if (!getGlobalDateTime(dt)) {
-            server.send(500, "application/json", "{\"error\":\"Failed to get time\"}");
-            return;
-        }
-
-        char json[128];
-        snprintf(json, sizeof(json),
-                "{\"temp\":25.5,\"ph\":7.2,\"do\":6.8,\"timestamp\":\"%04d-%02d-%02dT%02d:%02d:%02d\"}",
-                dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
-        server.send(200, "application/json", json); });
-
-  // Handle static files
-  server.onNotFound([]()
-                    { handleFile(server.uri().c_str()); });
-
-  server.begin();
-  debug_printf("HTTP server started\n");
-  
-  // Set Webserver Status LED
-  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
-}
-
-void handleWebServer()
-{
-  if(eth.status() != WL_CONNECTED) {
-    setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
-    return;
-  }
-  server.handleClient();
-  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
-}
-
-void handleRoot()
-{
-  handleFile("/index.html");
-}
-
-void handleFile(const char *path)
-{
-  if(eth.status() != WL_CONNECTED) {
-    setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
-    return;
-  }
-  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_BUSY);
-  String contentType;
-  if (strstr(path, ".html"))
-    contentType = "text/html";
-  else if (strstr(path, ".css"))
-    contentType = "text/css";
-  else if (strstr(path, ".js"))
-    contentType = "application/javascript";
-  else if (strstr(path, ".json"))
-    contentType = "application/json";
-  else if (strstr(path, ".ico"))
-    contentType = "image/x-icon";
-  else
-    contentType = "text/plain";
-
-  String filePath = path;
-  if (filePath.endsWith("/"))
-    filePath += "index.html";
-  if (!filePath.startsWith("/"))
-    filePath = "/" + filePath;
-
-  if (LittleFS.exists(filePath))
-  {
-    File file = LittleFS.open(filePath, "r");
-    server.streamFile(file, contentType);
-    file.close();
-  }
-  else
-  {
-    server.send(404, "text/plain", "File not found");
-  }
-  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
-}
-
-// ---------------------- Utility functions ---------------------- //
-
-// Function to safely get the current DateTime
-bool getGlobalDateTime(DateTime &dt)
-{
-  if (xSemaphoreTake(dateTimeMutex, pdMS_TO_TICKS(100)) == pdTRUE)
-  {
-    memcpy(&dt, &globalDateTime, sizeof(DateTime));
-    xSemaphoreGive(dateTimeMutex);
-    return true;
-  }
-  return false;
-}
-
-// Function to safely update the DateTime
-/*bool updateGlobalDateTime(const DateTime &dt)
-{
-  if (xSemaphoreTake(dateTimeMutex, pdMS_TO_TICKS(100)) == pdTRUE)
-  {
-    // Update the RTC first
-    debug_printf("Setting RTC to: %04d-%02d-%02d %02d:%02d:%02d\n",
-                  dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
-
-    rtc.setDateTime(dt); // Ignore return value since RTC appears to update anyway
-
-    // Verify the time was set by reading it back
-    DateTime currentTime;
-    if (rtc.getDateTime(&currentTime))
-    {
-      debug_printf("RTC read back: %04d-%02d-%02d %02d:%02d:%02d\n",
-                    currentTime.year, currentTime.month, currentTime.day,
-                    currentTime.hour, currentTime.minute, currentTime.second);
-    }
-
-    // Update the global variable
-    memcpy(&globalDateTime, &dt, sizeof(DateTime));
-    xSemaphoreGive(dateTimeMutex);
-
-    // Signal that time was manually updated
-    debug_printf("Time successfully set to: %04d-%02d-%02d %02d:%02d:%02d\n",
-                  dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
-    return true; // Return true since we know the RTC actually updates
-  }
-  debug_printf("Failed to take dateTimeMutex in updateGlobalDateTime\n");
-  return false;
-}*/
-
-// Modified updateGlobalDateTime function with retry
-bool updateGlobalDateTime(const DateTime &dt) {
-    const int maxRetries = 3; // Maximum number of retries
-    const int retryDelayMs = 100; // Delay between retries (milliseconds)
-
-    if (xSemaphoreTake(dateTimeMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        bool success = false;
-        for (int retry = 0; retry < maxRetries; ++retry) {
-            Serial.printf("Attempt %d: Setting RTC to: %04d-%02d-%02d %02d:%02d:%02d\n",
-                          retry + 1, dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
-
-            rtc.setDateTime(dt); // Set RTC time
-
-            // Verify the time was set by reading it back
-            DateTime currentTime;
-            if (rtc.getDateTime(&currentTime)) {
-              // Check that time is correct before proceeding
-              if (currentTime.year == dt.year &&
-                  currentTime.month == dt.month &&
-                  currentTime.day == dt.day &&
-                  currentTime.hour == dt.hour &&
-                  currentTime.minute == dt.minute &&
-                  currentTime.second == dt.second) {
-                    Serial.printf("RTC verification successful after %d retries.\n", retry);
-                    memcpy(&globalDateTime, &dt, sizeof(DateTime)); // Update global time after successful write
-                    success = true;
-                    break; // Exit retry loop on success
-              } else {
-                Serial.printf("RTC verification failed, current time: %04d-%02d-%02d %02d:%02d:%02d, expected time: %04d-%02d-%02d %02d:%02d:%02d\n", 
-                        currentTime.year, currentTime.month, currentTime.day,
-                        currentTime.hour, currentTime.minute, currentTime.second,
-                        dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
-              }
-            } else {
-                Serial.println("Failed to read time from RTC during verification.");
-            }
-             
-            if(retry < maxRetries - 1) {
-              vTaskDelay(pdMS_TO_TICKS(retryDelayMs)); // Delay if retrying
-            }
-        }
-
-        xSemaphoreGive(dateTimeMutex); // Release the mutex
-        if(success) {
-           Serial.printf("Time successfully set to: %04d-%02d-%02d %02d:%02d:%02d\n",
-                          dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
-           return true;
-        } else {
-            Serial.println("Failed to set RTC time after maximum retries.");
-            return false;
-        }
-
-    } else {
-        Serial.println("Failed to take dateTimeMutex in updateGlobalDateTime");
-        return false;
-    }
-}
-// Thread-safe printf-like function
-void debug_printf(const char* format, ...) {
-    // Create a buffer to store the output
-    static char buffer[DEBUG_PRINTF_BUFFER_SIZE];
-    
-    // Acquire the Mutex: Blocks until the Mutex becomes available.
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY) == pdTRUE) {
-        // Format the string into the buffer
-        va_list args;
-        va_start(args, format);
-        int len = vsnprintf(buffer, DEBUG_PRINTF_BUFFER_SIZE, format, args);
-        va_end(args);
-
-        // Check for errors or truncation.
-        if(len > 0) {
-            Serial.print(buffer);
-        } else {
-            Serial.println("Error during debug_printf: formatting error or buffer overflow");
-        }
-
-
-        // Release the mutex
-        xSemaphoreGive(serialMutex);
-    } else {
-        // Error: Failed to acquire the Mutex. Print error message on the unprotected port
-        Serial.println("Error: Failed to acquire Serial Mutex for debug_printf!");
-    }
-}
-
-// Thread-safe LED colour setter
-bool setLEDcolour(uint8_t led, uint32_t colour) {
-  if (led > 3) {
-    debug_printf("Invalid LED number: %d\n", led);
-    return false;
-  }
-  if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    status.LEDcolour[led] = colour;
-    xSemaphoreGive(statusMutex);
-    return true;
-  }
-  return false;
-}
-void osDebugPrint(void)
-{
-  const char *taskStateName[5] = {
-      "Ready",
-      "Blocked",
-      "Suspended",
-      "Deleted",
-      "Invalid"};
-  int numberOfTasks = uxTaskGetNumberOfTasks();
-
-  DateTime current;
-  if (getGlobalDateTime(current))
-  {
-    // Use the current time safely
-    debug_printf("Time: %02d:%02d:%02d\n",
-                  current.hour, current.minute, current.second);
-  }
-
-  TaskStatus_t *pxTaskStatusArray = new TaskStatus_t[numberOfTasks];
-  uint32_t runtime;
-  numberOfTasks = uxTaskGetSystemState(pxTaskStatusArray, numberOfTasks, &runtime);
-  debug_printf("Tasks: %d\n", numberOfTasks);
-  for (int i = 0; i < numberOfTasks; i++)
-  {
-    debug_printf("ID: %d %s", i, pxTaskStatusArray[i].pcTaskName);
-    int currentState = pxTaskStatusArray[i].eCurrentState;
-    debug_printf(" Current state: %s", taskStateName[currentState]);
-    debug_printf(" Priority: %u\n", pxTaskStatusArray[i].uxBasePriority);
-    debug_printf(" Free stack: %u\n", pxTaskStatusArray[i].usStackHighWaterMark);
-    debug_printf(" Runtime: %u\n", pxTaskStatusArray[i].ulRunTimeCounter);
-  }
-  delete[] pxTaskStatusArray;
 }

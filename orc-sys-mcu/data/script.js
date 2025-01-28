@@ -263,6 +263,37 @@ setInterval(updateLiveClock, 1000);    // Update clock every second
 setInterval(updateSensorData, 1000);   // Update sensor data every second
 setInterval(updateNetworkInfo, 5000);  // Update network info every 5 seconds
 
+// Update power supply status
+async function updatePowerStatus() {
+    try {
+        const response = await fetch('/api/power');
+        const data = await response.json();
+        
+        // Update main voltage
+        document.getElementById('mainVoltage').textContent = data.mainVoltage.toFixed(1) + 'V';
+        const mainStatus = document.getElementById('mainVoltageStatus');
+        mainStatus.textContent = data.mainVoltageOK ? 'OK' : 'ERROR';
+        mainStatus.className = 'status ' + (data.mainVoltageOK ? 'ok' : 'error');
+        
+        // Update 20V supply
+        document.getElementById('v20Voltage').textContent = data.v20Voltage.toFixed(1) + 'V';
+        const v20Status = document.getElementById('v20VoltageStatus');
+        v20Status.textContent = data.v20VoltageOK ? 'OK' : 'ERROR';
+        v20Status.className = 'status ' + (data.v20VoltageOK ? 'ok' : 'error');
+        
+        // Update 5V supply
+        document.getElementById('v5Voltage').textContent = data.v5Voltage.toFixed(1) + 'V';
+        const v5Status = document.getElementById('v5VoltageStatus');
+        v5Status.textContent = data.v5VoltageOK ? 'OK' : 'ERROR';
+        v5Status.className = 'status ' + (data.v5VoltageOK ? 'ok' : 'error');
+    } catch (error) {
+        console.error('Error updating power status:', error);
+    }
+}
+
+// Add power status update to the periodic updates
+setInterval(updatePowerStatus, 1000);
+
 // Network settings handling
 document.getElementById('networkForm').addEventListener('submit', async function(e) {
     e.preventDefault();

@@ -12,6 +12,7 @@
         <nav>
             <ul>
                 <li><a href="#" class="active" data-page="dashboard">Dashboard</a></li>
+                <li><a href="#" data-page="system">System</a></li>
                 <li><a href="#" data-page="settings">Settings</a></li>
             </ul>
         </nav>
@@ -147,19 +148,19 @@
                             </div>
                         </div>
                         <div class="form-group">
-                            <label>MAC Address:</label>
+                            <label for="macAddress">MAC Address:</label>
                             <span id="macAddress" class="static-value"></span>
                         </div>
                         <div class="form-group">
-                            <label>Current IP Address:</label>
+                            <label for="currentIP">Current IP Address:</label>
                             <span id="currentIP" class="static-value"></span>
                         </div>
                         <div class="form-group">
-                            <label>Hostname:</label>
+                            <label for="hostName">Hostname:</label>
                             <input type="text" id="hostName" value="open-reactor">
                         </div>
                         <div class="form-group">
-                            <label>NTP Server:</label>
+                            <label for="ntpServer">NTP Server:</label>
                             <input type="text" id="ntpServer" value="pool.ntp.org">
                         </div>
                         <button type="submit" id="saveNetworkSettings" class="btn">Save Network Settings</button>
@@ -188,6 +189,32 @@
                         </div>
                         <button type="submit" class="btn">Save MQTT Settings</button>
                     </form>
+                </div>
+            </div>
+
+            <div id="system" class="page">
+                <h1>System Status</h1>
+                <div class="sensor-grid">
+                    <div class="sensor-card">
+                        <h3>Power Supplies</h3>
+                        <div class="power-supplies">
+                            <div class="power-supply">
+                                <span class="label">Main Supply:</span>
+                                <span class="value" id="mainVoltage">--V</span>
+                                <span class="status" id="mainVoltageStatus">--</span>
+                            </div>
+                            <div class="power-supply">
+                                <span class="label">20V Supply:</span>
+                                <span class="value" id="v20Voltage">--V</span>
+                                <span class="status" id="v20VoltageStatus">--</span>
+                            </div>
+                            <div class="power-supply">
+                                <span class="label">5V Supply:</span>
+                                <span class="value" id="v5Voltage">--V</span>
+                                <span class="status" id="v5VoltageStatus">--</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
