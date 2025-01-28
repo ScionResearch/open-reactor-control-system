@@ -98,10 +98,16 @@
 
 // Timing defines
 #define NTP_MIN_SYNC_INTERVAL 70000
-#define NTP_UPDATE_INTERVAL 600000
+#define NTP_UPDATE_INTERVAL 600000  // 10 minutes - 1 day = 86400000ms
 
 // Buffer sizes
 #define DEBUG_PRINTF_BUFFER_SIZE 256
+
+// Log entry types
+#define LOG_INFO 0
+#define LOG_WARNING 1
+#define LOG_ERROR 2
+#define LOG_DEBUG 3
 
 // Object definitions
 Adafruit_NeoPixel leds(4, PIN_LED_DAT, NEO_GRB + NEO_KHZ800);
@@ -158,7 +164,7 @@ DateTime globalDateTime;
 
 // NTP update queue
 QueueHandle_t ntpUpdateQueue;
-uint32_t ntpUpdateTimestamp = 0;
+uint32_t ntpUpdateTimestamp = 0 - NTP_MIN_SYNC_INTERVAL;
 
 // Global variables
 NetworkConfig networkConfig;
@@ -169,3 +175,6 @@ char deviceMacAddress[18];
 bool ethernetConnected = false;
 bool serialReady = false;
 bool core0setupComplete = false, core1setupComplete = false;
+
+// Log entry types
+const char *logType[] = {"INFO", "WARNING", "ERROR", "DEBUG"};
