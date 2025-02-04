@@ -11,6 +11,8 @@
 #include <ArduinoJson.h>
 #include <EEPROM.h>
 #include <NTPClient.h>
+#include "IPCProtocol.h"
+#include "IPCDataStructs.h"
 
 // Hardware pin definitions
 
@@ -114,6 +116,7 @@ Adafruit_NeoPixel leds(4, PIN_LED_DAT, NEO_GRB + NEO_KHZ800);
 MCP79410 rtc(Wire1);
 Wiznet5500lwIP eth(PIN_ETH_CS, SPI, PIN_ETH_IRQ);
 WebServer server(80);
+IPCProtocol ipc(Serial1);
 
 // FreeRTOS defines
 

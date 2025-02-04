@@ -2,8 +2,6 @@
 
 // ---------------------- RTOS tasks ---------------------- //
 
-// Core 0 tasks
-
 // Core 1 tasks
 void statusLEDs(void *param);
 void manageRTC(void *param);
@@ -19,6 +17,8 @@ void setupWebServer(void);
 void handleWebServer(void);
 void handleRoot(void);
 void handleFile(const char *path);
+
+
 
 // Global threadsafe functions
 bool updateGlobalDateTime(const DateTime &dt);
@@ -159,6 +159,10 @@ bool applyNetworkConfig()
 {
   if (networkConfig.useDHCP)
   {
+    // Call eth.end() to release the DHCP lease if we already had one since last boot (handles changing networks on the fly)
+    // NOTE: requires modification of end function in LwipIntDev.h, added dhcp_release_and_stop(&_netif); before netif_remove(&_netif);)
+    eth.end();
+    
     if (!eth.begin())
     {
       debug_printf(LOG_INFO, "Failed to configure Ethernet using DHCP, falling back to 192.168.1.10\n");
@@ -562,8 +566,7 @@ void setupWebServer()
 
 void handleWebServer()
 {
-  if(eth.status() != WL_CONNECTED) {
-    setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
+  if(!ethernetConnected) {
     return;
   }
   server.handleClient();
@@ -613,6 +616,15 @@ void handleFile(const char *path)
     server.send(404, "text/plain", "File not found");
   }
   setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
+}
+
+// Inter-processor communication
+void setupIPC(void) {
+  Serial1.setRX(PIN_SI_RX);
+  Serial1.setTX(PIN_SI_TX);
+  ipc.begin(115200);
+  // Add in handshaking checks here...
+  debug_printf(LOG_INFO, "Inter-processor communication setup complete\n");
 }
 
 // ---------------------- Utility functions ---------------------- //
@@ -793,6 +805,7 @@ void setup() // Eth interface (keep RTOS tasks out of core 0)
   setupNetworkAPI();
   setupMqttAPI();
   setupTimeAPI();
+  setupIPC();
 
   debug_printf(LOG_INFO, "Core 0 setup complete\n");
   core0setupComplete = true;
@@ -807,6 +820,8 @@ void loop()
   if (ethernetConnected) {
     if (eth.linkStatus() == LinkOFF) {
       ethernetConnected = false;
+      setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
+      setLEDcolour(LED_MQTT_STATUS, LED_STATUS_OFF);
       debug_printf(LOG_INFO, "Ethernet disconnected, waiting for reconnect\n");
     }
     else {
@@ -816,10 +831,16 @@ void loop()
   }
   else if (eth.linkStatus() == LinkON) {
     ethernetConnected = true;
-    debug_printf(LOG_INFO, "Ethernet re-connected, IP address: %s, Gateway: %s\n",
+    if(!applyNetworkConfig()) {
+      debug_printf(LOG_ERROR, "Failed to apply network configuration!\n");
+    }
+    else {
+      debug_printf(LOG_INFO, "Ethernet re-connected, IP address: %s, Gateway: %s\n",
                 eth.localIP().toString().c_str(),
                 eth.gatewayIP().toString().c_str());
+    }
   }
+  ipc.update();
 }
 
 void setup1()
@@ -948,28 +969,6 @@ void manageRTC(void *param)
   }
 }
 
-/*void manageTerminal(void *param)
-{
-  (void)param;
-  while (!core1setupComplete || !core0setupComplete) vTaskDelay(pdMS_TO_TICKS(100));
-
-  debug_printf(LOG_INFO, "Terminal task started\n");
-
-  // Task loop
-  while (1) {
-    if (Serial.available())
-    {
-      char serialString[10];  // Buffer for incoming serial data
-      Serial.readBytesUntil('\n', serialString, sizeof(serialString));
-      debug_printf(LOG_INFO, "Command received:  %s\n", serialString);
-      if (strcmp(serialString, "ps") == 0) {
-        osDebugPrint();
-      }
-    }
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
-}*/
-
 void manageTerminal(void *param)
 {
   (void)param;  
@@ -986,9 +985,22 @@ void manageTerminal(void *param)
       int bytesRead = Serial.readBytesUntil('\n', serialString, sizeof(serialString) - 1); // Leave room for null terminator
       if (bytesRead > 0 ) {
           serialString[bytesRead] = '\0'; // Add null terminator
-          debug_printf(LOG_INFO, "Command received:  %s\n", serialString);
+          debug_printf(LOG_INFO, "Received:  %s\n", serialString);
           if (strcmp(serialString, "ps") == 0) {
             osDebugPrint();
+          }
+          else if (strcmp(serialString, "reboot") == 0) {
+            debug_printf(LOG_INFO, "Rebooting now...\n");
+            rp2040.restart();
+          }
+          else if (strcmp(serialString, "ip") == 0) {
+            debug_printf(LOG_INFO, "Ethernet connected, IP address: %s, Gateway: %s\n",
+                eth.localIP().toString().c_str(),
+                eth.gatewayIP().toString().c_str());
+          }
+          else {
+            debug_printf(LOG_INFO, "Unknown command: %s\n", serialString);
+            debug_printf(LOG_INFO, "Available commands: ps (print OS processes), ip (print IP address), reboot\n");
           }
         }
     }

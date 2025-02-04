@@ -1,0 +1,22 @@
+Sensor and control objects for standardised data structure and transport
+
+Sensors:
+- power(float volts, float amps, float watts, bool online)
+- temperature(float celcius, bool online)
+- pH(float pH, bool online)
+- dissolvedOxygen(float oxygen, bool online)
+- opticalDensity(float OD, bool online)
+- gasFlow(float mlPerMinute, bool online)
+- pressure(float kPa, bool online)
+- stirrerSpeed(float rpm, bool online)
+- weight(float grams, bool online)
+
+Controls:
+- temperature(float sp_celcius, bool enabled, float kp, float ki, float kd)
+- pH(float sp_pH, bool enabled, float period, float max_dose_time)
+- dissolvedOxygen(float sp_oxygen, bool enabled, float DOstirrerLUT[2][10], float DOgasLUT[2][10])
+- gasFlow(float sp_mlPerMinute, bool enabled, float kp, float ki, float kd)
+- stirrerSpeed(float sp_rpm, bool enabled, float kp, float ki, float kd)
+- pumpSpeed(float percent)
+- feed(float period, float duty, bool enabled)
+- waste(float period, float duty, bool enabled)
