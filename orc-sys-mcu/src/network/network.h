@@ -17,8 +17,8 @@
 #define EE_NETWORK_CONFIG_ADDRESS 1
 
 // Timing defines
-#define NTP_MIN_SYNC_INTERVAL 70000
-#define NTP_UPDATE_INTERVAL 600000  // 10 minutes - 1 day = 86400000ms
+#define NTP_MIN_SYNC_INTERVAL 70000   // Too frequent NTP requests will cause failed connections - 70s minimum
+#define NTP_UPDATE_INTERVAL 86400000  // 1 day = 86400000ms
 
 void init_network(void);
 void setupEthernet(void);
