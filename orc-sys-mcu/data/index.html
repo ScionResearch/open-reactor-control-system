@@ -16,208 +16,212 @@
                 <li><a href="#" data-page="settings">Settings</a></li>
             </ul>
         </nav>
-        
-        <main>
-            <div id="dashboard" class="page active">
-                <h1>Bio-Reactor Dashboard v1.0</h1>
-                <div class="sensor-grid">
-                    <div class="sensor-card">
-                        <h3>Temperature</h3>
-                        <div class="value" id="temp">--°C</div>
-                    </div>
-                    <div class="sensor-card">
-                        <h3>pH Level</h3>
-                        <div class="value" id="ph">--</div>
-                    </div>
-                    <div class="sensor-card">
-                        <h3>Dissolved Oxygen</h3>
-                        <div class="value" id="do">-- mg/L</div>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <canvas id="sensorChart"></canvas>
-                </div>
+        <div class="main-content">
+            <div class="logo">
+                <img src="Scion-Logo-260x65.png" alt="Scion Logo">
             </div>
-
-            <div id="settings" class="page">
-                <h1>System Settings</h1>
-                <div class="settings-section">
-                    <h2>Date and Time</h2>
-                    <div class="live-clock">
-                        <span id="liveClock"></span>
+            <main>
+                <div id="dashboard" class="page active">
+                    <h1>Bio-Reactor Dashboard v1.0</h1>
+                    <div class="sensor-grid">
+                        <div class="sensor-card">
+                            <h3>Temperature</h3>
+                            <div class="value" id="temp">--°C</div>
+                        </div>
+                        <div class="sensor-card">
+                            <h3>pH Level</h3>
+                            <div class="value" id="ph">--</div>
+                        </div>
+                        <div class="sensor-card">
+                            <h3>Dissolved Oxygen</h3>
+                            <div class="value" id="do">-- mg/L</div>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="currentDate">Change Date:</label>
-                        <input type="date" id="currentDate" pattern="\d{4}-\d{2}-\d{2}">
+                    <div class="chart-container">
+                        <canvas id="sensorChart"></canvas>
                     </div>
-                    <div class="form-group">
-                        <label for="currentTime">Change Time:</label>
-                        <input type="time" id="currentTime" step="1">
-                    </div>
-                    <div class="form-group">
-                        <label for="timezone">Timezone:</label>
-                        <select id="timezone">
-                            <option value="-12:00">UTC-12:00 (Baker Island)</option>
-                            <option value="-11:00">UTC-11:00 (American Samoa)</option>
-                            <option value="-10:00">UTC-10:00 (Hawaii)</option>
-                            <option value="-09:30">UTC-09:30 (Marquesas Islands)</option>
-                            <option value="-09:00">UTC-09:00 (Alaska)</option>
-                            <option value="-08:00">UTC-08:00 (Pacific Time)</option>
-                            <option value="-07:00">UTC-07:00 (Mountain Time)</option>
-                            <option value="-06:00">UTC-06:00 (Central Time)</option>
-                            <option value="-05:00">UTC-05:00 (Eastern Time)</option>
-                            <option value="-04:00">UTC-04:00 (Atlantic Time)</option>
-                            <option value="-03:30">UTC-03:30 (Newfoundland)</option>
-                            <option value="-03:00">UTC-03:00 (Brazil, Argentina)</option>
-                            <option value="-02:00">UTC-02:00 (South Georgia)</option>
-                            <option value="-01:00">UTC-01:00 (Cape Verde)</option>
-                            <option value="+00:00">UTC+00:00 (London, Dublin)</option>
-                            <option value="+01:00">UTC+01:00 (Paris, Berlin)</option>
-                            <option value="+02:00">UTC+02:00 (Cairo, Athens)</option>
-                            <option value="+03:00">UTC+03:00 (Moscow, Istanbul)</option>
-                            <option value="+03:30">UTC+03:30 (Tehran)</option>
-                            <option value="+04:00">UTC+04:00 (Dubai)</option>
-                            <option value="+04:30">UTC+04:30 (Kabul)</option>
-                            <option value="+05:00">UTC+05:00 (Karachi)</option>
-                            <option value="+05:30">UTC+05:30 (India)</option>
-                            <option value="+05:45">UTC+05:45 (Nepal)</option>
-                            <option value="+06:00">UTC+06:00 (Dhaka)</option>
-                            <option value="+06:30">UTC+06:30 (Yangon)</option>
-                            <option value="+07:00">UTC+07:00 (Bangkok)</option>
-                            <option value="+08:00">UTC+08:00 (Singapore, Beijing)</option>
-                            <option value="+08:45">UTC+08:45 (Eucla)</option>
-                            <option value="+09:00">UTC+09:00 (Tokyo)</option>
-                            <option value="+09:30">UTC+09:30 (Adelaide)</option>
-                            <option value="+10:00">UTC+10:00 (Sydney)</option>
-                            <option value="+10:30">UTC+10:30 (Lord Howe Island)</option>
-                            <option value="+11:00">UTC+11:00 (Solomon Islands)</option>
-                            <option value="+12:00">UTC+12:00 (Auckland)</option>
-                            <option value="+12:45">UTC+12:45 (Chatham Islands)</option>
-                            <option value="+13:00">UTC+13:00 (Nuku'alofa)</option>
-                            <option value="+14:00">UTC+14:00 (Kiritimati)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="enableNTP">Enable NTP</label>
-                        <input type="checkbox" id="enableNTP">
-                    </div>
-                    <div class="form-group">
-                        <label for="enableDST">Daylight Saving Time</label>
-                        <input type="checkbox" id="enableDST">
-                    </div>
-                    <button id="saveTimeBtn" class="btn btn-primary">Save Date and Time Settings</button>
                 </div>
-                <div class="settings-section">
-                    <h2>Network Configuration</h2>
-                    <form id="networkForm">
+
+                <div id="settings" class="page">
+                    <h1>System Settings</h1>
+                    <div class="settings-section">
+                        <h2>Date and Time</h2>
+                        <div class="live-clock">
+                            <span id="liveClock"></span>
+                        </div>
                         <div class="form-group">
-                            <label>IP Configuration:</label>
-                            <select id="ipConfig">
-                                <option value="dhcp">DHCP</option>
-                                <option value="static">Static IP</option>
+                            <label for="currentDate">Change Date:</label>
+                            <input type="date" id="currentDate" pattern="\d{4}-\d{2}-\d{2}">
+                        </div>
+                        <div class="form-group">
+                            <label for="currentTime">Change Time:</label>
+                            <input type="time" id="currentTime" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="timezone">Timezone:</label>
+                            <select id="timezone">
+                                <option value="-12:00">UTC-12:00 (Baker Island)</option>
+                                <option value="-11:00">UTC-11:00 (American Samoa)</option>
+                                <option value="-10:00">UTC-10:00 (Hawaii)</option>
+                                <option value="-09:30">UTC-09:30 (Marquesas Islands)</option>
+                                <option value="-09:00">UTC-09:00 (Alaska)</option>
+                                <option value="-08:00">UTC-08:00 (Pacific Time)</option>
+                                <option value="-07:00">UTC-07:00 (Mountain Time)</option>
+                                <option value="-06:00">UTC-06:00 (Central Time)</option>
+                                <option value="-05:00">UTC-05:00 (Eastern Time)</option>
+                                <option value="-04:00">UTC-04:00 (Atlantic Time)</option>
+                                <option value="-03:30">UTC-03:30 (Newfoundland)</option>
+                                <option value="-03:00">UTC-03:00 (Brazil, Argentina)</option>
+                                <option value="-02:00">UTC-02:00 (South Georgia)</option>
+                                <option value="-01:00">UTC-01:00 (Cape Verde)</option>
+                                <option value="+00:00">UTC+00:00 (London, Dublin)</option>
+                                <option value="+01:00">UTC+01:00 (Paris, Berlin)</option>
+                                <option value="+02:00">UTC+02:00 (Cairo, Athens)</option>
+                                <option value="+03:00">UTC+03:00 (Moscow, Istanbul)</option>
+                                <option value="+03:30">UTC+03:30 (Tehran)</option>
+                                <option value="+04:00">UTC+04:00 (Dubai)</option>
+                                <option value="+04:30">UTC+04:30 (Kabul)</option>
+                                <option value="+05:00">UTC+05:00 (Karachi)</option>
+                                <option value="+05:30">UTC+05:30 (India)</option>
+                                <option value="+05:45">UTC+05:45 (Nepal)</option>
+                                <option value="+06:00">UTC+06:00 (Dhaka)</option>
+                                <option value="+06:30">UTC+06:30 (Yangon)</option>
+                                <option value="+07:00">UTC+07:00 (Bangkok)</option>
+                                <option value="+08:00">UTC+08:00 (Singapore, Beijing)</option>
+                                <option value="+08:45">UTC+08:45 (Eucla)</option>
+                                <option value="+09:00">UTC+09:00 (Tokyo)</option>
+                                <option value="+09:30">UTC+09:30 (Adelaide)</option>
+                                <option value="+10:00">UTC+10:00 (Sydney)</option>
+                                <option value="+10:30">UTC+10:30 (Lord Howe Island)</option>
+                                <option value="+11:00">UTC+11:00 (Solomon Islands)</option>
+                                <option value="+12:00">UTC+12:00 (Auckland)</option>
+                                <option value="+12:45">UTC+12:45 (Chatham Islands)</option>
+                                <option value="+13:00">UTC+13:00 (Nuku'alofa)</option>
+                                <option value="+14:00">UTC+14:00 (Kiritimati)</option>
                             </select>
                         </div>
-                        <div id="staticSettings" style="display: none;">
-                            <div class="form-group">
-                                <label>IP Address:</label>
-                                <input type="text" id="ipAddress" 
-                                       pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
-                                       placeholder="192.168.1.100"
-                                       title="Please enter a valid IPv4 address">
-                            </div>
-                            <div class="form-group">
-                                <label>Subnet Mask:</label>
-                                <input type="text" id="subnetMask" 
-                                       pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
-                                       placeholder="255.255.255.0"
-                                       title="Please enter a valid subnet mask">
-                            </div>
-                            <div class="form-group">
-                                <label>Gateway:</label>
-                                <input type="text" id="gateway" 
-                                       pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
-                                       placeholder="192.168.1.1"
-                                       title="Please enter a valid gateway address">
-                            </div>
-                            <div class="form-group">
-                                <label>DNS Server:</label>
-                                <input type="text" id="dns" 
-                                       pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
-                                       placeholder="8.8.8.8"
-                                       title="Please enter a valid DNS server address">
-                            </div>
+                        <div class="form-group">
+                            <label for="enableNTP">Enable NTP</label>
+                            <input type="checkbox" id="enableNTP">
                         </div>
                         <div class="form-group">
-                            <label for="macAddress">MAC Address:</label>
-                            <span id="macAddress" class="static-value"></span>
+                            <label for="enableDST">Daylight Saving Time</label>
+                            <input type="checkbox" id="enableDST">
                         </div>
-                        <div class="form-group">
-                            <label for="currentIP">Current IP Address:</label>
-                            <span id="currentIP" class="static-value"></span>
-                        </div>
-                        <div class="form-group">
-                            <label for="hostName">Hostname:</label>
-                            <input type="text" id="hostName" value="open-reactor">
-                        </div>
-                        <div class="form-group">
-                            <label for="ntpServer">NTP Server:</label>
-                            <input type="text" id="ntpServer" value="pool.ntp.org">
-                        </div>
-                        <button type="submit" id="saveNetworkSettings" class="btn">Save Network Settings</button>
-                        <div id="networkStatus" class="status-message"></div>
-                    </form>
+                        <button id="saveTimeBtn" class="btn btn-primary">Save Date and Time Settings</button>
+                    </div>
+                    <div class="settings-section">
+                        <h2>Network Configuration</h2>
+                        <form id="networkForm">
+                            <div class="form-group">
+                                <label>IP Configuration:</label>
+                                <select id="ipConfig">
+                                    <option value="dhcp">DHCP</option>
+                                    <option value="static">Static IP</option>
+                                </select>
+                            </div>
+                            <div id="staticSettings" style="display: none;">
+                                <div class="form-group">
+                                    <label>IP Address:</label>
+                                    <input type="text" id="ipAddress" 
+                                           pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                                           placeholder="192.168.1.100"
+                                           title="Please enter a valid IPv4 address">
+                                </div>
+                                <div class="form-group">
+                                    <label>Subnet Mask:</label>
+                                    <input type="text" id="subnetMask" 
+                                           pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                                           placeholder="255.255.255.0"
+                                           title="Please enter a valid subnet mask">
+                                </div>
+                                <div class="form-group">
+                                    <label>Gateway:</label>
+                                    <input type="text" id="gateway" 
+                                           pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                                           placeholder="192.168.1.1"
+                                           title="Please enter a valid gateway address">
+                                </div>
+                                <div class="form-group">
+                                    <label>DNS Server:</label>
+                                    <input type="text" id="dns" 
+                                           pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                                           placeholder="8.8.8.8"
+                                           title="Please enter a valid DNS server address">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="macAddress">MAC Address:</label>
+                                <span id="macAddress" class="static-value"></span>
+                            </div>
+                            <div class="form-group">
+                                <label for="currentIP">Current IP Address:</label>
+                                <span id="currentIP" class="static-value"></span>
+                            </div>
+                            <div class="form-group">
+                                <label for="hostName">Hostname:</label>
+                                <input type="text" id="hostName" value="open-reactor">
+                            </div>
+                            <div class="form-group">
+                                <label for="ntpServer">NTP Server:</label>
+                                <input type="text" id="ntpServer" value="pool.ntp.org">
+                            </div>
+                            <button type="submit" id="saveNetworkSettings" class="btn">Save Network Settings</button>
+                            <div id="networkStatus" class="status-message"></div>
+                        </form>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h2>MQTT Configuration</h2>
+                        <form id="mqttForm">
+                            <div class="form-group">
+                                <label for="mqttBroker">Broker Address:</label>
+                                <input type="text" id="mqttBroker" name="mqttBroker" placeholder="e.g., mqtt.example.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="mqttPort">Port:</label>
+                                <input type="number" id="mqttPort" name="mqttPort" placeholder="1883" min="1" max="65535">
+                            </div>
+                            <div class="form-group">
+                                <label for="mqttUsername">Username:</label>
+                                <input type="text" id="mqttUsername" name="mqttUsername">
+                            </div>
+                            <div class="form-group">
+                                <label for="mqttPassword">Password:</label>
+                                <input type="password" id="mqttPassword" name="mqttPassword">
+                            </div>
+                            <button type="submit" class="btn">Save MQTT Settings</button>
+                        </form>
+                    </div>
                 </div>
-                
-                <div class="settings-section">
-                    <h2>MQTT Configuration</h2>
-                    <form id="mqttForm">
-                        <div class="form-group">
-                            <label for="mqttBroker">Broker Address:</label>
-                            <input type="text" id="mqttBroker" name="mqttBroker" placeholder="e.g., mqtt.example.com">
-                        </div>
-                        <div class="form-group">
-                            <label for="mqttPort">Port:</label>
-                            <input type="number" id="mqttPort" name="mqttPort" placeholder="1883" min="1" max="65535">
-                        </div>
-                        <div class="form-group">
-                            <label for="mqttUsername">Username:</label>
-                            <input type="text" id="mqttUsername" name="mqttUsername">
-                        </div>
-                        <div class="form-group">
-                            <label for="mqttPassword">Password:</label>
-                            <input type="password" id="mqttPassword" name="mqttPassword">
-                        </div>
-                        <button type="submit" class="btn">Save MQTT Settings</button>
-                    </form>
-                </div>
-            </div>
 
-            <div id="system" class="page">
-                <h1>System Status</h1>
-                <div class="sensor-grid">
-                    <div class="sensor-card">
-                        <h3>Power Supplies</h3>
-                        <div class="power-supplies">
-                            <div class="power-supply">
-                                <span class="label">Main Supply:</span>
-                                <span class="value" id="mainVoltage">--V</span>
-                                <span class="status" id="mainVoltageStatus">--</span>
-                            </div>
-                            <div class="power-supply">
-                                <span class="label">20V Supply:</span>
-                                <span class="value" id="v20Voltage">--V</span>
-                                <span class="status" id="v20VoltageStatus">--</span>
-                            </div>
-                            <div class="power-supply">
-                                <span class="label">5V Supply:</span>
-                                <span class="value" id="v5Voltage">--V</span>
-                                <span class="status" id="v5VoltageStatus">--</span>
+                <div id="system" class="page">
+                    <h1>System Status</h1>
+                    <div class="sensor-grid">
+                        <div class="sensor-card">
+                            <h3>Power Supplies</h3>
+                            <div class="power-supplies">
+                                <div class="power-supply">
+                                    <span class="label">Main Supply:</span>
+                                    <span class="value" id="mainVoltage">--V</span>
+                                    <span class="status" id="mainVoltageStatus">--</span>
+                                </div>
+                                <div class="power-supply">
+                                    <span class="label">20V Supply:</span>
+                                    <span class="value" id="v20Voltage">--V</span>
+                                    <span class="status" id="v20VoltageStatus">--</span>
+                                </div>
+                                <div class="power-supply">
+                                    <span class="label">5V Supply:</span>
+                                    <span class="value" id="v5Voltage">--V</span>
+                                    <span class="status" id="v5VoltageStatus">--</span>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </main>
+            </main>
+        </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="script.js"></script>
