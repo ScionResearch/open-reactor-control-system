@@ -1,13 +1,6 @@
 #pragma once
 
-#include "Adafruit_Neopixel.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
-#include "../hardware/pins.h"
-#include "../utils/logger.h"
-#include "../utils/timeManager.h"
-#include "../utils/ledManager.h"
+#include "../sys_init.h"
 
 // LED colours
 #define LED_COLOR_GREEN 0x00FF00

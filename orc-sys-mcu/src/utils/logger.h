@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
-#include <FreeRTOS.h>
-#include <semphr.h>
+#include "../sys_init.h"
 
 // Buffer sizes
 #define DEBUG_PRINTF_BUFFER_SIZE 256

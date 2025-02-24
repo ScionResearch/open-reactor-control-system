@@ -1,11 +1,6 @@
 #pragma once
 
-#include "MCP79410.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
-#include "../utils/logger.h"
-#include "../hardware/pins.h"
+#include "../sys_init.h"
 
 void init_timeManager(void);
 DateTime epochToDateTime(time_t epochTime);

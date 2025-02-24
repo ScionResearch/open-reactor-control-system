@@ -27,6 +27,7 @@ void init_logger(void) {
 void debug_printf(uint8_t logLevel, const char* format, ...) {
     // Create a buffer to store the output
     static char buffer[DEBUG_PRINTF_BUFFER_SIZE];
+    DateTime now;
     
     // Acquire the Mutex: Blocks until the Mutex becomes available.
     if (xSemaphoreTake(serialMutex, portMAX_DELAY) == pdTRUE) {
@@ -49,14 +50,15 @@ void debug_printf(uint8_t logLevel, const char* format, ...) {
         
         // Check for errors or truncation.
         if(len > 0) {
-            Serial.print(buffer);
-        } else {
+            writeLog(buffer);
+            if (debug) Serial.print(buffer);
+        } else if (debug) {
             Serial.println("Error during debug_printf: formatting error or buffer overflow");
         }
 
         // Release the mutex
         xSemaphoreGive(serialMutex);
-    } else {
+    } else if (debug) {
         // Error: Failed to acquire the Mutex. Print error message on the unprotected port
         Serial.println("Error: Failed to acquire Serial Mutex for debug_printf!");
     }
@@ -72,26 +74,16 @@ void osDebugPrint(void)
       "Invalid"};
   int numberOfTasks = uxTaskGetNumberOfTasks();
 
-  /*DateTime current;
-  if (getGlobalDateTime(current))
-  {
-    // Use the current time safely
-    debug_printf(LOG_INFO, "Time: %02d:%02d:%02d\n",
-                  current.hour, current.minute, current.second);
-  }*/
-
   TaskStatus_t *pxTaskStatusArray = new TaskStatus_t[numberOfTasks];
   uint32_t runtime;
   numberOfTasks = uxTaskGetSystemState(pxTaskStatusArray, numberOfTasks, &runtime);
   debug_printf(LOG_INFO, "Tasks: %d\n", numberOfTasks);
   for (int i = 0; i < numberOfTasks; i++)
   {
-    debug_printf(LOG_INFO, "ID: %d %s", i, pxTaskStatusArray[i].pcTaskName);
     int currentState = pxTaskStatusArray[i].eCurrentState;
-    debug_printf(LOG_INFO, " Current state: %s", taskStateName[currentState]);
-    debug_printf(LOG_INFO, " Priority: %u\n", pxTaskStatusArray[i].uxBasePriority);
-    debug_printf(LOG_INFO, " Free stack: %u\n", pxTaskStatusArray[i].usStackHighWaterMark);
-    debug_printf(LOG_INFO, " Runtime: %u\n", pxTaskStatusArray[i].ulRunTimeCounter);
+    debug_printf(LOG_INFO, "ID: %d %s | Current state: %s | Priority: %u | Free stack: %u | Runtime: %u\n",
+        i, pxTaskStatusArray[i].pcTaskName, taskStateName[currentState], pxTaskStatusArray[i].uxBasePriority,
+        pxTaskStatusArray[i].usStackHighWaterMark, pxTaskStatusArray[i].ulRunTimeCounter);
   }
   delete[] pxTaskStatusArray;
 }

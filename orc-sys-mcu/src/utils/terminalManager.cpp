@@ -1,7 +1,7 @@
 #include "terminalManager.h"
 
 void init_terminalManager(void) {
-  xTaskCreate(manageTerminal, "Term updt", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+  xTaskCreate(manageTerminal, "Term updt", 1024, NULL, 1, NULL);
 }
 
 void manageTerminal(void *param)
@@ -33,9 +33,13 @@ void manageTerminal(void *param)
                 eth.localIP().toString().c_str(),
                 eth.gatewayIP().toString().c_str());
           }
+          else if (strcmp(serialString, "sd") == 0) {
+            debug_printf(LOG_INFO, "Getting SD card info...\n");
+            printSDInfo();
+          }
           else {
             debug_printf(LOG_INFO, "Unknown command: %s\n", serialString);
-            debug_printf(LOG_INFO, "Available commands: ps (print OS processes), ip (print IP address), reboot\n");
+            debug_printf(LOG_INFO, "Available commands: ps (print OS processes), ip (print IP address), sd (print SD card info), reboot\n");
           }
         }
     }

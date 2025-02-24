@@ -1,16 +1,6 @@
 #pragma once
 
-#include <W5500lwIP.h>
-#include <WebServer.h>
-#include <NTPClient.h>
-#include "../hardware/pins.h"
-#include <LittleFS.h>
-#include <ArduinoJson.h>
-#include <EEPROM.h>
-#include "../utils/logger.h"
-#include "MCP79410.h"
-#include "../utils/timeManager.h"
-#include "../utils/ledManager.h"
+#include "../sys_init.h"
 
 // EEPROM addresses
 #define EE_MAGIC_NUMBER 0x55
