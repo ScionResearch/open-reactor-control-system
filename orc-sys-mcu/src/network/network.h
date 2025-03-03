@@ -2,9 +2,9 @@
 
 #include "../sys_init.h"
 
-// EEPROM addresses
-#define EE_MAGIC_NUMBER 0x55
-#define EE_NETWORK_CONFIG_ADDRESS 1
+// LittleFS configuration
+#define CONFIG_FILENAME "/network_config.json"
+#define CONFIG_MAGIC_NUMBER 0x55
 
 // Timing defines
 #define NTP_MIN_SYNC_INTERVAL 70000   // Too frequent NTP requests will cause failed connections - 70s minimum

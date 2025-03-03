@@ -85,12 +85,74 @@ void setupEthernet()
 bool loadNetworkConfig()
 {
   debug_printf(LOG_INFO, "Loading network configuration:\n");
-  EEPROM.begin(512);
-  uint8_t magicNumber = EEPROM.read(0);
+  
+  // Check if LittleFS is mounted
+  if (!LittleFS.begin()) {
+    debug_printf(LOG_WARNING, "Failed to mount LittleFS\n");
+    return false;
+  }
+
+  // Check if config file exists
+  if (!LittleFS.exists(CONFIG_FILENAME)) {
+    debug_printf(LOG_WARNING, "Config file not found\n");
+    LittleFS.end();
+    return false;
+  }
+
+  // Open config file
+  File configFile = LittleFS.open(CONFIG_FILENAME, "r");
+  if (!configFile) {
+    debug_printf(LOG_WARNING, "Failed to open config file\n");
+    LittleFS.end();
+    return false;
+  }
+
+  // Allocate a buffer to store contents of the file
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, configFile);
+  configFile.close();
+
+  if (error) {
+    debug_printf(LOG_WARNING, "Failed to parse config file: %s\n", error.c_str());
+    LittleFS.end();
+    return false;
+  }
+
+  // Check magic number
+  uint8_t magicNumber = doc["magic_number"] | 0;
   debug_printf(LOG_INFO, "Magic number: %x\n", magicNumber);
-  if (magicNumber != EE_MAGIC_NUMBER) return false;
-  EEPROM.get(EE_NETWORK_CONFIG_ADDRESS, networkConfig);
-  EEPROM.end();
+  if (magicNumber != CONFIG_MAGIC_NUMBER) {
+    debug_printf(LOG_WARNING, "Invalid magic number\n");
+    LittleFS.end();
+    return false;
+  }
+
+  // Parse network configuration
+  networkConfig.useDHCP = doc["use_dhcp"] | true;
+  
+  // Parse IP addresses
+  IPAddress ip, subnet, gateway, dns;
+  if (ip.fromString(doc["ip"] | "192.168.1.100")) networkConfig.ip = ip;
+  if (subnet.fromString(doc["subnet"] | "255.255.255.0")) networkConfig.subnet = subnet;
+  if (gateway.fromString(doc["gateway"] | "192.168.1.1")) networkConfig.gateway = gateway;
+  if (dns.fromString(doc["dns"] | "8.8.8.8")) networkConfig.dns = dns;
+  
+  // Parse strings
+  strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor", sizeof(networkConfig.hostname));
+  strlcpy(networkConfig.ntpServer, doc["ntp_server"] | "pool.ntp.org", sizeof(networkConfig.ntpServer));
+  strlcpy(networkConfig.timezone, doc["timezone"] | "+13:00", sizeof(networkConfig.timezone));
+  
+  // Parse booleans
+  networkConfig.ntpEnabled = doc["ntp_enabled"] | false;
+  networkConfig.dstEnabled = doc["dst_enabled"] | false;
+  
+  // Parse MQTT configuration
+  strlcpy(networkConfig.mqttBroker, doc["mqtt_broker"] | "", sizeof(networkConfig.mqttBroker));
+  networkConfig.mqttPort = doc["mqtt_port"] | 1883;
+  strlcpy(networkConfig.mqttUsername, doc["mqtt_username"] | "", sizeof(networkConfig.mqttUsername));
+  strlcpy(networkConfig.mqttPassword, doc["mqtt_password"] | "", sizeof(networkConfig.mqttPassword));
+
+  LittleFS.end();
   //debugPrintNetConfig(networkConfig);
   return true;
 }
@@ -99,11 +161,59 @@ void saveNetworkConfig()
 {
   debug_printf(LOG_INFO, "Saving network configuration:\n");
   debugPrintNetConfig(networkConfig);
-  EEPROM.begin(512);
-  EEPROM.put(EE_NETWORK_CONFIG_ADDRESS, networkConfig);
-  EEPROM.update(0, EE_MAGIC_NUMBER);
-  EEPROM.commit();
-  EEPROM.end();
+  
+  // Check if LittleFS is mounted
+  if (!LittleFS.begin()) {
+    debug_printf(LOG_WARNING, "Failed to mount LittleFS\n");
+    return;
+  }
+
+  // Create JSON document
+  StaticJsonDocument<512> doc;
+  
+  // Store magic number
+  doc["magic_number"] = CONFIG_MAGIC_NUMBER;
+  
+  // Store network configuration
+  doc["use_dhcp"] = networkConfig.useDHCP;
+  
+  // Store IP addresses as strings
+  doc["ip"] = networkConfig.ip.toString();
+  doc["subnet"] = networkConfig.subnet.toString();
+  doc["gateway"] = networkConfig.gateway.toString();
+  doc["dns"] = networkConfig.dns.toString();
+  
+  // Store strings
+  doc["hostname"] = networkConfig.hostname;
+  doc["ntp_server"] = networkConfig.ntpServer;
+  doc["timezone"] = networkConfig.timezone;
+  
+  // Store booleans
+  doc["ntp_enabled"] = networkConfig.ntpEnabled;
+  doc["dst_enabled"] = networkConfig.dstEnabled;
+  
+  // Store MQTT configuration
+  doc["mqtt_broker"] = networkConfig.mqttBroker;
+  doc["mqtt_port"] = networkConfig.mqttPort;
+  doc["mqtt_username"] = networkConfig.mqttUsername;
+  doc["mqtt_password"] = networkConfig.mqttPassword;
+  
+  // Open file for writing
+  File configFile = LittleFS.open(CONFIG_FILENAME, "w");
+  if (!configFile) {
+    debug_printf(LOG_WARNING, "Failed to open config file for writing\n");
+    LittleFS.end();
+    return;
+  }
+  
+  // Write to file
+  if (serializeJson(doc, configFile) == 0) {
+    debug_printf(LOG_WARNING, "Failed to write config file\n");
+  }
+  
+  // Close file
+  configFile.close();
+  LittleFS.end();
 }
 
 bool applyNetworkConfig()
@@ -222,7 +332,7 @@ void setupNetworkAPI()
               // Update DST setting
               networkConfig.dstEnabled = doc["dst"] | false;
 
-              // Save configuration to EEPROM
+              // Save configuration to storage
               saveNetworkConfig();
 
               // Send success response before applying changes
@@ -329,7 +439,7 @@ void setupMqttAPI()
             strlcpy(networkConfig.mqttPassword, newPassword, sizeof(networkConfig.mqttPassword));
         }
 
-        // Save configuration to EEPROM
+        // Save configuration to storage
         saveNetworkConfig();
 
         // Send success response
@@ -415,12 +525,12 @@ void setupTimeAPI()
             }
             handleNTPUpdates(true);
             server.send(200, "application/json", "{\"status\": \"success\", \"message\": \"NTP enabled, manual time update ignored\"}");
-            saveNetworkConfig(); // Save to EEPROM when NTP settings change
+            saveNetworkConfig(); // Save to storage when NTP settings change
             return;
           }
           if (ntpWasEnabled) {
             server.send(200, "application/json", "{\"status\": \"success\", \"message\": \"NTP disabled, manual time update required\"}");
-            saveNetworkConfig(); // Save to EEPROM when NTP settings change
+            saveNetworkConfig(); // Save to storage when NTP settings change
           }
         }
 
@@ -501,6 +611,7 @@ void handleRoot()
   handleFile("/index.html");
 }
 
+// Handle file requests - retrieve from LittleFS and send to client
 void handleFile(const char *path)
 {
   if(eth.status() != WL_CONNECTED) {

@@ -7,7 +7,6 @@
 #include <NTPClient.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
-#include <EEPROM.h>
 #include <SdFat.h>
 #include <SPI.h>
 #include <sdios.h>
