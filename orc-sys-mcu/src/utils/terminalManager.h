@@ -4,3 +4,4 @@
 
 void init_terminalManager(void);
 void manageTerminal(void *param);
+void psPrint(void);

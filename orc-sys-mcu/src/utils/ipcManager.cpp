@@ -6,5 +6,5 @@ void init_ipcManager(void) {
     Serial1.setTX(PIN_SI_TX);
     ipc.begin(115200);
     // Add in handshaking checks here...
-    debug_printf(LOG_INFO, "Inter-processor communication setup complete\n");
+    log(LOG_INFO, false, "Inter-processor communication setup complete\n");
   }

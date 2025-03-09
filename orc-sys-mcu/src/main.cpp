@@ -4,17 +4,17 @@ void setup() // Eth interface (keep RTOS tasks out of core 0)
 {
   init_core0(); // All core 0 initialisation in this function
 
-  debug_printf(LOG_INFO, "Core 0 setup complete\n");
+  log(LOG_INFO, false, "Core 0 setup complete\n");
   core0setupComplete = true;
   while (!core1setupComplete) delay(100);
   if (networkConfig.ntpEnabled) handleNTPUpdates(true);
-  debug_printf(LOG_INFO, "<---System initialisation complete --->\n\n");
+  log(LOG_INFO, false, "<---System initialisation complete --->\n\n");
 }
 
 void setup1()
 {
   while (!serialReady) delay(100);
-  debug_printf(LOG_INFO, "Core 1 setup started\n");
+  log(LOG_INFO, false, "Core 1 setup started\n");
   init_core1(); // All core 1 initialisation in this function
 
   // Set System Status
@@ -24,7 +24,7 @@ void setup1()
   // MQTT not yet implemented
   setLEDcolour(LED_MQTT_STATUS, LED_STATUS_OFF); 
 
-  debug_printf(LOG_INFO, "Core 1 setup complete\n");
+  log(LOG_INFO, false, "Core 1 setup complete\n");
   core1setupComplete = true;
   while (!core0setupComplete) delay(100);
 }

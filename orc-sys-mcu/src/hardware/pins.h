@@ -19,6 +19,9 @@
 #define PIN_I2C_EXT_SCL 9
 
 // SD card pins
+#define PIN_SDIO_CLK 10
+#define PIN_SDIO_CMD 11
+#define PIN_SDIO_D0 12
 #define PIN_SD_SCK 10
 #define PIN_SD_MOSI 11
 #define PIN_SD_MISO 12

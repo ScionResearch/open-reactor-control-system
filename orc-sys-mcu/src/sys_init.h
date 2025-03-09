@@ -7,9 +7,7 @@
 #include <NTPClient.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
-#include <SdFat.h>
 #include <SPI.h>
-#include <sdios.h>
 #include "Adafruit_Neopixel.h"
 #include "FreeRTOS.h"
 #include "task.h"

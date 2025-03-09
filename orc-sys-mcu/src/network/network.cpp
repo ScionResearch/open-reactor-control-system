@@ -29,7 +29,7 @@ void setupEthernet()
   if (!loadNetworkConfig())
   {
     // Set default configuration if load fails
-    debug_printf(LOG_INFO, "Invalid network configuration, using defaults\n");
+    log(LOG_INFO, false, "Invalid network configuration, using defaults\n");
     networkConfig.ntpEnabled = false;
     networkConfig.useDHCP = true;
     networkConfig.ip = IPAddress(192, 168, 1, 100);
@@ -55,7 +55,7 @@ void setupEthernet()
   // Apply network configuration
   if (!applyNetworkConfig())
   {
-    debug_printf(LOG_WARNING, "Failed to apply network configuration\n");
+    log(LOG_WARNING, false, "Failed to apply network configuration\n");
   }
 
   else {
@@ -64,18 +64,18 @@ void setupEthernet()
     eth.macAddress(mac);
     snprintf(deviceMacAddress, sizeof(deviceMacAddress), "%02X:%02X:%02X:%02X:%02X:%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    debug_printf(LOG_INFO, "MAC Address: %s\n", deviceMacAddress);
+    log(LOG_INFO, false, "MAC Address: %s\n", deviceMacAddress);
   }
 
   // Wait for Ethernet to connect
-  delay(2000);
+  vTaskDelay(pdMS_TO_TICKS(2000));
 
   if (eth.linkStatus() == LinkOFF) {
-    debug_printf(LOG_WARNING, "Ethernet not connected\n");
+    log(LOG_WARNING, false, "Ethernet not connected\n");
     ethernetConnected = false;
   }
   else {
-    debug_printf(LOG_INFO, "Ethernet connected, IP address: %s, Gateway: %s\n",
+    log(LOG_INFO, false, "Ethernet connected, IP address: %s, Gateway: %s\n",
                 eth.localIP().toString().c_str(),
                 eth.gatewayIP().toString().c_str());
     ethernetConnected = true;
@@ -84,17 +84,17 @@ void setupEthernet()
 
 bool loadNetworkConfig()
 {
-  debug_printf(LOG_INFO, "Loading network configuration:\n");
+  log(LOG_INFO, true, "Loading network configuration:\n");
   
   // Check if LittleFS is mounted
   if (!LittleFS.begin()) {
-    debug_printf(LOG_WARNING, "Failed to mount LittleFS\n");
+    log(LOG_WARNING, true, "Failed to mount LittleFS\n");
     return false;
   }
 
   // Check if config file exists
   if (!LittleFS.exists(CONFIG_FILENAME)) {
-    debug_printf(LOG_WARNING, "Config file not found\n");
+    log(LOG_WARNING, true, "Config file not found\n");
     LittleFS.end();
     return false;
   }
@@ -102,7 +102,7 @@ bool loadNetworkConfig()
   // Open config file
   File configFile = LittleFS.open(CONFIG_FILENAME, "r");
   if (!configFile) {
-    debug_printf(LOG_WARNING, "Failed to open config file\n");
+    log(LOG_WARNING, true, "Failed to open config file\n");
     LittleFS.end();
     return false;
   }
@@ -113,16 +113,16 @@ bool loadNetworkConfig()
   configFile.close();
 
   if (error) {
-    debug_printf(LOG_WARNING, "Failed to parse config file: %s\n", error.c_str());
+    log(LOG_WARNING, true, "Failed to parse config file: %s\n", error.c_str());
     LittleFS.end();
     return false;
   }
 
   // Check magic number
   uint8_t magicNumber = doc["magic_number"] | 0;
-  debug_printf(LOG_INFO, "Magic number: %x\n", magicNumber);
+  log(LOG_INFO, true, "Magic number: %x\n", magicNumber);
   if (magicNumber != CONFIG_MAGIC_NUMBER) {
-    debug_printf(LOG_WARNING, "Invalid magic number\n");
+    log(LOG_WARNING, true, "Invalid magic number\n");
     LittleFS.end();
     return false;
   }
@@ -159,12 +159,12 @@ bool loadNetworkConfig()
 
 void saveNetworkConfig()
 {
-  debug_printf(LOG_INFO, "Saving network configuration:\n");
+  log(LOG_INFO, true, "Saving network configuration:\n");
   debugPrintNetConfig(networkConfig);
   
   // Check if LittleFS is mounted
   if (!LittleFS.begin()) {
-    debug_printf(LOG_WARNING, "Failed to mount LittleFS\n");
+    log(LOG_WARNING, true, "Failed to mount LittleFS\n");
     return;
   }
 
@@ -201,14 +201,14 @@ void saveNetworkConfig()
   // Open file for writing
   File configFile = LittleFS.open(CONFIG_FILENAME, "w");
   if (!configFile) {
-    debug_printf(LOG_WARNING, "Failed to open config file for writing\n");
+    log(LOG_WARNING, true, "Failed to open config file for writing\n");
     LittleFS.end();
     return;
   }
   
   // Write to file
   if (serializeJson(doc, configFile) == 0) {
-    debug_printf(LOG_WARNING, "Failed to write config file\n");
+    log(LOG_WARNING, true, "Failed to write config file\n");
   }
   
   // Close file
@@ -226,7 +226,7 @@ bool applyNetworkConfig()
     
     if (!eth.begin())
     {
-      debug_printf(LOG_INFO, "Failed to configure Ethernet using DHCP, falling back to 192.168.1.10\n");
+      log(LOG_WARNING, true, "Failed to configure Ethernet using DHCP, falling back to 192.168.1.10\n");
       IPAddress defaultIP = {192, 168, 1, 10};
       eth.config(defaultIP);
       if (!eth.begin()) return false;
@@ -339,7 +339,7 @@ void setupNetworkAPI()
               server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Configuration saved\"}");
 
               // Apply new configuration after a short delay
-              delay(100);
+              vTaskDelay(pdMS_TO_TICKS(100));
               rp2040.reboot(); // Use proper RP2040 reset function
             });
 }
@@ -349,7 +349,7 @@ void setupWebServer()
   // Initialize LittleFS for serving web files
   if (!LittleFS.begin())
   {
-    debug_printf(LOG_ERROR, "LittleFS Mount Failed\n");
+    log(LOG_ERROR, true, "LittleFS Mount Failed\n");
     return;
   }
 
@@ -373,7 +373,7 @@ void setupWebServer()
   server.on("/api/power", HTTP_GET, []() {
         StaticJsonDocument<200> doc;
         
-        xSemaphoreTake(statusMutex, portMAX_DELAY);
+        xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100));
         doc["mainVoltage"] = status.Vpsu;
         doc["v20Voltage"] = status.V20;
         doc["v5Voltage"] = status.V5;
@@ -392,7 +392,7 @@ void setupWebServer()
                     { handleFile(server.uri().c_str()); });
 
   server.begin();
-  debug_printf(LOG_INFO, "HTTP server started\n");
+  log(LOG_INFO, true, "HTTP server started\n");
   
   // Set Webserver Status LED
   setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
@@ -483,25 +483,25 @@ void setupTimeAPI()
         String json = server.arg("plain");
         DeserializationError error = deserializeJson(doc, json);
 
-        debug_printf(LOG_INFO, "Received JSON: %s\n", json.c_str());
+        log(LOG_INFO, true, "Received JSON: %s\n", json.c_str());
         
         if (error) {
             server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
-            debug_printf(LOG_ERROR, "JSON parsing error: %s\n", error.c_str());
+            log(LOG_ERROR, true, "JSON parsing error: %s\n", error.c_str());
             return;
         }
 
         // Validate required fields
         if (!doc.containsKey("date") || !doc.containsKey("time")) {
             server.send(400, "application/json", "{\"error\":\"Missing required fields\"}");
-            debug_printf(LOG_ERROR, "Missing required fields in JSON\n");
+            log(LOG_ERROR, true, "Missing required fields in JSON\n");
             return;
         }
 
         // Update timezone if provided
         if (doc.containsKey("timezone")) {
           const char* tz = doc["timezone"];
-          debug_printf(LOG_INFO, "Received timezone: %s\n", tz);
+          log(LOG_INFO, true, "Received timezone: %s\n", tz);
           // Basic timezone format validation (+/-HH:MM)
           int tzHour, tzMin;
           if (sscanf(tz, "%d:%d", &tzHour, &tzMin) != 2 ||
@@ -511,7 +511,7 @@ void setupTimeAPI()
           }
           strncpy(networkConfig.timezone, tz, sizeof(networkConfig.timezone) - 1);
           networkConfig.timezone[sizeof(networkConfig.timezone) - 1] = '\0';
-          debug_printf(LOG_INFO, "Updated timezone: %s\n", networkConfig.timezone);
+          log(LOG_INFO, true, "Updated timezone: %s\n", networkConfig.timezone);
         }
 
         // Update NTP enabled status if provided
@@ -545,7 +545,7 @@ void setupTimeAPI()
         if (sscanf(dateStr, "%hu-%hhu-%hhu", &year, &month, &day) != 3 ||
             year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) {
             server.send(400, "application/json", "{\"error\": \"Invalid date format or values\"}");
-            debug_printf(LOG_ERROR, "Invalid date format or values in JSON\n");
+            log(LOG_ERROR, true, "Invalid date format or values in JSON\n");
             return;
         }
 
@@ -575,7 +575,7 @@ void manageEthernet(void)
       ethernetConnected = false;
       setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
       setLEDcolour(LED_MQTT_STATUS, LED_STATUS_OFF);
-      debug_printf(LOG_INFO, "Ethernet disconnected, waiting for reconnect\n");
+      log(LOG_INFO, true, "Ethernet disconnected, waiting for reconnect\n");
     }
     else {
       handleWebServer();
@@ -585,10 +585,10 @@ void manageEthernet(void)
   else if (eth.linkStatus() == LinkON) {
     ethernetConnected = true;
     if(!applyNetworkConfig()) {
-      debug_printf(LOG_ERROR, "Failed to apply network configuration!\n");
+      log(LOG_ERROR, true, "Failed to apply network configuration!\n");
     }
     else {
-      debug_printf(LOG_INFO, "Ethernet re-connected, IP address: %s, Gateway: %s\n",
+      log(LOG_INFO, true, "Ethernet re-connected, IP address: %s, Gateway: %s\n",
                 eth.localIP().toString().c_str(),
                 eth.gatewayIP().toString().c_str());
     }
@@ -668,18 +668,21 @@ void ntpUpdate(void)
 
   if (!eth.linkStatus()) return;
 
+  // Add delay before NTP update to ensure network is ready
+  vTaskDelay(pdMS_TO_TICKS(500));
+
   if (!timeClient.update()) {
-    debug_printf(LOG_WARNING, "Failed to get time from NTP server, retrying\n");
+    log(LOG_WARNING, true, "Failed to get time from NTP server, retrying\n");
     bool updateSuccessful = false;
     for (int i = 0; i < 3; i++) {
       if (timeClient.update()) {
         updateSuccessful = true;
         break;
       }
-      delay(10);
+      vTaskDelay(pdMS_TO_TICKS(10));
    }
     if (!updateSuccessful) {
-      debug_printf(LOG_ERROR, "Failed to get time from NTP server, giving up\n");
+      log(LOG_ERROR, true, "Failed to get time from NTP server, giving up\n");
       return;
     }
   }
@@ -698,11 +701,11 @@ void ntpUpdate(void)
   DateTime newTime = epochToDateTime(epochTime);
   if (!updateGlobalDateTime(newTime))
   {
-    debug_printf(LOG_ERROR, "Failed to update time from NTP\n");
+    log(LOG_ERROR, true, "Failed to update time from NTP\n");
   }
   else
   {
-    debug_printf(LOG_INFO, "Time updated from NTP server\n");
+    log(LOG_INFO, true, "Time updated from NTP server\n");
   }
 }
 
@@ -715,7 +718,7 @@ void handleNTPUpdates(bool forceUpdate)
   if (timeSinceLastUpdate > NTP_UPDATE_INTERVAL || forceUpdate)
   {
     if (timeSinceLastUpdate < NTP_MIN_SYNC_INTERVAL) {
-      debug_printf(LOG_INFO, "Time since last NTP update: %ds - skipping\n", timeSinceLastUpdate/1000);
+      log(LOG_INFO, true, "Time since last NTP update: %ds - skipping\n", timeSinceLastUpdate/1000);
       return;
     }
     ntpUpdate();
@@ -726,14 +729,14 @@ void handleNTPUpdates(bool forceUpdate)
 // Debug functions --------------------------------------------------------->
 void debugPrintNetConfig(NetworkConfig config)
 {
-  debug_printf(LOG_INFO, "Mode: %s\n", config.useDHCP ? "DHCP" : "Static");
-  debug_printf(LOG_INFO, "IP: %s\n", config.ip.toString().c_str());
-  debug_printf(LOG_INFO, "Subnet: %s\n", config.subnet.toString().c_str());
-  debug_printf(LOG_INFO, "Gateway: %s\n", config.gateway.toString().c_str());
-  debug_printf(LOG_INFO, "DNS: %s\n", config.dns.toString().c_str());
-  debug_printf(LOG_INFO, "Timezone: %s\n", config.timezone);
-  debug_printf(LOG_INFO, "Hostname: %s\n", config.hostname);
-  debug_printf(LOG_INFO, "NTP Server: %s\n", config.ntpServer);
-  debug_printf(LOG_INFO, "NTP Enabled: %s\n", config.ntpEnabled ? "true" : "false");
-  debug_printf(LOG_INFO, "DST Enabled: %s\n", config.dstEnabled ? "true" : "false");
+  log(LOG_INFO, true, "Mode: %s\n", config.useDHCP ? "DHCP" : "Static");
+  log(LOG_INFO, true, "IP: %s\n", config.ip.toString().c_str());
+  log(LOG_INFO, true, "Subnet: %s\n", config.subnet.toString().c_str());
+  log(LOG_INFO, true, "Gateway: %s\n", config.gateway.toString().c_str());
+  log(LOG_INFO, true, "DNS: %s\n", config.dns.toString().c_str());
+  log(LOG_INFO, true, "Timezone: %s\n", config.timezone);
+  log(LOG_INFO, true, "Hostname: %s\n", config.hostname);
+  log(LOG_INFO, true, "NTP Server: %s\n", config.ntpServer);
+  log(LOG_INFO, true, "NTP Enabled: %s\n", config.ntpEnabled ? "true" : "false");
+  log(LOG_INFO, true, "DST Enabled: %s\n", config.dstEnabled ? "true" : "false");
 }

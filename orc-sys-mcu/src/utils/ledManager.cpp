@@ -11,7 +11,7 @@ void init_ledManager() {
     // Create synchronization primitives
     statusMutex = xSemaphoreCreateMutex();
     if (statusMutex == NULL) {
-        debug_printf(LOG_ERROR, "Failed to create statusMutex!\n");
+        log(LOG_ERROR, false, "Failed to create statusMutex!\n");
         while (1);
     }
     xTaskCreate(statusLEDs, "LED stat", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
@@ -20,7 +20,7 @@ void init_ledManager() {
 // Thread-safe LED colour setter
 bool setLEDcolour(uint8_t led, uint32_t colour) {
     if (led > 3) {
-      debug_printf(LOG_ERROR, "Invalid LED number: %d\n", led);
+      log(LOG_ERROR, true,"Invalid LED number: %d\n", led);
       return false;
     }
     if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -44,7 +44,7 @@ void statusLEDs(void *param)
   leds.setBrightness(50);
   leds.fill(LED_COLOR_OFF, 0, 4);
   leds.show();
-  debug_printf(LOG_INFO, "LED status task started\n");
+  log(LOG_INFO, false, "LED status task started\n");
 
   // Task loop
   while (1) {

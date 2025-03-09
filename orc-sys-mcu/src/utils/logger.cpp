@@ -24,13 +24,13 @@ void init_logger(void) {
     else serialReady = true;
 }
 
-void debug_printf(uint8_t logLevel, const char* format, ...) {
+void log(uint8_t logLevel, bool logToSD, const char* format, ...) {
     // Create a buffer to store the output
     static char buffer[DEBUG_PRINTF_BUFFER_SIZE];
     DateTime now;
     
     // Acquire the Mutex: Blocks until the Mutex becomes available.
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
       
         // Prepare the log level string.
         const char* logLevelStr = (logLevel < sizeof(logType) / sizeof(logType[0])) ? logType[logLevel] : "UNKNOWN";
@@ -50,7 +50,7 @@ void debug_printf(uint8_t logLevel, const char* format, ...) {
         
         // Check for errors or truncation.
         if(len > 0) {
-            writeLog(buffer);
+            if (sdReady && logToSD) writeLog(buffer);
             if (debug) Serial.print(buffer);
         } else if (debug) {
             Serial.println("Error during debug_printf: formatting error or buffer overflow");
@@ -62,28 +62,4 @@ void debug_printf(uint8_t logLevel, const char* format, ...) {
         // Error: Failed to acquire the Mutex. Print error message on the unprotected port
         Serial.println("Error: Failed to acquire Serial Mutex for debug_printf!");
     }
-}
-
-void osDebugPrint(void)
-{
-  const char *taskStateName[5] = {
-      "Ready",
-      "Blocked",
-      "Suspended",
-      "Deleted",
-      "Invalid"};
-  int numberOfTasks = uxTaskGetNumberOfTasks();
-
-  TaskStatus_t *pxTaskStatusArray = new TaskStatus_t[numberOfTasks];
-  uint32_t runtime;
-  numberOfTasks = uxTaskGetSystemState(pxTaskStatusArray, numberOfTasks, &runtime);
-  debug_printf(LOG_INFO, "Tasks: %d\n", numberOfTasks);
-  for (int i = 0; i < numberOfTasks; i++)
-  {
-    int currentState = pxTaskStatusArray[i].eCurrentState;
-    debug_printf(LOG_INFO, "ID: %d %s | Current state: %s | Priority: %u | Free stack: %u | Runtime: %u\n",
-        i, pxTaskStatusArray[i].pcTaskName, taskStateName[currentState], pxTaskStatusArray[i].uxBasePriority,
-        pxTaskStatusArray[i].usStackHighWaterMark, pxTaskStatusArray[i].ulRunTimeCounter);
-  }
-  delete[] pxTaskStatusArray;
 }

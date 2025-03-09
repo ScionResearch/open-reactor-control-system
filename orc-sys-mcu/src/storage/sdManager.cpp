@@ -10,15 +10,15 @@ bool sdInserted = false;
 void init_sdManager(void) {
     sdMutex = xSemaphoreCreateMutex();
   if (sdMutex == NULL) {
-    debug_printf(LOG_ERROR, "Failed to create sdMutex!\n");
+    log(LOG_ERROR, false, "Failed to create sdMutex!\n");
     while (1);
   }
-  xTaskCreate(manageSD, "SD mngr", 512, NULL, 1, NULL);
+  xTaskCreate(manageSD, "SD mngr", 1024, NULL, 1, NULL);
 }
 
 void manageSD(void *param) {
     (void)param;
-    debug_printf(LOG_INFO, "Initialising SD card\n");
+    log(LOG_INFO, false, "Initialising SD card\n");
     SPI1.setMISO(PIN_SD_MISO);
     SPI1.setMOSI(PIN_SD_MOSI);
     SPI1.setSCK(PIN_SD_SCK);
@@ -36,23 +36,30 @@ void manageSD(void *param) {
 
 void mountSD(void) {
     if (digitalRead(PIN_SD_CD)) {
-        debug_printf(LOG_WARNING, "SD card not inserted\n");
+        log(LOG_WARNING, false,"SD card not inserted\n");
         sdInserted = false;
         sdReady = false;
+        
         return;
     }
     else {
+        bool sdSPIinitialised = false;
+        bool sdSDIOinitialised = false;
         sdInserted = true;
         if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (!sd.begin(SdSpiConfig(PIN_SD_CS, DEDICATED_SPI, SD_SCK_MHZ(4), &SPI1))) {
-                if (sd.card()->errorCode()) {
-                    debug_printf(LOG_ERROR, "SD card initialisation failed with error code %d\n", sd.card()->errorCode());
-                }
-                sdReady = false;
-            }
-            else {
-                debug_printf(LOG_INFO, "SD card initialisation successful\n");
+            if (!sd.begin(SDIO_CONFIG)) {
+                log(LOG_ERROR, false, "SD card initialisation with SDIO config failed, attempting SPI config\n");
+                if (!sd.begin(SdSpiConfig(PIN_SD_CS, DEDICATED_SPI, SD_SCK_MHZ(4), &SPI1))) {
+                    if (sd.card()->errorCode()) {
+                        log(LOG_ERROR, false, "SD card initialisation failed with error code %d\n", sd.card()->errorCode());
+                    }
+                } else sdSPIinitialised = true;
+
+            } else sdSDIOinitialised = true;
+            if (sdSPIinitialised || sdSDIOinitialised) {
+                log(LOG_INFO, false, "SD card initialisation successful, using %s\n", sdSPIinitialised ? "SPI" : "SDIO");
                 // Check for correct folder structure and create if missing
+                log(LOG_INFO, false, "Checking for correct folder structure\n");
                 if (!sd.exists("/sensors")) sd.mkdir("/sensors");
                 if (!sd.exists("/logs")) sd.mkdir("/logs");
                 // Check for log files and create if missing
@@ -65,36 +72,60 @@ void mountSD(void) {
                     file.close();
                 }
                 sdReady = true;
-                printSDInfo();
             }
             xSemaphoreGive(sdMutex);
+            if (sdReady) log(LOG_INFO, false, "SD card mounted OK\n");
+            printSDInfo();
         }
     }
 }
 
 void maintainSD(void) {
     if (digitalRead(PIN_SD_CD) && sdInserted) {
-        debug_printf(LOG_WARNING, "SD card removed\n");
+        log(LOG_WARNING, false, "SD card removed\n");
         sdInserted = false;
         sdReady = false;
     }
 }
 
+uint64_t getFileSize(const char* path) {
+    FsFile file;
+    uint64_t size = 0;
+    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (sd.exists(path)) {
+            if (file.open(path, O_RDONLY)) {
+                size = file.fileSize();
+                file.close();
+            }
+        }
+        xSemaphoreGive(sdMutex);
+    } //else log(LOG_INFO, false, "SD mutex not available for get file size operation\n");
+    return size;
+}
+
 void printSDInfo(void) {
     if (!sdReady) {
-        if (digitalRead(PIN_SD_CD)) debug_printf(LOG_INFO, "SD card not inserted\n");
-        else debug_printf(LOG_INFO, "SD card not ready\n");
+        if (digitalRead(PIN_SD_CD)) log(LOG_INFO, false, "SD card not inserted\n");
+        else log(LOG_INFO, false, "SD card not ready\n");
         return;
     }
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         uint32_t size = sd.card()->sectorCount();
-        debug_printf(LOG_INFO, "SD card size: %d sectors, %0.1f GB\n", size, 0.000000512 * (float)size + 0.5);
-        debug_printf(LOG_INFO, "Volume is FAT%d\n", sd.vol()->fatType());
-        debug_printf(LOG_INFO, "Cluster size (bytes): %d\n", sd.vol()->bytesPerCluster());
-        debug_printf(LOG_INFO, "Files found (date time size name):\n[INFO] ");
-        sd.ls(LS_R | LS_DATE | LS_SIZE);
+        log(LOG_INFO, false, "SD card size: %d sectors, %0.1f GB\n", size, 0.000000512 * (float)size);
+        log(LOG_INFO, false, "Free space: %0.1f GB\n", 0.000000001 * (float)sd.vol()->bytesPerCluster() * (float)sd.freeClusterCount());
+        log(LOG_INFO, false, "Volume is FAT%d\n", sd.vol()->fatType());
         xSemaphoreGive(sdMutex);
+
+        log(LOG_INFO, false, "File info:\n");
+        
+        // Get file sizes using the helper function
+        uint64_t logFileSize = getFileSize("/logs/system.txt");
+        uint64_t sensorFileSize = getFileSize("/sensors/sensors.csv");
+        
+        log(LOG_INFO, false, "Log file size: %0.1f kbytes\n", 0.001 * (float)logFileSize);
+        log(LOG_INFO, false, "Sensor file size: %0.1f kbytes\n", 0.001 * (float)sensorFileSize);
     }
+    else log(LOG_INFO, false, "SD mutex not available\n");
 }
 
 void dateTimeCallback(uint16_t* date, uint16_t* time) {
@@ -118,6 +149,37 @@ void writeLog(const char *message) {
 
     char buf[strlen(dateTimeStr) + strlen(message) + 10];
     snprintf(buf, sizeof(buf), "[%s]\t\t%s", dateTimeStr, message);
+
+    // Log file size check
+    uint64_t logFileSize = getFileSize("/logs/system.txt");
+    if (logFileSize > SD_LOG_MAX_SIZE) {
+        // Rename the existing log file and create a new one
+        char fNameBuf[50];
+        snprintf(fNameBuf, sizeof(fNameBuf), "/logs/system-log-archive-%04d-%02d-%02d.txt", now.year, now.month, now.day);
+        
+        if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (!sd.exists(fNameBuf)) {
+                for (int i = 0; i < 100; i++) {
+                    char tempBuf[50];
+                    snprintf(tempBuf, sizeof(tempBuf), "%s-%d", fNameBuf, i);
+                    if (!sd.exists(tempBuf)) {
+                        strcpy(fNameBuf, tempBuf);
+                        break;
+                    }
+                }
+            }
+            if (sd.exists("/logs/system.txt")) {
+                sd.rename("/logs/system.txt", fNameBuf);
+            }
+            file = sd.open("/logs/system.txt", O_CREAT | O_RDWR | O_APPEND);
+            if (file) {
+                file.print(buf);
+                file.close();
+            }
+            xSemaphoreGive(sdMutex);
+        }
+        return;
+    }
 
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         file = sd.open("/logs/system.txt", O_CREAT | O_RDWR | O_APPEND);

@@ -10,7 +10,7 @@ void init_timeManager(void) {
      // Create synchronization primitives
   dateTimeMutex = xSemaphoreCreateMutex();
   if (dateTimeMutex == NULL) {
-    debug_printf(LOG_ERROR, "Failed to create dateTimeMutex!\n");
+    log(LOG_ERROR, false, "Failed to create dateTimeMutex!\n");
     while (1);
   }
   xTaskCreate(manageRTC, "RTC updt", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
@@ -37,7 +37,7 @@ void manageRTC(void *param)
 
   if (!rtc.begin())
   {
-    debug_printf(LOG_ERROR, "RTC initialization failed!\n");
+    log(LOG_ERROR, false, "RTC initialization failed!\n");
     return;
   }
 
@@ -45,10 +45,10 @@ void manageRTC(void *param)
   DateTime now;
   rtc.getDateTime(&now);
   memcpy(&globalDateTime, &now, sizeof(DateTime)); // Initialize global DateTime directly
-  debug_printf(LOG_INFO, "Current date and time is: %04d-%02d-%02d %02d:%02d:%02d\n",
+  log(LOG_INFO, false, "Current date and time is: %04d-%02d-%02d %02d:%02d:%02d\n",
                 now.year, now.month, now.day, now.hour, now.minute, now.second);
                 
-  debug_printf(LOG_INFO, "RTC update task started\n");
+  log(LOG_INFO, false, "RTC update task started\n");
 
   // Task loop
   while (1)
@@ -87,7 +87,7 @@ bool updateGlobalDateTime(const DateTime &dt) {
     if (xSemaphoreTake(dateTimeMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         bool success = false;
         for (int retry = 0; retry < maxRetries; ++retry) {
-            debug_printf(LOG_INFO, "Attempt %d: Setting RTC to: %04d-%02d-%02d %02d:%02d:%02d\n",
+            log(LOG_INFO, false, "Attempt %d: Setting RTC to: %04d-%02d-%02d %02d:%02d:%02d\n",
                           retry + 1, dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
 
             rtc.setDateTime(dt); // Set RTC time
@@ -102,18 +102,18 @@ bool updateGlobalDateTime(const DateTime &dt) {
                   currentTime.hour == dt.hour &&
                   currentTime.minute == dt.minute &&
                   currentTime.second == dt.second) {
-                    debug_printf(LOG_INFO, "RTC verification successful after %d retries.\n", retry);
+                    log(LOG_INFO, false, "RTC verification successful after %d retries.\n", retry);
                     memcpy(&globalDateTime, &dt, sizeof(DateTime)); // Update global time after successful write
                     success = true;
                     break; // Exit retry loop on success
               } else {
-                debug_printf(LOG_ERROR, "RTC verification failed, current time: %04d-%02d-%02d %02d:%02d:%02d, expected time: %04d-%02d-%02d %02d:%02d:%02d\n", 
+                log(LOG_ERROR, true, "RTC verification failed, current time: %04d-%02d-%02d %02d:%02d:%02d, expected time: %04d-%02d-%02d %02d:%02d:%02d\n", 
                         currentTime.year, currentTime.month, currentTime.day,
                         currentTime.hour, currentTime.minute, currentTime.second,
                         dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
               }
             } else {
-                debug_printf(LOG_ERROR, "Failed to read time from RTC during verification.\n");
+                log(LOG_ERROR, true, "Failed to read time from RTC during verification.\n");
             }
              
             if(retry < maxRetries - 1) {
@@ -123,16 +123,16 @@ bool updateGlobalDateTime(const DateTime &dt) {
 
         xSemaphoreGive(dateTimeMutex); // Release the mutex
         if(success) {
-           debug_printf(LOG_INFO, "Time successfully set to: %04d-%02d-%02d %02d:%02d:%02d\n",
+           log(LOG_INFO, true, "Time successfully set to: %04d-%02d-%02d %02d:%02d:%02d\n",
                           dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
            return true;
         } else {
-            debug_printf(LOG_ERROR, "Failed to set RTC time after maximum retries.\n");
+            log(LOG_ERROR, true, "Failed to set RTC time after maximum retries.\n");
             return false;
         }
 
     } else {
-        debug_printf(LOG_ERROR, "Failed to take dateTimeMutex in updateGlobalDateTime");
+        log(LOG_ERROR, true, "Failed to take dateTimeMutex in updateGlobalDateTime");
         return false;
     }
 }

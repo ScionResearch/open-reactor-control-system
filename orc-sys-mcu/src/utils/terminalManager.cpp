@@ -9,7 +9,7 @@ void manageTerminal(void *param)
   (void)param;  
   while (!core1setupComplete || !core0setupComplete) vTaskDelay(pdMS_TO_TICKS(100));
 
-  debug_printf(LOG_INFO, "Terminal task started\n");
+  log(LOG_INFO, false, "Terminal task started\n");
 
   // Task loop
   while (1) {
@@ -20,26 +20,26 @@ void manageTerminal(void *param)
       int bytesRead = Serial.readBytesUntil('\n', serialString, sizeof(serialString) - 1); // Leave room for null terminator
       if (bytesRead > 0 ) {
           serialString[bytesRead] = '\0'; // Add null terminator
-          debug_printf(LOG_INFO, "Received:  %s\n", serialString);
+          log(LOG_INFO, true,"Received:  %s\n", serialString);
           if (strcmp(serialString, "ps") == 0) {
-            osDebugPrint();
+            psPrint();
           }
           else if (strcmp(serialString, "reboot") == 0) {
-            debug_printf(LOG_INFO, "Rebooting now...\n");
+            log(LOG_INFO, true, "Rebooting now...\n");
             rp2040.restart();
           }
           else if (strcmp(serialString, "ip") == 0) {
-            debug_printf(LOG_INFO, "Ethernet connected, IP address: %s, Gateway: %s\n",
+            log(LOG_INFO, true, "Ethernet connected, IP address: %s, Gateway: %s\n",
                 eth.localIP().toString().c_str(),
                 eth.gatewayIP().toString().c_str());
           }
           else if (strcmp(serialString, "sd") == 0) {
-            debug_printf(LOG_INFO, "Getting SD card info...\n");
+            log(LOG_INFO, false, "Getting SD card info...\n");
             printSDInfo();
           }
           else {
-            debug_printf(LOG_INFO, "Unknown command: %s\n", serialString);
-            debug_printf(LOG_INFO, "Available commands: ps (print OS processes), ip (print IP address), sd (print SD card info), reboot\n");
+            log(LOG_INFO, false, "Unknown command: %s\n", serialString);
+            log(LOG_INFO, false, "Available commands: ps (print OS processes), ip (print IP address), sd (print SD card info), reboot\n");
           }
         }
     }
@@ -47,4 +47,29 @@ void manageTerminal(void *param)
     while(Serial.available()) Serial.read();
     vTaskDelay(pdMS_TO_TICKS(100));
   }
+}
+
+void psPrint(void)
+{
+    bool logToSD = true;
+    const char *taskStateName[5] = {
+        "Ready",
+        "Blocked",
+        "Suspended",
+        "Deleted",
+        "Invalid"};
+    int numberOfTasks = uxTaskGetNumberOfTasks();
+
+    TaskStatus_t *pxTaskStatusArray = new TaskStatus_t[numberOfTasks];
+    uint32_t runtime;
+    numberOfTasks = uxTaskGetSystemState(pxTaskStatusArray, numberOfTasks, &runtime);
+    log(LOG_INFO, logToSD, "Tasks: %d\n", numberOfTasks);
+    for (int i = 0; i < numberOfTasks; i++)
+    {
+        int currentState = pxTaskStatusArray[i].eCurrentState;
+        log(LOG_INFO, logToSD, "ID: %d %s | Current state: %s | Priority: %u | Free stack: %u | Runtime: %u\n",
+            i, pxTaskStatusArray[i].pcTaskName, taskStateName[currentState], pxTaskStatusArray[i].uxBasePriority,
+            pxTaskStatusArray[i].usStackHighWaterMark, pxTaskStatusArray[i].ulRunTimeCounter);
+    }
+    delete[] pxTaskStatusArray;
 }
