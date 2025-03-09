@@ -53,13 +53,13 @@ void log(uint8_t logLevel, bool logToSD, const char* format, ...) {
             if (sdReady && logToSD) writeLog(buffer);
             if (debug) Serial.print(buffer);
         } else if (debug) {
-            Serial.println("Error during debug_printf: formatting error or buffer overflow");
+            Serial.println("Error during logging: formatting error or buffer overflow");
         }
 
         // Release the mutex
         xSemaphoreGive(serialMutex);
     } else if (debug) {
         // Error: Failed to acquire the Mutex. Print error message on the unprotected port
-        Serial.println("Error: Failed to acquire Serial Mutex for debug_printf!");
+        Serial.println("Error: Failed to acquire Serial Mutex for log!");
     }
 }

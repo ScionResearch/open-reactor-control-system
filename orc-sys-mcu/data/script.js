@@ -141,6 +141,45 @@ async function updateLiveClock() {
            
                 clockElement.textContent = formattedTime;
             }
+
+            // Update NTP status if NTP is enabled
+            const ntpStatusContainer = document.getElementById('ntpStatusContainer');
+            const ntpStatusElement = document.getElementById('ntpStatus');
+            const lastNtpUpdateElement = document.getElementById('lastNtpUpdate');
+            
+            if (data.ntpEnabled) {
+                ntpStatusContainer.style.display = 'block';
+                
+                if (ntpStatusElement && data.hasOwnProperty('ntpStatus')) {
+                    // Clear previous classes
+                    ntpStatusElement.className = 'ntp-status';
+                    
+                    // Add status text and class
+                    let statusText = '';
+                    switch (data.ntpStatus) {
+                        case 0: // NTP_STATUS_CURRENT
+                            statusText = 'Current';
+                            ntpStatusElement.classList.add('ntp-status-current');
+                            break;
+                        case 1: // NTP_STATUS_STALE
+                            statusText = 'Stale';
+                            ntpStatusElement.classList.add('ntp-status-stale');
+                            break;
+                        case 2: // NTP_STATUS_FAILED
+                        default:
+                            statusText = 'Failed';
+                            ntpStatusElement.classList.add('ntp-status-failed');
+                            break;
+                    }
+                    ntpStatusElement.textContent = statusText;
+                }
+                
+                if (lastNtpUpdateElement && data.hasOwnProperty('lastNtpUpdate')) {
+                    lastNtpUpdateElement.textContent = data.lastNtpUpdate;
+                }
+            } else {
+                ntpStatusContainer.style.display = 'none';
+            }
         } catch (error) {
             console.error('Error updating clock:', error);
         }

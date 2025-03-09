@@ -9,6 +9,7 @@ WebServer server(80);
 // NTP update queue
 QueueHandle_t ntpUpdateQueue;
 uint32_t ntpUpdateTimestamp = 0 - NTP_MIN_SYNC_INTERVAL;
+uint32_t lastNTPUpdateTime = 0; // Last successful NTP update time
 
 // Device MAC address (stored as string)
 char deviceMacAddress[18];
@@ -453,7 +454,7 @@ void setupTimeAPI()
 {
   server.on("/api/time", HTTP_GET, []()
             {
-        StaticJsonDocument<200> doc;
+        StaticJsonDocument<256> doc;
         DateTime dt;
         if (getGlobalDateTime(dt)) {
             char dateStr[11];
@@ -469,6 +470,46 @@ void setupTimeAPI()
             doc["timezone"] = networkConfig.timezone;
             doc["ntpEnabled"] = networkConfig.ntpEnabled;
             doc["dst"] = networkConfig.dstEnabled;
+            
+            // Add NTP status information
+            if (networkConfig.ntpEnabled) {
+                // Calculate NTP status
+                uint8_t ntpStatus = NTP_STATUS_FAILED;
+                uint32_t timeSinceLastUpdate = 0;
+                
+                if (lastNTPUpdateTime > 0) {
+                    timeSinceLastUpdate = millis() - lastNTPUpdateTime;
+                    if (timeSinceLastUpdate < (NTP_UPDATE_INTERVAL * 3)) {
+                        ntpStatus = NTP_STATUS_CURRENT;
+                    } else {
+                        ntpStatus = NTP_STATUS_STALE;
+                    }
+                }
+                
+                doc["ntpStatus"] = ntpStatus;
+                
+                // Format last update time
+                if (lastNTPUpdateTime > 0) {
+                    char lastUpdateStr[20];
+                    uint32_t seconds = timeSinceLastUpdate / 1000;
+                    uint32_t minutes = seconds / 60;
+                    uint32_t hours = minutes / 60;
+                    uint32_t days = hours / 24;
+                    
+                    if (days > 0) {
+                        snprintf(lastUpdateStr, sizeof(lastUpdateStr), "%d days ago", days);
+                    } else if (hours > 0) {
+                        snprintf(lastUpdateStr, sizeof(lastUpdateStr), "%d hours ago", hours);
+                    } else if (minutes > 0) {
+                        snprintf(lastUpdateStr, sizeof(lastUpdateStr), "%d minutes ago", minutes);
+                    } else {
+                        snprintf(lastUpdateStr, sizeof(lastUpdateStr), "%d seconds ago", seconds);
+                    }
+                    doc["lastNtpUpdate"] = lastUpdateStr;
+                } else {
+                    doc["lastNtpUpdate"] = "Never";
+                }
+            }
             
             String response;
             serializeJson(doc, response);
@@ -706,6 +747,7 @@ void ntpUpdate(void)
   else
   {
     log(LOG_INFO, true, "Time updated from NTP server\n");
+    lastNTPUpdateTime = millis(); // Record the time of successful update
   }
 }
 

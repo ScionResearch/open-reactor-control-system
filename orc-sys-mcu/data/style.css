@@ -200,6 +200,34 @@ h1 {
     color: #333;
 }
 
+/* NTP Status Indicators */
+.ntp-status {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    margin-left: 5px;
+}
+
+.ntp-status-current {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.ntp-status-stale {
+    background-color: #FF9800;
+    color: white;
+}
+
+.ntp-status-failed {
+    background-color: #F44336;
+    color: white;
+}
+
+#lastNtpUpdate {
+    margin-left: 5px;
+}
+
 .power-supplies {
     padding: 15px;
 }
