@@ -120,24 +120,38 @@ h1 {
 }
 
 .form-group label {
-    width: 120px;
+    width: 150px;
     margin-right: 1rem;
     display: block;
     color: #555;
 }
 
-.form-group input[type=checkbox] {
-    width: auto;
-    align-items: left;
-}
-
+.form-group input[type=text],
+.form-group input[type=number],
+.form-group input[type=date],
+.form-group input[type=time],
+.form-group input[type=password],
 .form-group select {
     flex: 1;
-    max-width: 300px;
+    max-width: 250px;
     width: 100%;
     padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.form-group input[type=checkbox] {
+    width: auto;
+    margin-left: 0;
+    height: 18px;
+    width: 18px;
+}
+
+.form-group select {
+    background-color: #fff;
+    height: 36px;
 }
 
 .form-group input[disabled] {
@@ -162,12 +176,15 @@ h1 {
 
 .static-value {
     display: inline-block;
-    padding: 5px 10px;
+    padding: 8px 10px;
     background-color: #f5f5f5;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-family: monospace;
-    min-width: 120px;
+    min-width: 250px;
+    max-width: 250px;
+    font-size: 14px;
+    height: 36px;
 }
 
 .btn {
@@ -178,7 +195,9 @@ h1 {
     border-radius: 4px;
     cursor: pointer;
     margin-top: 1rem;
-    margin-left: 120px;
+    margin-left: 150px;
+    min-width: 250px;
+    max-width: 250px;
 }
 
 .btn:hover {
@@ -207,6 +226,8 @@ h1 {
     border-radius: 4px;
     font-weight: bold;
     margin-left: 5px;
+    min-width: 250px;
+    max-width: 250px;
 }
 
 .ntp-status-current {
