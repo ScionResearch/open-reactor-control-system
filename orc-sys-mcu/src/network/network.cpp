@@ -214,7 +214,8 @@ void saveNetworkConfig()
   
   // Close file
   configFile.close();
-  LittleFS.end();
+  // Don't end LittleFS here as it will prevent serving web files
+  // LittleFS.end();
 }
 
 bool applyNetworkConfig()
@@ -330,8 +331,10 @@ void setupNetworkAPI()
               // Update NTP server
               strlcpy(networkConfig.ntpServer, doc["ntp"] | "pool.ntp.org", sizeof(networkConfig.ntpServer));
 
-              // Update DST setting
-              networkConfig.dstEnabled = doc["dst"] | false;
+              // Update DST setting if provided
+              if (doc.containsKey("dst")) {
+                networkConfig.dstEnabled = doc["dst"];
+              }
 
               // Save configuration to storage
               saveNetworkConfig();

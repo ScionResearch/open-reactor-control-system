@@ -89,6 +89,9 @@ async function saveTimeSettings() {
     const ntpEnabled = document.getElementById('enableNTP').checked;
     const dstEnabled = document.getElementById('enableDST').checked;
 
+    // Show loading toast
+    const loadingToast = showToast('info', 'Saving...', 'Updating date and time settings', 10000);
+
     try {
         const response = await fetch('/api/time', {
             method: 'POST',
@@ -104,14 +107,28 @@ async function saveTimeSettings() {
             }),
         });
 
+        // Remove loading toast
+        if (loadingToast.parentNode) {
+            loadingToast.parentNode.removeChild(loadingToast);
+        }
+
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const result = await response.json();
         console.log('Time settings updated:', result);
+        
+        // Show success toast
+        showToast('success', 'Success', 'Date and time settings saved successfully');
+        
+        // Update the time display immediately
+        updateLiveClock();
     } catch (error) {
         console.error('Error saving time settings:', error);
+        
+        // Show error toast
+        showToast('error', 'Error', 'Failed to save date and time settings');
     }
 }
 
@@ -333,10 +350,59 @@ async function updatePowerStatus() {
 // Add power status update to the periodic updates
 setInterval(updatePowerStatus, 1000);
 
+// Toast notification functions
+function showToast(type, title, message, duration = 3000) {
+    const toastContainer = document.getElementById('toastContainer');
+    
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    // Add icon based on type
+    let iconClass = '';
+    switch (type) {
+        case 'success':
+            iconClass = '✓';
+            break;
+        case 'error':
+            iconClass = '✗';
+            break;
+        case 'info':
+            iconClass = 'ℹ';
+            break;
+        default:
+            iconClass = 'ℹ';
+    }
+    
+    // Create toast content
+    toast.innerHTML = `
+        <div class="toast-icon">${iconClass}</div>
+        <div class="toast-content">
+            <div class="toast-title">${title}</div>
+            <div class="toast-message">${message}</div>
+        </div>
+    `;
+    
+    // Add to container
+    toastContainer.appendChild(toast);
+    
+    // Remove after duration
+    setTimeout(() => {
+        toast.classList.add('toast-exit');
+        setTimeout(() => {
+            toastContainer.removeChild(toast);
+        }, 300); // Wait for exit animation to complete
+    }, duration);
+    
+    return toast;
+}
+
 // Network settings handling
 document.getElementById('networkForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const statusDiv = document.getElementById('networkStatus');
+    statusDiv.textContent = '';
+    statusDiv.className = '';
     
     // Validate IP addresses if static IP is selected
     if (document.getElementById('ipConfig').value === 'static') {
@@ -344,8 +410,7 @@ document.getElementById('networkForm').addEventListener('submit', async function
         for (const id of inputs) {
             const input = document.getElementById(id);
             if (!input.checkValidity()) {
-                statusDiv.textContent = `Invalid ${id.replace(/([A-Z])/g, ' $1').toLowerCase()}`;
-                statusDiv.className = 'status-message error';
+                showToast('error', 'Validation Error', `Invalid ${id.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
                 return;
             }
         }
@@ -358,8 +423,12 @@ document.getElementById('networkForm').addEventListener('submit', async function
         gateway: document.getElementById('gateway').value,
         dns: document.getElementById('dns').value,
         hostname: document.getElementById('hostName').value,
-        ntp: document.getElementById('ntpServer').value
+        ntp: document.getElementById('ntpServer').value,
+        dst: document.getElementById('enableDST').checked
     };
+
+    // Show loading toast
+    const loadingToast = showToast('info', 'Saving...', 'Updating network settings', 10000);
 
     try {
         const response = await fetch('/api/network', {
@@ -370,22 +439,30 @@ document.getElementById('networkForm').addEventListener('submit', async function
             body: JSON.stringify(networkConfig)
         });
 
+        // Remove loading toast
+        if (loadingToast.parentNode) {
+            loadingToast.parentNode.removeChild(loadingToast);
+        }
+
         const result = await response.json();
         
         if (response.ok) {
-            statusDiv.textContent = 'Network settings saved. The device will restart to apply changes...';
-            statusDiv.className = 'status-message success';
+            const restartToast = showToast('success', 'Success', 'Network settings saved. The device will restart to apply changes...', 5000);
+            
             // Wait a moment before reloading to show the message
             setTimeout(() => {
                 window.location.reload();
             }, 5000);
         } else {
-            statusDiv.textContent = result.error || 'Failed to save network settings';
-            statusDiv.className = 'status-message error';
+            showToast('error', 'Error', result.error || 'Failed to save network settings');
         }
     } catch (error) {
-        statusDiv.textContent = 'Network error: ' + error.message;
-        statusDiv.className = 'status-message error';
+        // Remove loading toast if it still exists
+        if (loadingToast.parentNode) {
+            loadingToast.parentNode.removeChild(loadingToast);
+        }
+        
+        showToast('error', 'Network Error', error.message || 'Failed to connect to the server');
     }
 });
 
@@ -410,6 +487,9 @@ document.getElementById('mqttForm').addEventListener('submit', async (e) => {
         mqttPassword: document.getElementById('mqttPassword').value
     };
 
+    // Show loading toast
+    const loadingToast = showToast('info', 'Saving...', 'Updating MQTT settings', 10000);
+
     try {
         const response = await fetch('/api/mqtt', {
             method: 'POST',
@@ -419,21 +499,24 @@ document.getElementById('mqttForm').addEventListener('submit', async (e) => {
             body: JSON.stringify(mqttData)
         });
 
+        // Remove loading toast
+        if (loadingToast.parentNode) {
+            loadingToast.parentNode.removeChild(loadingToast);
+        }
+
         if (response.ok) {
-            const statusDiv = document.createElement('div');
-            statusDiv.className = 'status-message success';
-            statusDiv.textContent = 'MQTT settings saved successfully';
-            document.getElementById('mqttForm').appendChild(statusDiv);
-            setTimeout(() => statusDiv.remove(), 3000);
+            showToast('success', 'Success', 'MQTT settings saved successfully');
         } else {
             throw new Error('Failed to save MQTT settings');
         }
     } catch (error) {
         console.error('Error saving MQTT settings:', error);
-        const statusDiv = document.createElement('div');
-        statusDiv.className = 'status-message error';
-        statusDiv.textContent = 'Failed to save MQTT settings';
-        document.getElementById('mqttForm').appendChild(statusDiv);
-        setTimeout(() => statusDiv.remove(), 3000);
+        
+        // Remove loading toast if it still exists
+        if (loadingToast.parentNode) {
+            loadingToast.parentNode.removeChild(loadingToast);
+        }
+        
+        showToast('error', 'Error', 'Failed to save MQTT settings');
     }
 });
