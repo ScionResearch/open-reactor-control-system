@@ -26,25 +26,25 @@ void managePower(void *param) {
       Vpsu /= 10.0;
       V20 /= 10.0;
       V5 /= 10.0;
-      if (Vpsu > V_PSU_MAX || Vpsu < V_PSU_MIN) {
-        if (psuOK) log(LOG_WARNING, true, "PSU voltage out of range: %.2f V\n", Vpsu);
+      if ((Vpsu > V_PSU_MAX || Vpsu < V_PSU_MIN) && psuOK) {
+        log(LOG_WARNING, true, "PSU voltage out of range: %.2f V\n", Vpsu);
         psuOK = false;
-      }
-      else psuOK = true;
-      if (V20 > V_20V_MAX || V20 < V_20V_MIN) {
-        if (V20OK) log(LOG_WARNING, true, "20V voltage out of range: %.2f V\n", V20);
+      } else psuOK = true;
+
+      if ((V20 > V_20V_MAX || V20 < V_20V_MIN) && V20OK) {
+        log(LOG_WARNING, true, "20V voltage out of range: %.2f V\n", V20);
         V20OK = false;
-      }
-      else V20OK = true;
-      if (V5 > V_5V_MAX || V5 < V_5V_MIN) {
-        if (V5OK) log(LOG_WARNING, true, "5V voltage out of range: %.2f V\n", V5);
+      } else V20OK = true;
+
+      if ((V5 > V_5V_MAX || V5 < V_5V_MIN) && V5OK) {
+        log(LOG_WARNING, true, "5V voltage out of range: %.2f V\n", V5);
         V5OK = false;
-      }
-      else V5OK = true;
+      } else V5OK = true;
+
       if (!psuOK || !V20OK || !V5OK) {
         setLEDcolour(LED_SYSTEM_STATUS, LED_STATUS_WARNING);
-      }
-      else setLEDcolour(LED_SYSTEM_STATUS, LED_STATUS_OK);
+      } else setLEDcolour(LED_SYSTEM_STATUS, LED_STATUS_OK);
+      
       if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         status.Vpsu = Vpsu;
         status.V20 = V20;

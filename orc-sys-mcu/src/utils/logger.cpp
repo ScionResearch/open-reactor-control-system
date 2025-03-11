@@ -58,6 +58,7 @@ void log(uint8_t logLevel, bool logToSD, const char* format, ...) {
 
         // Release the mutex
         xSemaphoreGive(serialMutex);
+        Serial.println("[LOG] Released Serial Mutex");
     } else if (debug) {
         // Error: Failed to acquire the Mutex. Print error message on the unprotected port
         Serial.println("Error: Failed to acquire Serial Mutex for log!");
