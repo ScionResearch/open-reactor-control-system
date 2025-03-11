@@ -3,7 +3,7 @@
 #include "../sys_init.h"
 
 // Buffer sizes
-#define DEBUG_PRINTF_BUFFER_SIZE 256
+#define DEBUG_PRINTF_BUFFER_SIZE 200
 
 // Log entry types
 #define LOG_INFO 0

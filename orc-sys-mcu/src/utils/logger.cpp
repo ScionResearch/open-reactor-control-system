@@ -27,7 +27,6 @@ void init_logger(void) {
 void log(uint8_t logLevel, bool logToSD, const char* format, ...) {
     // Create a buffer to store the output
     static char buffer[DEBUG_PRINTF_BUFFER_SIZE];
-    DateTime now;
     
     // Acquire the Mutex: Blocks until the Mutex becomes available.
     if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -58,7 +57,6 @@ void log(uint8_t logLevel, bool logToSD, const char* format, ...) {
 
         // Release the mutex
         xSemaphoreGive(serialMutex);
-        Serial.println("[LOG] Released Serial Mutex");
     } else if (debug) {
         // Error: Failed to acquire the Mutex. Print error message on the unprotected port
         Serial.println("Error: Failed to acquire Serial Mutex for log!");
