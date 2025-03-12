@@ -50,6 +50,9 @@ struct StatusVariables
     bool psuOK;
     bool V20OK;
     bool V5OK;
+    bool sdCardOK;
+    bool IPCOK;
+    bool RTCOK;
 };
 
 // Object definition

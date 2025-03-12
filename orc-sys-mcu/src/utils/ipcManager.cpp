@@ -7,4 +7,8 @@ void init_ipcManager(void) {
     ipc.begin(115200);
     // Add in handshaking checks here...
     log(LOG_INFO, false, "Inter-processor communication setup complete\n");
+    if (xSemaphoreGive(statusMutex) == pdTRUE) {
+      status.IPCOK = true;
+      xSemaphoreGive(statusMutex);
+    }
   }

@@ -20,7 +20,7 @@ void init_ledManager() {
 // Thread-safe LED colour setter
 bool setLEDcolour(uint8_t led, uint32_t colour) {
     if (led > 3) {
-      log(LOG_ERROR, true,"Invalid LED number: %d\n", led);
+      log(LOG_ERROR, false,"Invalid LED number: %d\n", led);
       return false;
     }
     if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -53,7 +53,14 @@ void statusLEDs(void *param)
       for (int i = 0; i < 3; i++) {
         leds.setPixelColor(i, status.LEDcolour[i]);
       }
-      statusLEDcolour = status.LEDcolour[3];
+      // Check status items to determin main status LED colour
+      if (!status.IPCOK || !status.RTCOK) {
+        statusLEDcolour = LED_STATUS_ERROR;
+      } else if (!status.psuOK || !status.V20OK || !status.V5OK || !status.sdCardOK) {
+        statusLEDcolour = LED_STATUS_WARNING;
+      } else {
+        statusLEDcolour = LED_STATUS_OK;
+      }
       xSemaphoreGive(statusMutex);
     }
     leds.show();

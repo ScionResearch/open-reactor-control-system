@@ -39,7 +39,10 @@ void mountSD(void) {
         log(LOG_WARNING, false,"SD card not inserted\n");
         sdInserted = false;
         sdReady = false;
-        
+        if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            status.sdCardOK = false;
+            xSemaphoreGive(statusMutex);
+        }
         return;
     }
     else {
@@ -75,6 +78,10 @@ void mountSD(void) {
             }
             xSemaphoreGive(sdMutex);
             if (sdReady) log(LOG_INFO, false, "SD card mounted OK\n");
+            if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                status.sdCardOK = true;
+                xSemaphoreGive(statusMutex);
+            }
             printSDInfo();
         }
     }
@@ -85,6 +92,10 @@ void maintainSD(void) {
         log(LOG_WARNING, false, "SD card removed\n");
         sdInserted = false;
         sdReady = false;
+        if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            status.sdCardOK = false;
+            xSemaphoreGive(statusMutex);
+        }
     }
 }
 
@@ -141,7 +152,6 @@ void dateTimeCallback(uint16_t* date, uint16_t* time) {
 
 void writeLog(const char *message) {
     if (!sdReady) return;
-
     DateTime now;
     getGlobalDateTime(now);
     char dateTimeStr[20];
