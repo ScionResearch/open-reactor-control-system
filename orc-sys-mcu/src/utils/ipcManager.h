@@ -3,3 +3,4 @@
 #include "../sys_init.h"
 
 void init_ipcManager(void);
+void handleIpcManager(void);

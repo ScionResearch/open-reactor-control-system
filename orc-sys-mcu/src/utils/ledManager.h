@@ -38,8 +38,8 @@
 #define LED_STATUS_OFF LED_COLOR_OFF
 
 void init_ledManager(void);
+void handleLEDManager(void);
 bool setLEDcolour(uint8_t led, uint32_t colour);
-void statusLEDs(void *param);
 
 struct StatusVariables
 {
@@ -60,4 +60,3 @@ extern Adafruit_NeoPixel leds;
 
 // Status variables
 extern StatusVariables status;
-extern SemaphoreHandle_t statusMutex;

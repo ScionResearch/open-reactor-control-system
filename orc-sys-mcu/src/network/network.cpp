@@ -6,8 +6,8 @@ NetworkConfig networkConfig;
 Wiznet5500lwIP eth(PIN_ETH_CS, SPI, PIN_ETH_IRQ);
 WebServer server(80);
 
-// NTP update queue
-QueueHandle_t ntpUpdateQueue;
+// NTP update tracking
+bool ntpUpdateRequested = false;
 uint32_t ntpUpdateTimestamp = 0 - NTP_MIN_SYNC_INTERVAL;
 uint32_t lastNTPUpdateTime = 0; // Last successful NTP update time
 
@@ -15,6 +15,7 @@ uint32_t lastNTPUpdateTime = 0; // Last successful NTP update time
 char deviceMacAddress[18];
 
 bool ethernetConnected = false;
+unsigned long lastNetworkCheckTime = 0;
 
 // Network component initialisation functions ------------------------------>
 void init_network() {
@@ -24,6 +25,7 @@ void init_network() {
     setupMqttAPI();
     setupTimeAPI();
 }
+
 void setupEthernet()
 {
   // Load network configuration
@@ -69,7 +71,7 @@ void setupEthernet()
   }
 
   // Wait for Ethernet to connect
-  vTaskDelay(pdMS_TO_TICKS(2000));
+  delay(2000);
 
   if (eth.linkStatus() == LinkOFF) {
     log(LOG_WARNING, false, "Ethernet not connected\n");
@@ -343,7 +345,7 @@ void setupNetworkAPI()
               server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Configuration saved\"}");
 
               // Apply new configuration after a short delay
-              vTaskDelay(pdMS_TO_TICKS(100));
+              delay(100);
               rp2040.reboot(); // Use proper RP2040 reset function
             });
 }
@@ -377,14 +379,13 @@ void setupWebServer()
   server.on("/api/power", HTTP_GET, []() {
         StaticJsonDocument<200> doc;
         
-        xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100));
+        // Directly access status information without semaphores
         doc["mainVoltage"] = status.Vpsu;
         doc["v20Voltage"] = status.V20;
         doc["v5Voltage"] = status.V5;
         doc["mainVoltageOK"] = status.psuOK;
         doc["v20VoltageOK"] = status.V20OK;
         doc["v5VoltageOK"] = status.V5OK;
-        xSemaphoreGive(statusMutex);
         
         String response;
         serializeJson(doc, response);
@@ -610,38 +611,43 @@ void setupTimeAPI()
 }
 
 // Network management functions --------------------------------------------->
-// Handle ethernet plug and unplug events (from main loop)
-void manageEthernet(void)
-{
-  // Do network tasks if ethernet is connected
-  if (ethernetConnected) {
-    if (eth.linkStatus() == LinkOFF) {
-      ethernetConnected = false;
-      setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
-      setLEDcolour(LED_MQTT_STATUS, LED_STATUS_OFF);
-      log(LOG_INFO, true, "Ethernet disconnected, waiting for reconnect\n");
+// Main network manager handler for cooperative multitasking
+void handleNetworkManager(void) {
+  unsigned long currentMillis = millis();
+  
+  // Check network status every 250ms
+  if (currentMillis - lastNetworkCheckTime >= 250) {
+    lastNetworkCheckTime = currentMillis;
+    
+    // Check Ethernet connection status and handle reconnection
+    if (ethernetConnected) {
+      if (eth.linkStatus() == LinkOFF) {
+        ethernetConnected = false;
+        setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
+        setLEDcolour(LED_MQTT_STATUS, LED_STATUS_OFF);
+        log(LOG_INFO, true, "Ethernet disconnected, waiting for reconnect\n");
+      }
+      else {
+        handleWebServer();
+        handleNTPUpdates(false);  // Process any pending NTP updates
+      }
     }
-    else {
-      handleWebServer();
-      handleNTPUpdates(false);  // Process any pending NTP updates
-    }
-  }
-  else if (eth.linkStatus() == LinkON) {
-    ethernetConnected = true;
-    if(!applyNetworkConfig()) {
-      log(LOG_ERROR, true, "Failed to apply network configuration!\n");
-    }
-    else {
-      log(LOG_INFO, true, "Ethernet re-connected, IP address: %s, Gateway: %s\n",
-                eth.localIP().toString().c_str(),
-                eth.gatewayIP().toString().c_str());
+    else if (eth.linkStatus() == LinkON) {
+      ethernetConnected = true;
+      if(!applyNetworkConfig()) {
+        log(LOG_ERROR, true, "Failed to apply network configuration!\n");
+      }
+      else {
+        log(LOG_INFO, true, "Ethernet re-connected, IP address: %s, Gateway: %s\n",
+                  eth.localIP().toString().c_str(),
+                  eth.gatewayIP().toString().c_str());
+      }
     }
   }
 }
 
-// Handle web server requests (from manageEthernet)
-void handleWebServer()
-{
+// Handle web server requests
+void handleWebServer() {
   if(!ethernetConnected) {
     return;
   }
@@ -697,8 +703,7 @@ void handleFile(const char *path)
 }
 
 // NTP management functions ------------------------------------------------>
-void ntpUpdate(void)
-{
+void ntpUpdate(void) {
   static WiFiUDP udp;
   static NTPClient timeClient(udp, networkConfig.ntpServer);
   static bool clientInitialized = false;
@@ -713,7 +718,7 @@ void ntpUpdate(void)
   if (!eth.linkStatus()) return;
 
   // Add delay before NTP update to ensure network is ready
-  vTaskDelay(pdMS_TO_TICKS(500));
+  delay(500);
 
   if (!timeClient.update()) {
     log(LOG_WARNING, true, "Failed to get time from NTP server, retrying\n");
@@ -723,7 +728,7 @@ void ntpUpdate(void)
         updateSuccessful = true;
         break;
       }
-      vTaskDelay(pdMS_TO_TICKS(10));
+      delay(10);
    }
     if (!updateSuccessful) {
       log(LOG_ERROR, true, "Failed to get time from NTP server, giving up\n");
@@ -754,13 +759,12 @@ void ntpUpdate(void)
   }
 }
 
-void handleNTPUpdates(bool forceUpdate)
-{
+void handleNTPUpdates(bool forceUpdate) {
   if (!networkConfig.ntpEnabled) return;
   uint32_t timeSinceLastUpdate = millis() - ntpUpdateTimestamp;
 
-  // Check if there's an NTP update request
-  if (timeSinceLastUpdate > NTP_UPDATE_INTERVAL || forceUpdate)
+  // Check if there's an NTP update request or if it's time for a scheduled update
+  if (ntpUpdateRequested || timeSinceLastUpdate > NTP_UPDATE_INTERVAL || forceUpdate)
   {
     if (timeSinceLastUpdate < NTP_MIN_SYNC_INTERVAL) {
       log(LOG_INFO, true, "Time since last NTP update: %ds - skipping\n", timeSinceLastUpdate/1000);
@@ -768,6 +772,7 @@ void handleNTPUpdates(bool forceUpdate)
     }
     ntpUpdate();
     ntpUpdateTimestamp = millis();
+    ntpUpdateRequested = false; // Clear the request flag
   }
 }
 

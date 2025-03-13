@@ -3,114 +3,143 @@
 SdFs sd;
 FsFile file;
 
-SemaphoreHandle_t sdMutex = NULL;
+// State variables for SD manager
 bool sdReady = false;
 bool sdInserted = false;
+SDManagerState sdState = SD_STATE_INIT;
+unsigned long lastSDOperation = 0;
 
 void init_sdManager(void) {
-    sdMutex = xSemaphoreCreateMutex();
-  if (sdMutex == NULL) {
-    log(LOG_ERROR, false, "Failed to create sdMutex!\n");
-    while (1);
-  }
-  xTaskCreate(manageSD, "SD mngr", 1024, NULL, 1, NULL);
-}
-
-void manageSD(void *param) {
-    (void)param;
-    log(LOG_INFO, false, "Initialising SD card\n");
+    log(LOG_INFO, false, "Initializing SD manager\n");
     SPI1.setMISO(PIN_SD_MISO);
     SPI1.setMOSI(PIN_SD_MOSI);
     SPI1.setSCK(PIN_SD_SCK);
-
+    
     FsDateTime::setCallback(dateTimeCallback);
     
-    mountSD();
+    // Set initial state
+    sdState = SD_STATE_MOUNT;
+}
 
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(500));
-        if (!sdReady && !digitalRead(PIN_SD_CD)) mountSD();
-        else maintainSD();
+void handleSDManager(void) {
+    // State machine for SD card management
+    switch (sdState) {
+        case SD_STATE_INIT:
+            // Nothing to do, wait for transition to mount
+            sdState = SD_STATE_MOUNT;
+            break;
+            
+        case SD_STATE_MOUNT:
+            mountSD();
+            break;
+            
+        case SD_STATE_READY:
+            maintainSD();
+            break;
+            
+        case SD_STATE_ERROR:
+            // Wait some time before trying to remount
+            if (millis() - lastSDOperation > 5000) {
+                log(LOG_INFO, false, "Retrying SD card mount after error\n");
+                sdState = SD_STATE_MOUNT;
+            }
+            break;
+            
+        case SD_STATE_REMOVED:
+            // Check if card has been inserted
+            if (!digitalRead(PIN_SD_CD)) {
+                log(LOG_INFO, false, "SD card inserted, attempting to mount\n");
+                sdState = SD_STATE_MOUNT;
+            }
+            break;
     }
 }
 
 void mountSD(void) {
+    lastSDOperation = millis();
+    
     if (digitalRead(PIN_SD_CD)) {
         log(LOG_WARNING, false,"SD card not inserted\n");
         sdInserted = false;
         sdReady = false;
-        if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            status.sdCardOK = false;
-            xSemaphoreGive(statusMutex);
-        }
+        sdState = SD_STATE_REMOVED;
+        
+        // Update system status
+        status.sdCardOK = false;
         return;
     }
     else {
         bool sdSPIinitialised = false;
         bool sdSDIOinitialised = false;
         sdInserted = true;
-        if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (!sd.begin(SDIO_CONFIG)) {
-                log(LOG_ERROR, false, "SD card initialisation with SDIO config failed, attempting SPI config\n");
-                if (!sd.begin(SdSpiConfig(PIN_SD_CS, DEDICATED_SPI, SD_SCK_MHZ(4), &SPI1))) {
-                    if (sd.card()->errorCode()) {
-                        log(LOG_ERROR, false, "SD card initialisation failed with error code %d\n", sd.card()->errorCode());
-                    }
-                } else sdSPIinitialised = true;
-
-            } else sdSDIOinitialised = true;
-            if (sdSPIinitialised || sdSDIOinitialised) {
-                log(LOG_INFO, false, "SD card initialisation successful, using %s\n", sdSPIinitialised ? "SPI" : "SDIO");
-                // Check for correct folder structure and create if missing
-                log(LOG_INFO, false, "Checking for correct folder structure\n");
-                if (!sd.exists("/sensors")) sd.mkdir("/sensors");
-                if (!sd.exists("/logs")) sd.mkdir("/logs");
-                // Check for log files and create if missing
-                if (!sd.exists("/logs/system.txt")) {
-                    file = sd.open("/logs/system.txt", O_CREAT | O_RDWR | O_APPEND);
-                    file.close();
+        
+        // Try SDIO first, then fall back to SPI
+        if (!sd.begin(SDIO_CONFIG)) {
+            log(LOG_ERROR, false, "SD card initialisation with SDIO config failed, attempting SPI config\n");
+            if (!sd.begin(SdSpiConfig(PIN_SD_CS, DEDICATED_SPI, SD_SCK_MHZ(4), &SPI1))) {
+                if (sd.card()->errorCode()) {
+                    log(LOG_ERROR, false, "SD card initialisation failed with error code %d\n", sd.card()->errorCode());
                 }
-                if (!sd.exists("/sensors/sensors.csv")) {
-                    file = sd.open("/sensors/sensors.csv", O_CREAT | O_RDWR | O_APPEND);
-                    file.close();
-                }
-                sdReady = true;
+                sdState = SD_STATE_ERROR;
+                return;
+            } else sdSPIinitialised = true;
+        } else sdSDIOinitialised = true;
+        
+        if (sdSPIinitialised || sdSDIOinitialised) {
+            log(LOG_INFO, false, "SD card initialisation successful, using %s\n", sdSPIinitialised ? "SPI" : "SDIO");
+            
+            // Check for correct folder structure and create if missing
+            log(LOG_INFO, false, "Checking for correct folder structure\n");
+            sd_mkdir("/sensors");
+            sd_mkdir("/logs");
+            
+            // Check for log files and create if missing
+            if (!sd_exists("/logs/system.txt")) {
+                file = sd_open("/logs/system.txt", O_CREAT | O_RDWR | O_APPEND);
+                file.close();
             }
-            xSemaphoreGive(sdMutex);
-            if (sdReady) log(LOG_INFO, false, "SD card mounted OK\n");
-            if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-                status.sdCardOK = true;
-                xSemaphoreGive(statusMutex);
+            if (!sd_exists("/sensors/sensors.csv")) {
+                file = sd_open("/sensors/sensors.csv", O_CREAT | O_RDWR | O_APPEND);
+                file.close();
             }
+            sdReady = true;
+            sdState = SD_STATE_READY;
+            
+            // Update system status
+            status.sdCardOK = true;
+            
+            log(LOG_INFO, false, "SD card mounted OK\n");
             printSDInfo();
         }
     }
 }
 
 void maintainSD(void) {
+    // Check if card is still inserted
     if (digitalRead(PIN_SD_CD) && sdInserted) {
         log(LOG_WARNING, false, "SD card removed\n");
         sdInserted = false;
         sdReady = false;
-        if (xSemaphoreTake(statusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            status.sdCardOK = false;
-            xSemaphoreGive(statusMutex);
-        }
+        sdState = SD_STATE_REMOVED;
+        
+        // Update system status
+        status.sdCardOK = false;
     }
 }
 
 uint64_t getFileSize(const char* path) {
     FsFile file;
     uint64_t size = 0;
-    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        if (sd.exists(path)) {
-            if (file.open(path, O_RDONLY)) {
+    
+    if (sdReady) {
+        if (sd_exists(path)) {
+            file = sd_open(path, O_RDONLY);
+            if (file) {
                 size = file.fileSize();
                 file.close();
             }
         }
-        xSemaphoreGive(sdMutex);
-    } //else log(LOG_INFO, false, "SD mutex not available for get file size operation\n");
+    }
     return size;
 }
 
@@ -120,23 +149,20 @@ void printSDInfo(void) {
         else log(LOG_INFO, false, "SD card not ready\n");
         return;
     }
-    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        uint32_t size = sd.card()->sectorCount();
-        log(LOG_INFO, false, "SD card size: %d sectors, %0.1f GB\n", size, 0.000000512 * (float)size);
-        log(LOG_INFO, false, "Free space: %0.1f GB\n", 0.000000001 * (float)sd.vol()->bytesPerCluster() * (float)sd.freeClusterCount());
-        log(LOG_INFO, false, "Volume is FAT%d\n", sd.vol()->fatType());
-        xSemaphoreGive(sdMutex);
+    
+    uint32_t size = sd.card()->sectorCount();
+    log(LOG_INFO, false, "SD card size: %d sectors, %0.1f GB\n", size, 0.000000512 * (float)size);
+    log(LOG_INFO, false, "Free space: %0.1f GB\n", 0.000000001 * (float)sd.vol()->bytesPerCluster() * (float)sd.freeClusterCount());
+    log(LOG_INFO, false, "Volume is FAT%d\n", sd.vol()->fatType());
 
-        log(LOG_INFO, false, "File info:\n");
-        
-        // Get file sizes using the helper function
-        uint64_t logFileSize = getFileSize("/logs/system.txt");
-        uint64_t sensorFileSize = getFileSize("/sensors/sensors.csv");
-        
-        log(LOG_INFO, false, "Log file size: %0.1f kbytes\n", 0.001 * (float)logFileSize);
-        log(LOG_INFO, false, "Sensor file size: %0.1f kbytes\n", 0.001 * (float)sensorFileSize);
-    }
-    else log(LOG_INFO, false, "SD mutex not available\n");
+    log(LOG_INFO, false, "File info:\n");
+    
+    // Get file sizes using the helper function
+    uint64_t logFileSize = getFileSize("/logs/system.txt");
+    uint64_t sensorFileSize = getFileSize("/sensors/sensors.csv");
+    
+    log(LOG_INFO, false, "Log file size: %0.1f kbytes\n", 0.001 * (float)logFileSize);
+    log(LOG_INFO, false, "Sensor file size: %0.1f kbytes\n", 0.001 * (float)sensorFileSize);
 }
 
 void dateTimeCallback(uint16_t* date, uint16_t* time) {
@@ -167,40 +193,56 @@ void writeLog(const char *message) {
         char fNameBuf[50];
         snprintf(fNameBuf, sizeof(fNameBuf), "/logs/system-log-archive-%04d-%02d-%02d.txt", now.year, now.month, now.day);
         
-        if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (!sd.exists(fNameBuf)) {
-                for (int i = 0; i < 100; i++) {
-                    char tempBuf[50];
-                    snprintf(tempBuf, sizeof(tempBuf), "%s-%d", fNameBuf, i);
-                    if (!sd.exists(tempBuf)) {
-                        strcpy(fNameBuf, tempBuf);
-                        break;
-                    }
+        if (sd_exists(fNameBuf)) {
+            for (int i = 0; i < 100; i++) {
+                char tempBuf[50];
+                snprintf(tempBuf, sizeof(tempBuf), "%s-%d", fNameBuf, i);
+                if (!sd_exists(tempBuf)) {
+                    strcpy(fNameBuf, tempBuf);
+                    break;
                 }
             }
-            if (sd.exists("/logs/system.txt")) {
-                sd.rename("/logs/system.txt", fNameBuf);
-            }
-            file = sd.open("/logs/system.txt", O_CREAT | O_RDWR | O_APPEND);
-            if (file) {
-                file.print(buf);
-                file.close();
-            }
-            xSemaphoreGive(sdMutex);
         }
-        return;
-    }
-
-    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        file = sd.open("/logs/system.txt", O_CREAT | O_RDWR | O_APPEND);
+        sd_rename("/logs/system.txt", fNameBuf);
+        file = sd_open("/logs/system.txt", O_CREAT | O_RDWR | O_APPEND);
         if (file) {
             file.print(buf);
             file.close();
         }
-        xSemaphoreGive(sdMutex);
+        return;
+    }
+
+    file = sd_open("/logs/system.txt", O_CREAT | O_RDWR | O_APPEND);
+    if (file) {
+        file.print(buf);
+        file.close();
     }
 }
 
 void writeSensorData(/* Sensor data struct to be defined */) {
-    
+    // To be implemented
+}
+
+// Thread-safe file operations implementations
+bool sd_mkdir(const char* path) {
+    if (!sdReady) return false;
+    return sd.mkdir(path);
+}
+
+bool sd_exists(const char* path) {
+    if (!sdReady) return false;
+    return sd.exists(path);
+}
+
+bool sd_rename(const char* oldPath, const char* newPath) {
+    if (!sdReady) return false;
+    return sd.rename(oldPath, newPath);
+}
+
+FsFile sd_open(const char* path, oflag_t oflag) {
+    FsFile file;
+    if (sdReady) {
+        file = sd.open(path, oflag);
+    }
+    return file;
 }

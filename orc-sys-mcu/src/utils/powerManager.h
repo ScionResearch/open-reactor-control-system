@@ -16,4 +16,4 @@
 
 
 void init_powerManager(void);
-void managePower(void *param);
+void handlePowerManager(void);

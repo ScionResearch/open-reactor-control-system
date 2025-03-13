@@ -1,8 +1,7 @@
 #include "logger.h"
 
-// Serial port mutex
-SemaphoreHandle_t serialMutex = NULL;
-
+// Critical section for controlling access to Serial
+bool serialBusy = false;
 bool serialReady = false;
 
 // Log entry types
@@ -16,12 +15,7 @@ void init_logger(void) {
             break;
         }
     }
-    // Create serial debug mutex
-    serialMutex = xSemaphoreCreateMutex();
-    if (serialMutex == NULL) {
-        Serial.println("[ERROR] Failed to create serial mutex");
-    }
-    else serialReady = true;
+    serialReady = true;
 }
 
 void log(uint8_t logLevel, bool logToSD, const char* format, ...) {
@@ -47,12 +41,32 @@ void log(uint8_t logLevel, bool logToSD, const char* format, ...) {
     // Check for errors or truncation.
     if(len > 0) {
         if (logToSD) writeLog(buffer);
-        if (debug && xSemaphoreTake(serialMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            Serial.print(buffer);
-            xSemaphoreGive(serialMutex);
+        
+        // Use a simple flag-based approach instead of semaphores
+        if (debug) {
+            // Simple attempt to get "lock"
+            unsigned long startTime = millis();
+            while (serialBusy && (millis() - startTime < 100)) {
+                delay(1); // Brief delay to prevent tight loop
+            }
+            
+            if (!serialBusy) {
+                serialBusy = true;
+                Serial.print(buffer);
+                serialBusy = false;
+            }
         }
-    } else if (debug && xSemaphoreTake(serialMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        Serial.println("Error during logging: formatting error or buffer overflow");
-        xSemaphoreGive(serialMutex);
+    } else if (debug) {
+        // Simple attempt to get "lock"
+        unsigned long startTime = millis();
+        while (serialBusy && (millis() - startTime < 100)) {
+            delay(1); // Brief delay to prevent tight loop
+        }
+        
+        if (!serialBusy) {
+            serialBusy = true;
+            Serial.println("Error during logging: formatting error or buffer overflow");
+            serialBusy = false;
+        }
     }
 }

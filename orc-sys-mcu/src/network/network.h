@@ -27,7 +27,7 @@ void setupMqttAPI(void);
 void setupTimeAPI(void);
 
 void manageEthernet(void);
-
+void handleNetworkManager(void);
 void handleWebServer(void);
 void handleRoot(void);
 void handleFile(const char *path);
@@ -62,8 +62,8 @@ extern NetworkConfig networkConfig;
 extern Wiznet5500lwIP eth;
 extern WebServer server;
 
-// NTP update queue
-extern QueueHandle_t ntpUpdateQueue;
+// NTP update tracking
+extern bool ntpUpdateRequested;
 extern uint32_t ntpUpdateTimestamp;
 extern uint32_t lastNTPUpdateTime; // Last successful NTP update time
 
