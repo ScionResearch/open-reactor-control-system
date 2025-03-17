@@ -282,10 +282,15 @@ async function loadMqttSettings() {
 document.addEventListener('DOMContentLoaded', () => {
     loadInitialSettings();  // Load initial NTP and timezone settings
     loadNetworkSettings();  // Load initial network settings
-    loadMqttSettings();    // Load initial MQTT settings
+    loadMqttSettings();     // Load initial MQTT settings
     updateLiveClock();
     updateSensorData();
     updateNetworkInfo();
+    
+    // Initialize system status if system tab is active initially
+    if (document.querySelector('#system').classList.contains('active')) {
+        updateSystemStatus();
+    }
     
     // Set up event listeners
     const ntpCheckbox = document.getElementById('enableNTP');
@@ -319,36 +324,114 @@ setInterval(updateLiveClock, 1000);    // Update clock every second
 setInterval(updateSensorData, 1000);   // Update sensor data every second
 setInterval(updateNetworkInfo, 5000);  // Update network info every 5 seconds
 
-// Update power supply status
-async function updatePowerStatus() {
+// Update system status information
+async function updateSystemStatus() {
     try {
-        const response = await fetch('/api/power');
+        const response = await fetch('/api/system/status');
         const data = await response.json();
         
-        // Update main voltage
-        document.getElementById('mainVoltage').textContent = data.mainVoltage.toFixed(1) + 'V';
-        const mainStatus = document.getElementById('mainVoltageStatus');
-        mainStatus.textContent = data.mainVoltageOK ? 'OK' : 'ERROR';
-        mainStatus.className = 'status ' + (data.mainVoltageOK ? 'ok' : 'error');
+        // Update power supplies
+        if (data.power) {
+            // Main voltage
+            document.getElementById('mainVoltage').textContent = data.power.mainVoltage.toFixed(1) + 'V';
+            const mainStatus = document.getElementById('mainVoltageStatus');
+            mainStatus.textContent = data.power.mainVoltageOK ? 'OK' : 'OUT OF RANGE';
+            mainStatus.className = 'status ' + (data.power.mainVoltageOK ? 'ok' : 'error');
+            
+            // 20V supply
+            document.getElementById('v20Voltage').textContent = data.power.v20Voltage.toFixed(1) + 'V';
+            const v20Status = document.getElementById('v20VoltageStatus');
+            v20Status.textContent = data.power.v20VoltageOK ? 'OK' : 'OUT OF RANGE';
+            v20Status.className = 'status ' + (data.power.v20VoltageOK ? 'ok' : 'error');
+            
+            // 5V supply
+            document.getElementById('v5Voltage').textContent = data.power.v5Voltage.toFixed(1) + 'V';
+            const v5Status = document.getElementById('v5VoltageStatus');
+            v5Status.textContent = data.power.v5VoltageOK ? 'OK' : 'OUT OF RANGE';
+            v5Status.className = 'status ' + (data.power.v5VoltageOK ? 'ok' : 'error');
+        }
         
-        // Update 20V supply
-        document.getElementById('v20Voltage').textContent = data.v20Voltage.toFixed(1) + 'V';
-        const v20Status = document.getElementById('v20VoltageStatus');
-        v20Status.textContent = data.v20VoltageOK ? 'OK' : 'ERROR';
-        v20Status.className = 'status ' + (data.v20VoltageOK ? 'ok' : 'error');
+        // Update RTC status
+        if (data.rtc) {
+            const rtcStatus = document.getElementById('rtcStatus');
+            rtcStatus.textContent = data.rtc.ok ? 'OK' : 'ERROR';
+            rtcStatus.className = 'status ' + (data.rtc.ok ? 'ok' : 'error');
+            
+            document.getElementById('rtcTime').textContent = data.rtc.time;
+        }
         
-        // Update 5V supply
-        document.getElementById('v5Voltage').textContent = data.v5Voltage.toFixed(1) + 'V';
-        const v5Status = document.getElementById('v5VoltageStatus');
-        v5Status.textContent = data.v5VoltageOK ? 'OK' : 'ERROR';
-        v5Status.className = 'status ' + (data.v5VoltageOK ? 'ok' : 'error');
+        // Update IPC status
+        const ipcStatus = document.getElementById('ipcStatus');
+        ipcStatus.textContent = data.ipc ? 'OK' : 'ERROR';
+        ipcStatus.className = 'status ' + (data.ipc ? 'ok' : 'error');
+        
+        // Update MQTT status
+        const mqttStatus = document.getElementById('mqttStatus');
+        mqttStatus.textContent = data.mqtt ? 'CONNECTED' : 'NOT-CONNECTED';
+        mqttStatus.className = 'status ' + (data.mqtt ? 'connected' : 'not-connected');
+        
+        // Update Modbus status
+        const modbusStatus = document.getElementById('modbusStatus');
+        modbusStatus.textContent = data.modbus ? 'CONNECTED' : 'NOT-CONNECTED';
+        modbusStatus.className = 'status ' + (data.modbus ? 'connected' : 'not-connected');
+        
+        // Update SD card status
+        if (data.sd) {
+            const sdStatus = document.getElementById('sdStatus');
+            if (!data.sd.inserted) {
+                sdStatus.textContent = 'NOT INSERTED';
+                sdStatus.className = 'status warning';
+                hideSDDetails();
+            } else if (!data.sd.ready) {
+                sdStatus.textContent = 'ERROR';
+                sdStatus.className = 'status error';
+                hideSDDetails();
+            } else {
+                sdStatus.textContent = 'OK';
+                sdStatus.className = 'status ok';
+                
+                // Show SD card details
+                document.getElementById('sdCapacityContainer').style.display = 'flex';
+                document.getElementById('sdFreeSpaceContainer').style.display = 'flex';
+                document.getElementById('sdLogSizeContainer').style.display = 'flex';
+                document.getElementById('sdSensorSizeContainer').style.display = 'flex';
+                
+                // Update SD card details
+                document.getElementById('sdCapacity').textContent = data.sd.capacityGB.toFixed(1) + ' GB';
+                document.getElementById('sdFreeSpace').textContent = data.sd.freeSpaceGB.toFixed(1) + ' GB';
+                document.getElementById('sdLogSize').textContent = data.sd.logFileSizeKB.toFixed(1) + ' kB';
+                document.getElementById('sdSensorSize').textContent = data.sd.sensorFileSizeKB.toFixed(1) + ' kB';
+            }
+        }
     } catch (error) {
-        console.error('Error updating power status:', error);
+        console.error('Error updating system status:', error);
     }
 }
 
-// Add power status update to the periodic updates
-setInterval(updatePowerStatus, 1000);
+// Helper function to hide SD card details
+function hideSDDetails() {
+    document.getElementById('sdCapacityContainer').style.display = 'none';
+    document.getElementById('sdFreeSpaceContainer').style.display = 'none';
+    document.getElementById('sdLogSizeContainer').style.display = 'none';
+    document.getElementById('sdSensorSizeContainer').style.display = 'none';
+}
+
+// Update system status when the system tab is active
+function updateStatusIfSystemTabActive() {
+    if (document.querySelector('#system').classList.contains('active')) {
+        updateSystemStatus();
+    }
+}
+
+// Add system status update to the periodic updates
+setInterval(updateStatusIfSystemTabActive, 1000);
+
+// When switching to the system tab, update the status immediately
+document.querySelectorAll('nav a[data-page="system"]').forEach(link => {
+    link.addEventListener('click', () => {
+        updateSystemStatus();
+    });
+});
 
 // Toast notification functions
 function showToast(type, title, message, duration = 3000) {
@@ -518,5 +601,80 @@ document.getElementById('mqttForm').addEventListener('submit', async (e) => {
         }
         
         showToast('error', 'Error', 'Failed to save MQTT settings');
+    }
+});
+
+// System reboot functionality
+document.addEventListener('DOMContentLoaded', () => {
+    const rebootButton = document.getElementById('rebootButton');
+    const rebootModal = document.getElementById('rebootModal');
+    const cancelReboot = document.getElementById('cancelReboot');
+    const confirmReboot = document.getElementById('confirmReboot');
+
+    if (rebootButton) {
+        rebootButton.addEventListener('click', () => {
+            rebootModal.classList.add('active');
+        });
+    }
+
+    if (cancelReboot) {
+        cancelReboot.addEventListener('click', () => {
+            rebootModal.classList.remove('active');
+        });
+    }
+
+    if (confirmReboot) {
+        confirmReboot.addEventListener('click', async () => {
+            try {
+                // Show a loading state
+                confirmReboot.textContent = 'Rebooting...';
+                confirmReboot.disabled = true;
+                
+                // Call the reboot API
+                const response = await fetch('/api/system/reboot', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    // Hide the modal
+                    rebootModal.classList.remove('active');
+                    
+                    // Show a toast notification
+                    showToast('info', 'System Rebooting', 'The system is rebooting. This page will be unavailable for a few moments.');
+                    
+                    // Add a countdown to reconnect
+                    let countdown = 12;
+                    const reconnectMessage = document.createElement('div');
+                    reconnectMessage.className = 'reconnect-message';
+                    reconnectMessage.innerHTML = `<p>Reconnecting in <span id="countdown">${countdown}</span> seconds...</p>`;
+                    document.body.appendChild(reconnectMessage);
+                    
+                    const countdownInterval = setInterval(() => {
+                        countdown--;
+                        document.getElementById('countdown').textContent = countdown;
+                        
+                        if (countdown <= 0) {
+                            clearInterval(countdownInterval);
+                            window.location.reload();
+                        }
+                    }, 1000);
+                } else {
+                    throw new Error('Failed to reboot system');
+                }
+            } catch (error) {
+                console.error('Error rebooting system:', error);
+                showToast('error', 'Reboot Failed', 'Failed to reboot the system. Please try again.');
+                
+                // Reset the button state
+                confirmReboot.textContent = 'Yes, Reboot';
+                confirmReboot.disabled = false;
+                
+                // Hide the modal
+                rebootModal.classList.remove('active');
+            }
+        });
     }
 });

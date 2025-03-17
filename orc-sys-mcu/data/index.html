@@ -25,6 +25,18 @@
             <!-- Toast notification container -->
             <div id="toastContainer" class="toast-container"></div>
             
+            <!-- Reboot Confirmation Modal -->
+            <div id="rebootModal" class="modal-overlay">
+                <div class="confirmation-modal">
+                    <h3>Confirm System Reboot</h3>
+                    <p>Are you sure you want to reboot the system? All ongoing operations will be interrupted.</p>
+                    <div class="modal-buttons">
+                        <button id="cancelReboot" class="modal-cancel">Cancel</button>
+                        <button id="confirmReboot" class="modal-confirm">Yes, Reboot</button>
+                    </div>
+                </div>
+            </div>
+
             <main>
                 <div id="dashboard" class="page active">
                     <h1>Bio-Reactor Dashboard v1.0</h1>
@@ -212,24 +224,86 @@
 
                 <div id="system" class="page">
                     <h1>System Status</h1>
-                    <div class="sensor-grid">
-                        <div class="sensor-card">
+                    <div class="system-header">
+                        <p class="system-description">Current status of system components and resources</p>
+                        <button id="rebootButton" class="reboot-button">Reboot System</button>
+                    </div>
+                    <div class="status-section-grid">
+                        <div class="status-card">
                             <h3>Power Supplies</h3>
-                            <div class="power-supplies">
-                                <div class="power-supply">
+                            <div class="status-values">
+                                <div class="status-item">
                                     <span class="label">Main Supply:</span>
                                     <span class="value" id="mainVoltage">--V</span>
                                     <span class="status" id="mainVoltageStatus">--</span>
                                 </div>
-                                <div class="power-supply">
+                                <div class="status-item">
                                     <span class="label">20V Supply:</span>
                                     <span class="value" id="v20Voltage">--V</span>
                                     <span class="status" id="v20VoltageStatus">--</span>
                                 </div>
-                                <div class="power-supply">
+                                <div class="status-item">
                                     <span class="label">5V Supply:</span>
                                     <span class="value" id="v5Voltage">--V</span>
                                     <span class="status" id="v5VoltageStatus">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="status-card">
+                            <h3>Real Time Clock</h3>
+                            <div class="status-values">
+                                <div class="status-item">
+                                    <span class="label">Status:</span>
+                                    <span class="status" id="rtcStatus">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="label">Time:</span>
+                                    <span class="value" id="rtcTime">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="status-card">
+                            <h3>Communications</h3>
+                            <div class="status-values">
+                                <div class="status-item">
+                                    <span class="label">IPC Status:</span>
+                                    <span class="status" id="ipcStatus">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="label">MQTT Status:</span>
+                                    <span class="status" id="mqttStatus">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="label">Modbus Status:</span>
+                                    <span class="status" id="modbusStatus">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="status-card">
+                            <h3>SD Card</h3>
+                            <div class="status-values">
+                                <div class="status-item">
+                                    <span class="label">Status:</span>
+                                    <span class="status" id="sdStatus">--</span>
+                                </div>
+                                <div class="status-item" id="sdCapacityContainer">
+                                    <span class="label">Capacity:</span>
+                                    <span class="value" id="sdCapacity">-- GB</span>
+                                </div>
+                                <div class="status-item" id="sdFreeSpaceContainer">
+                                    <span class="label">Free Space:</span>
+                                    <span class="value" id="sdFreeSpace">-- GB</span>
+                                </div>
+                                <div class="status-item" id="sdLogSizeContainer">
+                                    <span class="label">Log File Size:</span>
+                                    <span class="value" id="sdLogSize">-- kB</span>
+                                </div>
+                                <div class="status-item" id="sdSensorSizeContainer">
+                                    <span class="label">Sensor File Size:</span>
+                                    <span class="value" id="sdSensorSize">-- kB</span>
                                 </div>
                             </div>
                         </div>

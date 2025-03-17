@@ -290,6 +290,231 @@ h1 {
     color: white;
 }
 
+/* Status section styles */
+.status-section-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 30px;
+    margin-top: 30px;
+}
+
+.status-card {
+    background-color: #fff;
+    border-radius: 12px;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+    padding: 25px;
+    height: 100%;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.status-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.status-card h3 {
+    color: #333;
+    margin-top: 0;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+    font-size: 1.3em;
+}
+
+.status-values {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 8px 0;
+}
+
+.status-item .label {
+    flex: 1;
+    font-weight: 500;
+    color: #555;
+    font-size: 1.05em;
+}
+
+.status-item .value {
+    flex: 1;
+    text-align: right;
+    font-family: monospace;
+    font-size: 1.1em;
+    font-weight: 500;
+}
+
+.status-item .status {
+    flex: 0 0 100px;
+    text-align: center;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+.system-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.system-description {
+    color: #666;
+    margin: 0;
+    font-size: 1.1em;
+}
+
+.reboot-button {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 1em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.reboot-button:before {
+    content: "↻";
+    font-size: 1.2em;
+}
+
+.reboot-button:hover {
+    background-color: #d32f2f;
+}
+
+/* Confirmation modal styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.confirmation-modal {
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    padding: 25px;
+    width: 90%;
+    max-width: 450px;
+    transform: translateY(-20px);
+    transition: transform 0.3s;
+}
+
+.modal-overlay.active .confirmation-modal {
+    transform: translateY(0);
+}
+
+.confirmation-modal h3 {
+    margin-top: 0;
+    color: #333;
+    font-size: 1.3em;
+}
+
+.confirmation-modal p {
+    color: #555;
+    margin-bottom: 25px;
+}
+
+.modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 15px;
+}
+
+.modal-buttons button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95em;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.modal-cancel {
+    background-color: #e0e0e0;
+    color: #333;
+}
+
+.modal-cancel:hover {
+    background-color: #d0d0d0;
+}
+
+.modal-confirm {
+    background-color: #f44336;
+    color: white;
+}
+
+.modal-confirm:hover {
+    background-color: #d32f2f;
+}
+
+/* Status message styles (for backward compatibility) */
+.status-message {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.status.ok {
+    background-color: #defbe6;
+    color: #0e8521;
+}
+
+.status.error {
+    background-color: #ffebeb;
+    color: #e60000;
+}
+
+.status.warning {
+    background-color: #fff8e1;
+    color: #ff9800;
+}
+
+.status.not-connected {
+    background-color: #f2f2f2;
+    color: #666;
+}
+
+.status.connected {
+    background-color: #defbe6;
+    color: #0e8521;
+}
+
+/* Initially hide SD card details */
+#sdCapacityContainer, #sdFreeSpaceContainer, #sdLogSizeContainer, #sdSensorSizeContainer {
+    display: none;
+}
+
 /* Toast notification styles */
 .toast-container {
     position: fixed;
@@ -389,11 +614,40 @@ h1 {
     animation: slideOut 0.3s ease-in forwards;
 }
 
-/* Status message styles (for backward compatibility) */
-.status-message {
-    margin-top: 10px;
-    padding: 10px;
-    border-radius: 4px;
+/* Reconnect message */
+.reconnect-message {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #2196F3;
+    color: white;
+    padding: 15px 25px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 1100;
+    animation: slideUp 0.3s ease-out forwards;
     text-align: center;
+}
+
+.reconnect-message p {
+    margin: 0;
+    font-size: 1.1em;
+    font-weight: 500;
+}
+
+.reconnect-message #countdown {
     font-weight: bold;
+    font-size: 1.2em;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translate(-50%, 100%);
+        opacity: 0;
+    }
+    to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
 }

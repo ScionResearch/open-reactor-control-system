@@ -14,15 +14,26 @@ void init_sdManager(void) {
     
     FsDateTime::setCallback(dateTimeCallback);
     
-    //mountSD();
     sdTS = millis();
     log(LOG_INFO, false, "SD card manager initialised\n");
 }
 
 void manageSD(void) {
     if (millis() - sdTS < SD_MANAGE_INTERVAL) return;
-    if (!sdInfo.ready && !digitalRead(PIN_SD_CD)) mountSD();
-    else maintainSD();
+    sdTS = millis();
+    
+    if (!sdInfo.ready && !digitalRead(PIN_SD_CD)) {
+        mountSD();
+    } else {
+        maintainSD();
+    }
+    
+    // Every 10 minutes, update SD info for the status display
+    static uint32_t sdInfoTS = 0;
+    if (sdInfo.ready && (millis() - sdInfoTS > 600000)) {
+        sdInfoTS = millis();
+        printSDInfo();
+    }
 }
 
 void mountSD(void) {
@@ -127,30 +138,23 @@ void printSDInfo(void) {
         sdLocked = false;
         return;
     }
-    uint32_t size = sd.card()->sectorCount();
-    sdInfo.cardSizeBytes = size * 512;
-    sdInfo.cardUsedBytes = sdInfo.cardSizeBytes - (sd.vol()->bytesPerCluster() * (float)sd.freeClusterCount());
-    
-    log(LOG_INFO, false, "SD card size: %d sectors, %0.1f GB\n", size, 0.000000512 * (float)size);
-    log(LOG_INFO, false, "Free space: %0.1f GB\n", 0.000000001 * (float)sd.vol()->bytesPerCluster() * (float)sd.freeClusterCount());
-    log(LOG_INFO, false, "Volume is FAT%d\n", sd.vol()->fatType());
-    sdLocked = false;
 
-    log(LOG_INFO, false, "File info:\n");
-        
-    // Get file sizes using the helper function
+    sdInfo.cardSizeBytes = (uint64_t)sd.card()->sectorCount() * 512;
+    sdInfo.cardFreeBytes = (uint64_t)sd.vol()->bytesPerCluster() * (uint64_t)sd.freeClusterCount();
+    sdLocked = false;
     uint64_t logFileSize = getFileSize("/logs/system.txt");
     uint64_t sensorFileSize = getFileSize("/sensors/sensors.csv");
-
-    if (!sdLocked) {
-        sdLocked = true;
-        sdInfo.logSizeBytes = logFileSize;
-        sdInfo.sensorSizeBytes = sensorFileSize;
-        sdLocked = false;
-    }
+    sdLocked = true;
+    sdInfo.logSizeBytes = logFileSize;
+    sdInfo.sensorSizeBytes = sensorFileSize;
     
+    log(LOG_INFO, false, "SD card size: %0.1f GB\n", sdInfo.cardSizeBytes * 0.000000001);
+    log(LOG_INFO, false, "Free space: %0.1f GB\n", sdInfo.cardFreeBytes * 0.000000001);
+    log(LOG_INFO, false, "Volume is FAT%d\n", sd.vol()->fatType());
     log(LOG_INFO, false, "Log file size: %0.1f kbytes\n", 0.001 * (float)logFileSize);
     log(LOG_INFO, false, "Sensor file size: %0.1f kbytes\n", 0.001 * (float)sensorFileSize);
+    
+    sdLocked = false;
 }
 
 void dateTimeCallback(uint16_t* date, uint16_t* time) {

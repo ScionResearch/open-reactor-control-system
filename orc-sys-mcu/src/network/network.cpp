@@ -356,7 +356,7 @@ void setupNetworkAPI()
 
               // Apply new configuration after a short delay
               delay(1000);
-              rp2040.reboot(); // Use proper RP2040 reset function
+              rp2040.reboot();
             });
 }
 
@@ -385,28 +385,89 @@ void setupWebServer()
                 dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
         server.send(200, "application/json", json); });
 
-  // System status endpoints
-  server.on("/api/power", HTTP_GET, []() {
-        StaticJsonDocument<200> doc;
+  // Comprehensive system status endpoint
+  server.on("/api/system/status", HTTP_GET, []() {
+    StaticJsonDocument<768> doc;
+    
+    if (!statusLocked) {
+      statusLocked = true;
+      
+      // Power supplies
+      JsonObject power = doc.createNestedObject("power");
+      power["mainVoltage"] = status.Vpsu;
+      power["v20Voltage"] = status.V20;
+      power["v5Voltage"] = status.V5;
+      power["mainVoltageOK"] = status.psuOK;
+      power["v20VoltageOK"] = status.V20OK;
+      power["v5VoltageOK"] = status.V5OK;
+      
+      // RTC status
+      JsonObject rtc = doc.createNestedObject("rtc");
+      rtc["ok"] = status.rtcOK;
+      
+      // Get current time
+      DateTime now;
+      if (getGlobalDateTime(now, 10)) {
+        char timeStr[32];
+        snprintf(timeStr, sizeof(timeStr), "%04d-%02d-%02d %02d:%02d:%02d", 
+                 now.year, now.month, now.day,
+                 now.hour, now.minute, now.second);
+        rtc["time"] = timeStr;
+      } else {
+        rtc["time"] = "Unknown";
+      }
+      
+      // IPC status
+      doc["ipc"] = status.ipcOK;
+      
+      // SD card info
+      JsonObject sd = doc.createNestedObject("sd");
+      if (!sdLocked) {
+        sdLocked = true;
+        sd["inserted"] = sdInfo.inserted;
+        sd["ready"] = sdInfo.ready;
         
-        if (!statusLocked) {
-          statusLocked = true;
-          doc["mainVoltage"] = status.Vpsu;
-          doc["v20Voltage"] = status.V20;
-          doc["v5Voltage"] = status.V5;
-          doc["mainVoltageOK"] = status.psuOK;
-          doc["v20VoltageOK"] = status.V20OK;
-          doc["v5VoltageOK"] = status.V5OK;
-          statusLocked = false;
-        
-          String response;
-          serializeJson(doc, response);
-          server.send(200, "application/json", response);
+        // Only include these if SD card is ready
+        if (sdInfo.ready) {
+          sd["capacityGB"] = sdInfo.cardSizeBytes / 1000000000.0;
+          sd["freeSpaceGB"] = sdInfo.cardFreeBytes / 1000000000.0;
+          sd["logFileSizeKB"] = sdInfo.logSizeBytes / 1000.0;
+          sd["sensorFileSizeKB"] = sdInfo.sensorSizeBytes / 1000.0;
         }
-        else {
-          server.send(500, "application/json", "{\"error\":\"Status locked\"}");
-        }        
-    });
+        sdLocked = false;
+      }
+      
+      // Network connections
+      doc["mqtt"] = status.mqttConnected;
+      doc["modbus"] = status.modbusConnected;
+      
+      statusLocked = false;
+      
+      String response;
+      serializeJson(doc, response);
+      server.send(200, "application/json", response);
+    }
+    else {
+      server.send(500, "application/json", "{\"error\":\"Status locked\"}");
+    }
+  });
+
+  // System reboot endpoint
+  server.on("/api/system/reboot", HTTP_POST, []() {
+    // Send response first before rebooting
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"System is rebooting...\"}");
+    
+    // Add a small delay to ensure response is sent
+    delay(500);
+    
+    // Log the reboot
+    log(LOG_INFO, true, "System reboot requested via web interface\n");
+
+    delay(1000);
+    
+    // Perform system reboot
+    rp2040.reboot();
+  });
 
   // Handle static files
   server.onNotFound([]()

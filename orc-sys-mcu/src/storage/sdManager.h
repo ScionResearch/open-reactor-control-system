@@ -28,7 +28,7 @@ struct sdInfo_t {
   bool inserted;
   bool ready;
   uint64_t cardSizeBytes;
-  uint64_t cardUsedBytes;
+  uint64_t cardFreeBytes;
   uint64_t logSizeBytes;
   uint64_t sensorSizeBytes;
 };
