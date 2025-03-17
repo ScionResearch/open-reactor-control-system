@@ -18,11 +18,24 @@ void init_core0(void) {
 }
 
 void init_core1(void) {
+    init_statusManager();
     init_timeManager();
-    init_ledManager();
     init_powerManager();
     init_terminalManager();
     init_ipcManager();
     while (!core0setupComplete) delay(100); // 
     init_sdManager();   
+}
+
+void manage_core0(void) {
+    manageNetwork();
+}
+
+void manage_core1(void) {
+    manageStatus();
+    manageTime();
+    managePower();
+    manageTerminal();
+    manageIPC();
+    manageSD();
 }

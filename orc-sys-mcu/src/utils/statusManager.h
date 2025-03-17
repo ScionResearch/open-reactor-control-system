@@ -1,3 +1,11 @@
+/* Description: Holds the global status struct and LED manager functions
+ * Call manageStatus() in the main loop frequently to keep the LEDs updated
+ * Use the status struct to update the status of the system from other functions,
+ * ensure that the status struct is only accessed after checking the statusLocked flag.
+ * Set statusLocked to true before updating the status struct and set it to false after updating.
+ * Set status.updated to true after updating the status struct if LED colours need to change.
+ */
+
 #pragma once
 
 #include "../sys_init.h"
@@ -34,25 +42,43 @@
 #define LED_STATUS_ERROR LED_COLOR_RED
 #define LED_STATUS_WARNING LED_COLOR_YELLOW
 #define LED_STATUS_BUSY LED_COLOR_BLUE
-
 #define LED_STATUS_OFF LED_COLOR_OFF
 
-void init_ledManager(void);
-void handleLEDManager(void);
-bool setLEDcolour(uint8_t led, uint32_t colour);
+#define LED_UPDATE_PERIOD 100
+#define LED_BLINK_PERIOD 500
+
+void init_statusManager(void);
+void manageStatus(void);
 
 struct StatusVariables
 {
+    bool updated;
+    // System status variables
+    uint32_t ledPulseTS;
     uint32_t LEDcolour[4]; // 0 = MQTT, 1 = Webserver, 2 = Modbus, 3 = System
-    float Vpsu;
-    float V20;
-    float V5;
     bool psuOK;
     bool V20OK;
     bool V5OK;
     bool sdCardOK;
-    bool IPCOK;
-    bool RTCOK;
+    bool ipcOK;
+    bool rtcOK;
+
+    // Modbus status variables
+    bool modbusConnected;
+    bool modbusBusy;
+
+    // Webserver status variables
+    bool webserverUp;
+    bool webserverBusy;
+
+    // MQTT status variables
+    bool mqttConnected;
+    bool mqttBusy;
+
+    // Power supply voltage variables
+    float Vpsu;
+    float V20;
+    float V5;
 };
 
 // Object definition
@@ -60,3 +86,4 @@ extern Adafruit_NeoPixel leds;
 
 // Status variables
 extern StatusVariables status;
+extern bool statusLocked;

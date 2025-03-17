@@ -14,6 +14,10 @@
 #define V_5V_MIN         4.5
 #define V_5V_MAX         5.5
 
+#define POWER_UPDATE_INTERVAL 1000
 
 void init_powerManager(void);
-void handlePowerManager(void);
+void managePower(void);
+
+// Timestamp global
+extern uint32_t powerTS;

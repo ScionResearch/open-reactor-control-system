@@ -26,6 +26,10 @@ void init_network() {
     setupTimeAPI();
 }
 
+void manageNetwork(void) {
+    manageEthernet();
+}
+
 void setupEthernet()
 {
   // Load network configuration
@@ -71,7 +75,13 @@ void setupEthernet()
   }
 
   // Wait for Ethernet to connect
-  delay(2000);
+  uint32_t startTime = millis();
+  uint32_t timeout = 10000;
+  while (eth.linkStatus() == LinkOFF) {
+    if (millis() - startTime > timeout) {
+      break;
+    }
+  }
 
   if (eth.linkStatus() == LinkOFF) {
     log(LOG_WARNING, false, "Ethernet not connected\n");
@@ -163,7 +173,7 @@ bool loadNetworkConfig()
 void saveNetworkConfig()
 {
   log(LOG_INFO, true, "Saving network configuration:\n");
-  debugPrintNetConfig(networkConfig);
+  printNetConfig(networkConfig);
   
   // Check if LittleFS is mounted
   if (!LittleFS.begin()) {
@@ -345,7 +355,7 @@ void setupNetworkAPI()
               server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Configuration saved\"}");
 
               // Apply new configuration after a short delay
-              delay(100);
+              delay(1000);
               rp2040.reboot(); // Use proper RP2040 reset function
             });
 }
@@ -379,17 +389,23 @@ void setupWebServer()
   server.on("/api/power", HTTP_GET, []() {
         StaticJsonDocument<200> doc;
         
-        // Directly access status information without semaphores
-        doc["mainVoltage"] = status.Vpsu;
-        doc["v20Voltage"] = status.V20;
-        doc["v5Voltage"] = status.V5;
-        doc["mainVoltageOK"] = status.psuOK;
-        doc["v20VoltageOK"] = status.V20OK;
-        doc["v5VoltageOK"] = status.V5OK;
+        if (!statusLocked) {
+          statusLocked = true;
+          doc["mainVoltage"] = status.Vpsu;
+          doc["v20Voltage"] = status.V20;
+          doc["v5Voltage"] = status.V5;
+          doc["mainVoltageOK"] = status.psuOK;
+          doc["v20VoltageOK"] = status.V20OK;
+          doc["v5VoltageOK"] = status.V5OK;
+          statusLocked = false;
         
-        String response;
-        serializeJson(doc, response);
-        server.send(200, "application/json", response);
+          String response;
+          serializeJson(doc, response);
+          server.send(200, "application/json", response);
+        }
+        else {
+          server.send(500, "application/json", "{\"error\":\"Status locked\"}");
+        }        
     });
 
   // Handle static files
@@ -399,8 +415,14 @@ void setupWebServer()
   server.begin();
   log(LOG_INFO, true, "HTTP server started\n");
   
-  // Set Webserver Status LED
-  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
+  // Set Webserver Status
+  if (!statusLocked) {
+    statusLocked = true;
+    status.webserverUp = true;
+    status.webserverBusy = false;
+    status.updated = true;
+    statusLocked = false;
+  }
 }
 
 void setupMqttAPI()
@@ -611,37 +633,38 @@ void setupTimeAPI()
 }
 
 // Network management functions --------------------------------------------->
-// Main network manager handler for cooperative multitasking
-void handleNetworkManager(void) {
-  unsigned long currentMillis = millis();
-  
-  // Check network status every 250ms
-  if (currentMillis - lastNetworkCheckTime >= 250) {
-    lastNetworkCheckTime = currentMillis;
-    
-    // Check Ethernet connection status and handle reconnection
-    if (ethernetConnected) {
-      if (eth.linkStatus() == LinkOFF) {
-        ethernetConnected = false;
-        setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
-        setLEDcolour(LED_MQTT_STATUS, LED_STATUS_OFF);
-        log(LOG_INFO, true, "Ethernet disconnected, waiting for reconnect\n");
+// Handle ethernet plug and unplug events (from main loop)
+void manageEthernet(void)
+{
+  // Do network tasks if ethernet is connected
+  if (ethernetConnected) {
+    if (eth.linkStatus() == LinkOFF) {
+      ethernetConnected = false;
+      // Set Webserver Status
+      if (!statusLocked) {
+        statusLocked = true;
+        status.webserverUp = false;
+        status.webserverBusy = false;
+        status.mqttConnected = false;
+        status.mqttBusy = false;
+        status.updated = true;
+        statusLocked = false;
       }
-      else {
-        handleWebServer();
-        handleNTPUpdates(false);  // Process any pending NTP updates
-      }
+      log(LOG_INFO, true, "Ethernet disconnected, waiting for reconnect\n");
+    } else {
+      // Ethernet is still connected
+      handleWebServer();
     }
-    else if (eth.linkStatus() == LinkON) {
-      ethernetConnected = true;
-      if(!applyNetworkConfig()) {
-        log(LOG_ERROR, true, "Failed to apply network configuration!\n");
-      }
-      else {
-        log(LOG_INFO, true, "Ethernet re-connected, IP address: %s, Gateway: %s\n",
+  }
+  else if (eth.linkStatus() == LinkON) {
+    ethernetConnected = true;
+    if(!applyNetworkConfig()) {
+      log(LOG_ERROR, true, "Failed to apply network configuration!\n");
+    }
+    else {
+      log(LOG_INFO, true, "Ethernet re-connected, IP address: %s, Gateway: %s\n",
                   eth.localIP().toString().c_str(),
                   eth.gatewayIP().toString().c_str());
-      }
     }
   }
 }
@@ -652,7 +675,13 @@ void handleWebServer() {
     return;
   }
   server.handleClient();
-  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
+  if (!statusLocked) {
+    statusLocked = true;
+    status.webserverBusy = false;
+    status.webserverUp = true;
+    status.updated = true;
+    statusLocked = false;
+  }
 }
 
 // Webserver callbacks ----------------------------------------------------->
@@ -665,10 +694,20 @@ void handleRoot()
 void handleFile(const char *path)
 {
   if(eth.status() != WL_CONNECTED) {
-    setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OFF);
+    if (!statusLocked) {
+      statusLocked = true;
+      status.webserverBusy = false;
+      status.webserverUp = false;
+      status.updated = true;
+      statusLocked = false;
+    }
     return;
   }
-  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_BUSY);
+  if (!statusLocked) {
+    statusLocked = true;
+    status.webserverBusy = true;
+    statusLocked = false;
+  }
   String contentType;
   if (strstr(path, ".html"))
     contentType = "text/html";
@@ -699,7 +738,13 @@ void handleFile(const char *path)
   {
     server.send(404, "text/plain", "File not found");
   }
-  setLEDcolour(LED_WEBSERVER_STATUS, LED_STATUS_OK);
+  if (!statusLocked) {
+    statusLocked = true;
+    status.webserverBusy = false;
+    status.webserverUp = true;
+    status.updated = true;
+    statusLocked = false;
+  }
 }
 
 // NTP management functions ------------------------------------------------>
@@ -716,9 +761,6 @@ void ntpUpdate(void) {
   }
 
   if (!eth.linkStatus()) return;
-
-  // Add delay before NTP update to ensure network is ready
-  delay(500);
 
   if (!timeClient.update()) {
     log(LOG_WARNING, true, "Failed to get time from NTP server, retrying\n");
@@ -777,13 +819,20 @@ void handleNTPUpdates(bool forceUpdate) {
 }
 
 // Debug functions --------------------------------------------------------->
-void debugPrintNetConfig(NetworkConfig config)
+void printNetConfig(NetworkConfig config)
 {
   log(LOG_INFO, true, "Mode: %s\n", config.useDHCP ? "DHCP" : "Static");
-  log(LOG_INFO, true, "IP: %s\n", config.ip.toString().c_str());
-  log(LOG_INFO, true, "Subnet: %s\n", config.subnet.toString().c_str());
-  log(LOG_INFO, true, "Gateway: %s\n", config.gateway.toString().c_str());
-  log(LOG_INFO, true, "DNS: %s\n", config.dns.toString().c_str());
+  if (config.useDHCP) {
+    log(LOG_INFO, true, "IP: %s\n", eth.localIP().toString().c_str());
+    log(LOG_INFO, true, "Subnet: %s\n", eth.subnetMask().toString().c_str());
+    log(LOG_INFO, true, "Gateway: %s\n", eth.gatewayIP().toString().c_str());
+    log(LOG_INFO, true, "DNS: %s\n", eth.dnsIP().toString().c_str());
+  } else {
+    log(LOG_INFO, true, "IP: %s\n", config.ip.toString().c_str());
+    log(LOG_INFO, true, "Subnet: %s\n", config.subnet.toString().c_str());
+    log(LOG_INFO, true, "Gateway: %s\n", config.gateway.toString().c_str());
+    log(LOG_INFO, true, "DNS: %s\n", config.dns.toString().c_str());
+  }
   log(LOG_INFO, true, "Timezone: %s\n", config.timezone);
   log(LOG_INFO, true, "Hostname: %s\n", config.hostname);
   log(LOG_INFO, true, "NTP Server: %s\n", config.ntpServer);

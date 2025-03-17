@@ -3,6 +3,7 @@
 // Critical section for controlling access to Serial
 bool serialBusy = false;
 bool serialReady = false;
+bool serialLocked = false;
 
 // Log entry types
 const char *logType[] = {"INFO", "WARNING", "ERROR", "DEBUG"};
@@ -16,6 +17,8 @@ void init_logger(void) {
         }
     }
     serialReady = true;
+    log(LOG_INFO, false, "Open Reactor Control System v%s\n", VERSION);
+    log(LOG_INFO, false, "Starting system...\n");
 }
 
 void log(uint8_t logLevel, bool logToSD, const char* format, ...) {
@@ -41,32 +44,10 @@ void log(uint8_t logLevel, bool logToSD, const char* format, ...) {
     // Check for errors or truncation.
     if(len > 0) {
         if (logToSD) writeLog(buffer);
-        
-        // Use a simple flag-based approach instead of semaphores
-        if (debug) {
-            // Simple attempt to get "lock"
-            unsigned long startTime = millis();
-            while (serialBusy && (millis() - startTime < 100)) {
-                delay(1); // Brief delay to prevent tight loop
-            }
-            
-            if (!serialBusy) {
-                serialBusy = true;
-                Serial.print(buffer);
-                serialBusy = false;
-            }
-        }
-    } else if (debug) {
-        // Simple attempt to get "lock"
-        unsigned long startTime = millis();
-        while (serialBusy && (millis() - startTime < 100)) {
-            delay(1); // Brief delay to prevent tight loop
-        }
-        
-        if (!serialBusy) {
-            serialBusy = true;
-            Serial.println("Error during logging: formatting error or buffer overflow");
-            serialBusy = false;
+        if (!serialLocked) {
+            serialLocked = true;
+            Serial.print(buffer);
+            serialLocked = false;
         }
     }
 }

@@ -16,6 +16,8 @@
 #define NTP_STATUS_FAILED 2
 
 void init_network(void);
+void manageNetwork(void);
+
 void setupEthernet(void);
 bool loadNetworkConfig(void);
 void saveNetworkConfig(void);
@@ -54,7 +56,7 @@ struct NetworkConfig
     char mqttPassword[32];
 };
 
-void debugPrintNetConfig(NetworkConfig config);
+void printNetConfig(NetworkConfig config);
 
 // Global variables
 extern NetworkConfig networkConfig;
@@ -62,8 +64,7 @@ extern NetworkConfig networkConfig;
 extern Wiznet5500lwIP eth;
 extern WebServer server;
 
-// NTP update tracking
-extern bool ntpUpdateRequested;
+// NTP update
 extern uint32_t ntpUpdateTimestamp;
 extern uint32_t lastNTPUpdateTime; // Last successful NTP update time
 

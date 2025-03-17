@@ -16,6 +16,7 @@ void init_logger(void);
 // Debug functions
 void log(uint8_t logLevel, bool logToSD,const char* format, ...);
 
-// Status flags
-extern bool serialBusy;
+// Serial port mutex
+
 extern bool serialReady;
+extern bool serialLocked;

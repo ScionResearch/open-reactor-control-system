@@ -3,5 +3,6 @@
 #include "../sys_init.h"
 
 void init_terminalManager(void);
-void handleTerminalManager(void);
-void psPrint(void);
+void manageTerminal(void);
+
+extern bool terminalReady;
