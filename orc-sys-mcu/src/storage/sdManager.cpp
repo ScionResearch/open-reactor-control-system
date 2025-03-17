@@ -59,14 +59,18 @@ void mountSD(void) {
     if (sdLocked) return;
     sdLocked = true;
     sdInfo.inserted = true;
+    log(LOG_INFO, false, "SD card inserted, mounting FS\n");
     if (!sd.begin(SDIO_CONFIG)) {
-        log(LOG_ERROR, false, "SD card initialisation with SDIO config failed, attempting SPI config\n");
-        if (!sd.begin(SdSpiConfig(PIN_SD_CS, DEDICATED_SPI, SD_SCK_MHZ(40), &SPI1))) {
-            if (sd.card()->errorCode()) {
-                log(LOG_ERROR, false, "SD card initialisation failed with error code %d\n", sd.card()->errorCode());
-            }
-        } else sdSPIinitialised = true;
-
+        log(LOG_ERROR, false, "Attempt 1 failed, retrying\n");
+        delay(100);
+        if (!sd.begin(SDIO_CONFIG)) {
+            log(LOG_ERROR, false, "SD card initialisation with SDIO config failed, attempting SPI config\n");
+            if (!sd.begin(SdSpiConfig(PIN_SD_CS, DEDICATED_SPI, SD_SCK_MHZ(40), &SPI1))) {
+                if (sd.card()->errorCode()) {
+                    log(LOG_ERROR, false, "SD card initialisation failed with error code %d\n", sd.card()->errorCode());
+                }
+            } else sdSPIinitialised = true;
+        }
     } else sdSDIOinitialised = true;
     if (sdSPIinitialised || sdSDIOinitialised) {
         log(LOG_INFO, false, "SD card initialisation successful, using %s\n", sdSPIinitialised ? "SPI" : "SDIO");

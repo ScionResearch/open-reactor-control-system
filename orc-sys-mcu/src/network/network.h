@@ -9,6 +9,7 @@
 // Timing defines
 #define NTP_MIN_SYNC_INTERVAL 70000   // Too frequent NTP requests will cause failed connections - 70s minimum
 #define NTP_UPDATE_INTERVAL 86400000  // 1 day = 86400000ms
+//#define NTP_UPDATE_INTERVAL 100000 // 100 seconds (for testing!)
 
 // NTP status defines
 #define NTP_STATUS_CURRENT 0

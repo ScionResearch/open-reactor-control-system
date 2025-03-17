@@ -28,6 +28,7 @@ void init_network() {
 
 void manageNetwork(void) {
     manageEthernet();
+    if (networkConfig.ntpEnabled) handleNTPUpdates(false);
 }
 
 void setupEthernet()
