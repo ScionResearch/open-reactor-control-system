@@ -6,6 +6,8 @@
 
 #include <Adafruit_MAX31865.h>
 
+#include "MCP48FEB.h"
+
 #include "hardware/pins.h"
 
 #include "drivers/objects.h"

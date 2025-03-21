@@ -1,16 +1,16 @@
 #pragma once
 
 // Pins
-#define PIN_DAC_CS 0
-#define PIN_DAC_SYNC 1
-#define PIN_GPIO_0 2
-#define PIN_GPIO_1 3
-#define PIN_GPIO_2 4
-#define PIN_GPIO_3 5
-#define PIN_GPIO_4 6
-#define PIN_GPIO_5 7
-#define PIN_GPIO_6 8
-#define PIN_GPIO_7 9
+#define PIN_GPIO_0 0
+#define PIN_GPIO_1 1
+#define PIN_GPIO_2 2
+#define PIN_GPIO_3 3
+#define PIN_GPIO_4 4
+#define PIN_GPIO_5 5
+#define PIN_GPIO_6 6
+#define PIN_GPIO_7 7
+#define PIN_DAC_CS 8
+#define PIN_DAC_SYNC 9
 #define PIN_MOT_I_FB_1 10
 #define PIN_MOT_I_FB_2 11
 #define PIN_MOT_I_FB_3 12
