@@ -38,6 +38,7 @@ bool init_rtdDriver(void) {
         rtd_interface[i].sensor = NULL;
         rtd_interface[i].wires = MAX31865_3WIRE;
         rtd_interface[i].sensorType = PT100;
+        rtd_interface[i].cal = &calTable[i + CAL_RTD_PTR];
     }
 
     // Initialise temperature sensors
@@ -106,6 +107,7 @@ bool readRtdSensor(RtdSensor_t *sensorObj) {
         sensorObj->sensor->clearFault();
     }
     float temperature = sensorObj->sensor->temperature(rtdRefs[sensorObj->sensorType].R_nom, rtdRefs[sensorObj->sensorType].R_ref);
+    temperature = (temperature * sensorObj->cal->scale) + sensorObj->cal->offset;
     sensorObj->temperatureObj->temperature = temperature;
     return true;
 }

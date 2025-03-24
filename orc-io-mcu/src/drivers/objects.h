@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sys_init.h"
+
 // Constants----------------------------------------------->|
 #define MAX_TEMPERATURE_SENSORS 20
 #define MAX_PH_SENSORS 20
@@ -21,7 +23,25 @@
 
 // Object struct definitions----------------------------->|
 
+// Calibration object
+struct Calibrate_t {
+    float scale;            // Multiplier, 1 = no scaling
+    float offset;           // Offset value
+    uint32_t timestamp;     // Timestamp of last calibration
+    // Default constructor
+    Calibrate_t() : scale(1.0), offset(0.0), timestamp(1735689600) {}   // 01/01/2025
+};
+
 // Sensor objects
+struct AnalogInput_t {
+    float value;
+    char unit[5];
+    bool enabled;
+    bool fault;
+    bool newMessage;
+    char message[100];
+    Calibrate_t *cal;
+};
 struct TemperatureSensor_t {
     float temperature;
     char unit[5];
@@ -65,6 +85,24 @@ struct FlowSensor_t {
 struct PressureSensor_t {
     float pressure;
     char unit[5];
+    bool fault;
+    bool newMessage;
+    char message[100];
+};
+
+// Output objects
+struct AnalogOutput_t {
+    float value;
+    char unit[5];
+    bool enabled;
+    bool fault;
+    bool newMessage;
+    char message[100];
+    Calibrate_t *cal;
+};
+
+struct DigitalOutput_t {
+    bool state;
     bool fault;
     bool newMessage;
     char message[100];
@@ -128,27 +166,3 @@ struct wasteControl_t {
     float interval;
     float duty;
 };
-
-// Object struct definitions<--------------------------------|
-
-// Object arrays------------------------------------------->|
-
-// Sensor objects
-/*TemperatureSensor_t temperatureSensor[MAX_TEMPERATURE_SENSORS];
-PhSensor_t phSensor[MAX_PH_SENSORS];
-DissolvedOxygenSensor_t dissolvedOxygenSensor[MAX_DISSOLVED_OXYGEN_SENSORS];
-OpticalDensitySensor_t opticalDensitySensor[MAX_OPTICAL_DENSITY_SENSORS];
-FlowSensor_t flowSensor[MAX_FLOW_SENSORS];
-PressureSensor_t pressureSensor[MAX_PRESSURE_SENSORS];
-
-// Control objects
-TemperatureControl_t temperatureControl[MAX_TEMPERATURE_CONTROLLERS];
-PhControl_t phControl[MAX_PH_CONTROLLERS];
-DissolvedOxygenControl_t dissolvedOxygenControl[MAX_DISSOLVED_OXYGEN_CONTROLLERS];
-gasFlowControl_t gasFlowControl[MAX_FLOW_CONTROLLERS];
-stirrerControl_t stirrerControl[MAX_STIRRER_CONTROLLERS];
-pumpControl_t pumpControl[MAX_PUMP_CONTROLLERS];
-feedControl_t feedControl[MAX_FEED_CONTROLLERS];
-wasteControl_t wasteControl[MAX_WASTE_CONTROLLERS];*/
-
-// Object arrays<------------------------------------------|

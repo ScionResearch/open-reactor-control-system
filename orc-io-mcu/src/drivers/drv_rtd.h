@@ -11,8 +11,10 @@ enum RtdSensorType {
     PT1000 
 };
 
+// Driver struct - contains interface parameters and sensor object
 struct RtdSensor_t {
     TemperatureSensor_t *temperatureObj;
+    Calibrate_t *cal;
     int cs_pin;
     Adafruit_MAX31865 *sensor;
     max31865_numwires_t wires;
