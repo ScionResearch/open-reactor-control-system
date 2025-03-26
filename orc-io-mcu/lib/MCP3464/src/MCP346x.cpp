@@ -38,8 +38,8 @@ MCP346x::MCP346x(uint32_t cs_pin, uint32_t irq_pin, SPIClass *spi_port)
 	descriptor.spi_port = spi_port;
 }
 
-// Begin function initialises IC over SPI interface, returns 0 if OK, 1 if initialisation failed
-int MCP346x::begin(void)
+// Begin function initialises IC over SPI interface, returns true if OK, false if initialisation failed
+bool MCP346x::begin(void)
 {
 	// Pin setup
 	pinMode(descriptor.cs_pin, OUTPUT);
@@ -56,9 +56,9 @@ int MCP346x::begin(void)
 	uint8_t cmd = {MCP346X_ADDRESS_bm | MCP346X_FULL_RST_bm | MCP346X_FAST_COMMAND_bm};
 	write(cmd);
 	delayMicroseconds(10);
-	if (!write_config()) return 0;
+	if (!write_config()) return false;
 	attachInterrupt(digitalPinToInterrupt(descriptor.irq_pin), MCP346x::static_ISR, FALLING);
-	return 1;
+	return true;
 }
 
 // Single byte write function (sends byte as it is passed in to function), returns status byte
@@ -103,7 +103,7 @@ int MCP346x::write_config(void)
 {
 	uint8_t tx_data[18], rx_data[18];
 	get_config_bytes(tx_data);
-	uint8_t rx_status = write(tx_data, 18, MCP346X_CONFIG0_bm);
+	write(tx_data, 18, MCP346X_CONFIG0_bm);
 	read(rx_data, 18, MCP346X_CONFIG0_bm);
 	for (int i = 0; i < 18; i++) {
 		uint8_t err = tx_data[i] ^ rx_data[i];
@@ -113,17 +113,17 @@ int MCP346x::write_config(void)
 	return 1;
 }
 
-int MCP346x::start_continuous_adc(uint16_t channels)
+bool MCP346x::start_continuous_adc(uint16_t channels)
 {
 	if(channels) {
-		uint8_t tx_data[3] = {descriptor.config.scan_delay << 4, channels >> 8, (uint8_t)channels};
+		uint8_t tx_data[3] = {(uint8_t)(descriptor.config.scan_delay << 4), (uint8_t)(channels >> 8), (uint8_t)channels};
 		write(tx_data, 3, MCP346X_SCAN_bm);
 		
 		uint8_t rx_data[3];
 		read(rx_data, 3, MCP346X_SCAN_bm);
 		uint8_t err = 0;
 		for(int i = 0; i < 3; i++) err |= rx_data[i] ^ tx_data[i];
-		if(err) return 1;
+		if(err) return false;
 	}
 	
 	uint8_t tx_data[1] =	{	MCP346X_CONV_MODE_CONTINUOUS_bm | 
@@ -138,24 +138,24 @@ int MCP346x::start_continuous_adc(uint16_t channels)
 	uint8_t rx_data[1];
 	read(rx_data, 1, MCP346X_CONFIG3_bm);	
 	uint8_t err = rx_data[0] ^ tx_data[0];
-	if(err) return 1;
+	if(err) return false;
 	
 	uint8_t cmd = MCP346X_ADDRESS_bm | MCP346X_CNVST_bm | MCP346X_FAST_COMMAND_bm;
 	write(cmd);
-	return 0;
+	return true;
 }
 
-int MCP346x::start_single_adc(uint16_t channels)
+bool MCP346x::start_single_adc(uint16_t channels)
 {
 	if(channels) {
-		uint8_t tx_data[3] = {descriptor.config.scan_delay << 4, channels >> 8, (uint8_t)channels};
+		uint8_t tx_data[3] = {(uint8_t)(descriptor.config.scan_delay << 4), (uint8_t)(channels >> 8), (uint8_t)channels};
 		write(tx_data, 3, MCP346X_SCAN_bm);
 		
 		uint8_t rx_data[3];
 		read(rx_data, 3, MCP346X_SCAN_bm);
 		uint8_t err = 0;
 		for(int i = 0; i < 3; i++) err |= rx_data[i] ^ tx_data[i];
-		if(err) return 1;
+		if(err) return false;
 	}
 	
 	uint8_t tx_data[1] =	{	MCP346X_CONV_MODE_1SHOT_STBY_bm |
@@ -170,11 +170,11 @@ int MCP346x::start_single_adc(uint16_t channels)
 	uint8_t rx_data[1];
 	read(rx_data, 1, MCP346X_CONFIG3_bm);	
 	uint8_t err = rx_data[0] ^ tx_data[0];
-	if(err) return 1;
+	if(err) return false;
 	
 	uint8_t cmd = MCP346X_ADDRESS_bm | MCP346X_CNVST_bm | MCP346X_FAST_COMMAND_bm;
 	write(cmd);
-	return 0;
+	return true;
 }
 
 //----------------------------------Private Functions-------------------------------------//

@@ -11,7 +11,7 @@ Driver library for the MCP3464 sigma delta 8 channel ADC. Read the datasheet and
 
 //Hardware Specific
 #define MCP346X_ADDRESS_bm			0x01 << 6
-#define MCP346X_uV_PER_LSB			307.031
+#define MCP346X_uV_PER_LSB			62.5		// uV per LSB = Vref/2^15 = 2,048,000µV/32768 = 62.5µV
 #define MCP346x_SPI_CLK_FREQ_MHz	10000000
 
 //Command Modes
@@ -250,13 +250,13 @@ class MCP346x
 		
 		struct device_descriptor descriptor;
 		
-		int begin(void);
+		bool begin(void);
 		uint8_t write(uint8_t tx_byte);
 		uint8_t write(uint8_t *tx_data, uint8_t num_bytes, uint8_t reg_addr_bm);
 		int read(uint8_t *rx_buf, uint8_t num_bytes, uint8_t reg_addr_bm);
 		int write_config(void);
-		int start_continuous_adc(uint16_t channels);
-		int start_single_adc(uint16_t channels);
+		bool start_continuous_adc(uint16_t channels);
+		bool start_single_adc(uint16_t channels);
 		
 	private:
 		void get_config_bytes(uint8_t *config_bytes);

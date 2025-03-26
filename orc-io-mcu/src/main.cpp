@@ -47,8 +47,16 @@ void setup() {
   Serial.println("Reading calibration data");
   if (!calibrate_init()) Serial.println("EEPROM was not initialised, defaults loaded");
   else Serial.println("Calibration data read from EEPROM");
+
+  Serial.println("Initialising ADC interface");
+  if (!ADC_init()) {
+    Serial.println("Failed to initialise ADC driver.");
+  } else {
+    Serial.println("ADC driver initialised.");
+  }
+
   Serial.println("Initialising RTD interface");
-  //setupRtdInterface();
+  setupRtdInterface();
 
   Serial.println("Initialising DAC interface");
   if (!DAC_init()) {
@@ -56,6 +64,21 @@ void setup() {
   } else {
     Serial.println("DAC driver initialised.");
   }
+
+  Serial.println("Changing ADC inputs 1 & 2 to V");
+  strcpy(adcInput[0].unit, "V");
+  strcpy(adcInput[1].unit, "V");
+
+  Serial.println("Changing ADC inputs 3 & 4 to mA");
+  strcpy(adcInput[2].unit, "mA");
+  strcpy(adcInput[3].unit, "mA");
+
+  Serial.println("Changing ADC inputs 5 & 6 to µV");
+  strcpy(adcInput[4].unit, "µV");
+  strcpy(adcInput[5].unit, "µV");
+
+  Serial.println("Changing ADC inputs 7 to xx");    // Invalid, should default to mV
+  strcpy(adcInput[6].unit, "xx");
   
   loopTargetTime = millis();
 }
@@ -82,6 +105,14 @@ void loop() {
         }
       }
     }*/
+
+    if (!ADC_readInputs()) {
+      Serial.printf("Failed to read ADC with error: %s\n", adcDriver.message);
+      adcDriver.newMessage = false;
+    } else {
+      Serial.println("ADC inputs read.");
+    }
+
     dacOutput[0].value += 1000;
     if (dacOutput[0].value > 10000) dacOutput[0].value = 0;
     dacOutput[1].value -=1000;

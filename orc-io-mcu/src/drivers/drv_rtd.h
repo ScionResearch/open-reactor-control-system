@@ -12,7 +12,7 @@ enum RtdSensorType {
 };
 
 // Driver struct - contains interface parameters and sensor object
-struct RtdSensor_t {
+struct RTDDriver_t {
     TemperatureSensor_t *temperatureObj;
     Calibrate_t *cal;
     int cs_pin;
@@ -22,11 +22,11 @@ struct RtdSensor_t {
 };
 
 extern TemperatureSensor_t rtd_sensor[3];
-extern RtdSensor_t rtd_interface[3];
+extern RTDDriver_t rtd_interface[3];
 
 bool init_rtdDriver(void);                                // Initialises the CS pins and temperature objects
-bool initTemperatureSensor(RtdSensor_t *sensorObj);       // Initialises the RTD sensor - requires the library instance and the temperarure object
+bool initTemperatureSensor(RTDDriver_t *sensorObj);       // Initialises the RTD sensor - requires the library instance and the temperarure object
 bool readRtdSensors(void);                                // Loop function for periodic sensor reading
-bool readRtdSensor(RtdSensor_t *sensorObj);               // Loop function for periodic sensor reading (individual sensor)
-bool setRtdSensorType(RtdSensor_t *sensorObj, RtdSensorType sensorType);  // PT100 or PT1000
-bool setRtdWires(RtdSensor_t *sensorObj, max31865_numwires_t wires);      // MAX31865_2WIRE, MAX31865_3WIRE or MAX31865_4WIRE
+bool readRtdSensor(RTDDriver_t *sensorObj);               // Loop function for periodic sensor reading (individual sensor)
+bool setRtdSensorType(RTDDriver_t *sensorObj, RtdSensorType sensorType);  // PT100 or PT1000
+bool setRtdWires(RTDDriver_t *sensorObj, max31865_numwires_t wires);      // MAX31865_2WIRE, MAX31865_3WIRE or MAX31865_4WIRE

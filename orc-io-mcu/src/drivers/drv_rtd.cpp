@@ -14,7 +14,7 @@ RtdRef_t rtdRefs[] = {
 
 int rtdPins[] = {PIN_PT100_CS_1, PIN_PT100_CS_2, PIN_PT100_CS_3};
 TemperatureSensor_t rtd_sensor[3];
-RtdSensor_t rtd_interface[3];
+RTDDriver_t rtd_interface[3];
 
 bool init_rtdDriver(void) {
     // Initialise CS pins for the MAX31865 ICs
@@ -48,7 +48,7 @@ bool init_rtdDriver(void) {
     return true;
 }
 
-bool initTemperatureSensor(RtdSensor_t *sensorObj) {
+bool initTemperatureSensor(RTDDriver_t *sensorObj) {
     if (rtdSensorCount >= NUM_MAX31865_INTERFACES) return false;
     rtdSensorCount ++;
     // Initialise the temperature sensor object
@@ -74,7 +74,7 @@ bool readRtdSensors(void) {
     return true;
 }
 
-bool readRtdSensor(RtdSensor_t *sensorObj) {
+bool readRtdSensor(RTDDriver_t *sensorObj) {
     if (sensorObj == NULL || sensorObj->sensor == NULL || sensorObj->temperatureObj == NULL) {
         Serial.println("Invalid RTD sensor object.");
         return false;
@@ -112,13 +112,13 @@ bool readRtdSensor(RtdSensor_t *sensorObj) {
     return true;
 }
 
-bool setRtdSensorType(RtdSensor_t *sensorObj, RtdSensorType sensorType) {
+bool setRtdSensorType(RTDDriver_t *sensorObj, RtdSensorType sensorType) {
     if (sensorObj->sensor == NULL) return false;
     sensorObj->sensorType = sensorType;
     return true;
 }
 
-bool setRtdWires(RtdSensor_t *sensorObj, max31865_numwires_t wires) {
+bool setRtdWires(RTDDriver_t *sensorObj, max31865_numwires_t wires) {
     if (sensorObj->sensor == NULL) return false;
     sensorObj->wires = wires;
     sensorObj->sensor->setWires(wires);
