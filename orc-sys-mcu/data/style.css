@@ -651,3 +651,146 @@ h1 {
         opacity: 1;
     }
 }
+
+/* File Manager Styles */
+.file-manager {
+    margin-top: 30px;
+}
+
+.path-navigator {
+    background-color: #f5f5f5;
+    padding: 10px 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    font-family: monospace;
+    display: flex;
+    align-items: center;
+}
+
+.path-part {
+    cursor: pointer;
+    color: #0066cc;
+    margin: 0 3px;
+}
+
+.path-part:hover {
+    text-decoration: underline;
+}
+
+.path-separator {
+    margin: 0 5px;
+    color: #666;
+}
+
+.file-list {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.file-list-header {
+    background-color: #eaeaea;
+    padding: 12px 15px;
+    display: grid;
+    grid-template-columns: 1fr 150px 200px 100px;
+    font-weight: bold;
+    border-bottom: 1px solid #ddd;
+}
+
+.file-list-items {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.file-item, .directory-item {
+    display: grid;
+    grid-template-columns: 1fr 150px 200px 100px;
+    padding: 10px 15px;
+    border-bottom: 1px solid #eee;
+    align-items: center;
+}
+
+.file-item:last-child, .directory-item:last-child {
+    border-bottom: none;
+}
+
+.file-item:hover, .directory-item:hover {
+    background-color: #f9f9f9;
+}
+
+.directory-item {
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.directory-item .file-name::before {
+    content: "📁 ";
+}
+
+.file-item .file-name::before {
+    content: "📄 ";
+}
+
+.file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.file-actions {
+    text-align: right;
+}
+
+.download-btn {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.download-btn:hover {
+    background-color: #45a049;
+}
+
+.download-btn.disabled {
+    background-color: #cccccc;
+    color: #666666;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.download-btn.disabled:hover {
+    background-color: #cccccc;
+}
+
+.empty-message {
+    padding: 20px;
+    text-align: center;
+    color: #666;
+}
+
+.loading {
+    text-align: center;
+    padding: 30px;
+    color: #666;
+}
+
+.file-size {
+    text-align: right;
+    padding-right: 15px;
+}
+
+.status-info {
+    background-color: #e6f7ff;
+    color: #0066cc;
+    padding: 12px 15px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    border-left: 4px solid #0066cc;
+}

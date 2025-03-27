@@ -372,6 +372,13 @@ void setupWebServer()
 
   // Route handlers
   server.on("/", HTTP_GET, handleRoot);
+  server.on("/filemanager", HTTP_GET, handleFileManager);
+  
+  // API endpoints for file manager
+  server.on("/api/sd/list", HTTP_GET, handleSDListDirectory);
+  server.on("/api/sd/download", HTTP_GET, handleSDDownloadFile);
+  server.on("/api/sd/view", HTTP_GET, handleSDViewFile);
+  
   server.on("/api/sensors", HTTP_GET, []()
             {
         DateTime dt;
@@ -752,6 +759,22 @@ void handleRoot()
   handleFile("/index.html");
 }
 
+void handleFileManager(void) {
+  // Check if SD card is ready
+  if (!sdInfo.ready) {
+    server.send(503, "application/json", "{\"error\":\"SD card not available\"}");
+    return;
+  }
+  
+  // Serve the main index page since file manager is now integrated
+  handleRoot();
+}
+
+void handleFileManagerPage(void) {
+  // Redirects to handleRoot (index.html) as file manager is now integrated
+  handleRoot();
+}
+
 // Handle file requests - retrieve from LittleFS and send to client
 void handleFile(const char *path)
 {
@@ -807,6 +830,243 @@ void handleFile(const char *path)
     status.updated = true;
     statusLocked = false;
   }
+}
+
+void handleSDDownloadFile(void) {
+  if (sdLocked) {
+    server.send(423, "application/json", "{\"error\":\"SD card is locked\"}");
+    return;
+  }
+  
+  if (!sdInfo.ready) {
+    server.send(503, "application/json", "{\"error\":\"SD card not available\"}");
+    return;
+  }
+  
+  // Get the requested file path from the query parameter
+  String path = server.hasArg("path") ? server.arg("path") : "";
+  
+  if (path.length() == 0) {
+    server.send(400, "application/json", "{\"error\":\"File path not specified\"}");
+    return;
+  }
+  
+  // Make sure path starts with a forward slash
+  if (!path.startsWith("/")) {
+    path = "/" + path;
+  }
+  
+  sdLocked = true;
+  
+  // Check if the file exists
+  if (!sd.exists(path.c_str())) {
+    sdLocked = false;
+    server.send(404, "application/json", "{\"error\":\"File not found\"}");
+    return;
+  }
+  
+  // Open the file
+  FsFile file = sd.open(path.c_str(), O_RDONLY);
+  
+  if (!file) {
+    sdLocked = false;
+    server.send(500, "application/json", "{\"error\":\"Failed to open file\"}");
+    return;
+  }
+  
+  if (file.isDirectory()) {
+    file.close();
+    sdLocked = false;
+    server.send(400, "application/json", "{\"error\":\"Path is a directory, not a file\"}");
+    return;
+  }
+  
+  // Get file size
+  size_t fileSize = file.size();
+  
+  // Check file size limit
+  if (fileSize > MAX_DOWNLOAD_SIZE) {
+    file.close();
+    sdLocked = false;
+    char errorMsg[128];
+    snprintf(errorMsg, sizeof(errorMsg), 
+             "{\"error\":\"File is too large for download (%u bytes). Maximum size is %u bytes.\"}",
+             fileSize, MAX_DOWNLOAD_SIZE);
+    server.send(413, "application/json", errorMsg);
+    return;
+  }
+  
+  // Get the filename from the path
+  String fileName = path;
+  int lastSlash = fileName.lastIndexOf('/');
+  if (lastSlash >= 0) {
+    fileName = fileName.substring(lastSlash + 1);
+  }
+  
+  // Enhanced headers to force download with the correct filename
+  String contentDisposition = "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''" + fileName;
+  
+  // Use simpler header approach to avoid memory issues
+  server.sendHeader("Content-Type", "application/octet-stream");
+  server.sendHeader("Content-Disposition", contentDisposition);
+  server.sendHeader("Cache-Control", "no-cache");
+  
+  // Set a watchdog timer and timeout to prevent system hangs
+  uint32_t startTime = millis();
+  uint32_t lastProgressTime = startTime;
+  const uint32_t timeout = 30000; // 30 second timeout
+  
+  WiFiClient client = server.client();
+  
+  // Stream the file in chunks with timeout checks
+  const size_t bufferSize = 1024; // Smaller buffer size for better reliability
+  uint8_t buffer[bufferSize];
+  size_t bytesRead;
+  size_t totalBytesRead = 0;
+  bool timeoutOccurred = false;
+  
+  server.setContentLength(fileSize);
+  server.send(200, "application/octet-stream", ""); // Send headers only
+  
+  // Stream file with careful progress monitoring
+  while (totalBytesRead < fileSize) {
+    // Check for timeout
+    if (millis() - lastProgressTime > timeout) {
+      log(LOG_WARNING, true, "Timeout occurred during file download\n");
+      timeoutOccurred = true;
+      break;
+    }
+    
+    // Read a chunk from the file
+    bytesRead = file.read(buffer, min(bufferSize, fileSize - totalBytesRead));
+    
+    if (bytesRead == 0) {
+      // End of file or error condition
+      break;
+    }
+    
+    // Write chunk to client
+    if (client.write(buffer, bytesRead) != bytesRead) {
+      // Client disconnected or write error
+      log(LOG_WARNING, true, "Client write error during file download\n");
+      break;
+    }
+    
+    totalBytesRead += bytesRead;
+    lastProgressTime = millis(); // Update progress timer
+    
+    // Allow other processes to run
+    yield();
+  }
+  
+  // Clean up
+  file.close();
+  sdLocked = false;
+  
+  if (timeoutOccurred) {
+    log(LOG_ERROR, true, "File download timed out after %u bytes\n", totalBytesRead);
+  } else if (totalBytesRead == fileSize) {
+    log(LOG_INFO, true, "File download completed successfully: %s (%u bytes)\n", 
+        fileName.c_str(), totalBytesRead);
+  } else {
+    log(LOG_WARNING, true, "File download incomplete: %u of %u bytes transferred\n", 
+        totalBytesRead, fileSize);
+  }
+}
+
+void handleSDViewFile(void) {
+  if (sdLocked) {
+    server.send(423, "application/json", "{\"error\":\"SD card is locked\"}");
+    return;
+  }
+  
+  if (!sdInfo.ready) {
+    server.send(503, "application/json", "{\"error\":\"SD card not available\"}");
+    return;
+  }
+  
+  // Get the requested file path from the query parameter
+  String path = server.hasArg("path") ? server.arg("path") : "";
+  
+  if (path.length() == 0) {
+    server.send(400, "application/json", "{\"error\":\"File path not specified\"}");
+    return;
+  }
+  
+  // Make sure path starts with a forward slash
+  if (!path.startsWith("/")) {
+    path = "/" + path;
+  }
+  
+  sdLocked = true;
+  
+  // Check if the file exists
+  if (!sd.exists(path.c_str())) {
+    sdLocked = false;
+    server.send(404, "application/json", "{\"error\":\"File not found\"}");
+    return;
+  }
+  
+  // Open the file
+  FsFile file = sd.open(path.c_str(), O_RDONLY);
+  
+  if (!file) {
+    sdLocked = false;
+    server.send(500, "application/json", "{\"error\":\"Failed to open file\"}");
+    return;
+  }
+  
+  if (file.isDirectory()) {
+    file.close();
+    sdLocked = false;
+    server.send(400, "application/json", "{\"error\":\"Path is a directory, not a file\"}");
+    return;
+  }
+  
+  // Get file size
+  size_t fileSize = file.size();
+  
+  // Get the filename from the path
+  String fileName = path;
+  int lastSlash = fileName.lastIndexOf('/');
+  if (lastSlash >= 0) {
+    fileName = fileName.substring(lastSlash + 1);
+  }
+  
+  // Determine content type based on file extension
+  String contentType = "text/plain";
+  if (fileName.endsWith(".html") || fileName.endsWith(".htm")) contentType = "text/html";
+  else if (fileName.endsWith(".css")) contentType = "text/css";
+  else if (fileName.endsWith(".js")) contentType = "application/javascript";
+  else if (fileName.endsWith(".json")) contentType = "application/json";
+  else if (fileName.endsWith(".png")) contentType = "image/png";
+  else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) contentType = "image/jpeg";
+  else if (fileName.endsWith(".gif")) contentType = "image/gif";
+  else if (fileName.endsWith(".ico")) contentType = "image/x-icon";
+  else if (fileName.endsWith(".pdf")) contentType = "application/pdf";
+  
+  // Set headers for displaying in browser
+  server.sendHeader("Content-Type", contentType);
+  server.sendHeader("Content-Length", String(fileSize));
+  server.sendHeader("Cache-Control", "max-age=86400");
+  
+  // Stream the file to the client
+  WiFiClient client = server.client();
+  
+  // Use a buffer for more efficient file transfer
+  const size_t bufferSize = 2048;
+  uint8_t buffer[bufferSize];
+  size_t bytesRead;
+  
+  do {
+    bytesRead = file.read(buffer, bufferSize);
+    if (bytesRead > 0) {
+      client.write(buffer, bytesRead);
+    }
+  } while (bytesRead == bufferSize);
+  
+  file.close();
+  sdLocked = false;
 }
 
 // NTP management functions ------------------------------------------------>
@@ -878,6 +1138,115 @@ void handleNTPUpdates(bool forceUpdate) {
     ntpUpdateTimestamp = millis();
     ntpUpdateRequested = false; // Clear the request flag
   }
+}
+
+// SD Card File Manager API functions ---------------------------------------->
+void handleSDListDirectory(void) {
+  if (sdLocked) {
+    server.send(423, "application/json", "{\"error\":\"SD card is locked\"}");
+    return;
+  }
+  
+  if (!sdInfo.ready) {
+    server.send(503, "application/json", "{\"error\":\"SD card not available\"}");
+    return;
+  }
+  
+  // Get the requested directory path from the query parameter
+  String path = server.hasArg("path") ? server.arg("path") : "/";
+  
+  // Make sure path starts with a forward slash
+  if (!path.startsWith("/")) {
+    path = "/" + path;
+  }
+  
+  sdLocked = true;
+  
+  // Check if the path exists and is a directory
+  if (!sd.exists(path.c_str())) {
+    sdLocked = false;
+    server.send(404, "application/json", "{\"error\":\"Directory not found\"}");
+    return;
+  }
+  
+  FsFile dir = sd.open(path.c_str());
+  
+  if (!dir.isDirectory()) {
+    dir.close();
+    sdLocked = false;
+    server.send(400, "application/json", "{\"error\":\"Not a directory\"}");
+    return;
+  }
+  
+  // Create a JSON document for the response
+  DynamicJsonDocument doc(16384); // Adjust size based on expected directory size
+  
+  doc["path"] = path;
+  JsonArray files = doc.createNestedArray("files");
+  JsonArray directories = doc.createNestedArray("directories");
+  
+  // Read all files and directories in the requested path
+  dir.rewindDirectory();
+  
+  FsFile file;
+  char filename[256];
+  while (file.openNext(&dir)) {
+    file.getName(filename, sizeof(filename));
+    
+    // Skip hidden files and . and ..
+    if (filename[0] == '.') {
+      file.close();
+      continue;
+    }
+    
+    // Create a JSON object for the file or directory
+    if (file.isDirectory()) {
+      JsonObject dirObj = directories.createNestedObject();
+      dirObj["name"] = filename;
+      
+      // Calculate full path for this directory
+      String fullPath = path;
+      if (!path.endsWith("/")) fullPath += "/";
+      fullPath += filename;
+      dirObj["path"] = fullPath;
+    } else {
+      JsonObject fileObj = files.createNestedObject();
+      fileObj["name"] = filename;
+      fileObj["size"] = file.size();
+      
+      // Calculate full path for this file
+      String fullPath = path;
+      if (!path.endsWith("/")) fullPath += "/";
+      fullPath += filename;
+      fileObj["path"] = fullPath;
+      
+      // Add last modified date
+      uint16_t fileDate, fileTime;
+      file.getModifyDateTime(&fileDate, &fileTime);
+      
+      int year = FS_YEAR(fileDate);
+      int month = FS_MONTH(fileDate);
+      int day = FS_DAY(fileDate);
+      int hour = FS_HOUR(fileTime);
+      int minute = FS_MINUTE(fileTime);
+      int second = FS_SECOND(fileTime);
+      
+      char dateTimeStr[32];
+      snprintf(dateTimeStr, sizeof(dateTimeStr), "%04d-%02d-%02d %02d:%02d:%02d", 
+               year, month, day, hour, minute, second);
+      fileObj["modified"] = dateTimeStr;
+    }
+    
+    file.close();
+  }
+  
+  dir.close();
+  sdLocked = false;
+  
+  // Send the JSON response
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
 }
 
 // Debug functions --------------------------------------------------------->

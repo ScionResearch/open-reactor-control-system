@@ -12,6 +12,7 @@
         <nav>
             <ul>
                 <li><a href="#" class="active" data-page="dashboard">Dashboard</a></li>
+                <li><a href="#" data-page="filemanager">File Manager</a></li>
                 <li><a href="#" data-page="system">System</a></li>
                 <li><a href="#" data-page="settings">Settings</a></li>
             </ul>
@@ -219,6 +220,29 @@
                             </div>
                             <button type="submit" class="btn">Save MQTT Settings</button>
                         </form>
+                    </div>
+                </div>
+
+                <div id="filemanager" class="page">
+                    <h1>SD Card File Manager</h1>
+                    <p class="description">Browse and download files from the device's SD card.</p>
+                    
+                    <div class="file-manager">
+                        <div id="sd-status" class="status-message"></div>
+                        
+                        <div id="path-navigator" class="path-navigator"></div>
+                        
+                        <div class="file-list">
+                            <div class="file-list-header">
+                                <div>Name</div>
+                                <div>Size</div>
+                                <div>Modified</div>
+                                <div>Actions</div>
+                            </div>
+                            <div id="file-list-items" class="file-list-items">
+                                <div class="loading">Loading files...</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

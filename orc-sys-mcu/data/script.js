@@ -678,3 +678,366 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// File Manager functionality
+let currentPath = '/';
+let fileManagerActive = false; // Track if file manager tab is active
+let sdStatusInterval = null; // Interval for SD status updates
+
+const initFileManager = () => {
+    if (!document.getElementById('filemanager')) return;
+    
+    fileManagerActive = true;
+    const fileListContainer = document.getElementById('file-list-items');
+    const pathNavigator = document.getElementById('path-navigator');
+    const sdStatusElement = document.getElementById('sd-status');
+    
+    // Initialize file manager
+    checkSDCardStatus();
+    
+    // Start periodic SD card status checks
+    if (sdStatusInterval) {
+        clearInterval(sdStatusInterval);
+    }
+    sdStatusInterval = setInterval(checkSDCardStatus, 3000); // Check every 3 seconds
+    
+    // Function to check SD card status
+    function checkSDCardStatus() {
+        if (!fileManagerActive) return;
+        
+        fetch('/api/system/status')
+            .then(response => response.json())
+            .then(data => {
+                if (!data.sd.inserted) {
+                    // SD card is physically not inserted
+                    sdStatusElement.innerHTML = '<div class="status-error">SD Card not inserted</div>';
+                    fileListContainer.innerHTML = '<div class="error-message">SD Card is not inserted. Please insert an SD card to view files.</div>';
+                    // Disable the file manager functionality when SD card is not available
+                    pathNavigator.innerHTML = '';
+                } else {
+                    // SD card is physically present - show basic info regardless of ready status
+                    if (data.sd.ready && data.sd.capacityGB) {
+                        sdStatusElement.innerHTML = `<div class="status-good">SD Card Ready - ${data.sd.freeSpaceGB.toFixed(2)} GB free of ${data.sd.capacityGB.toFixed(2)} GB</div>`;
+                    } else {
+                        sdStatusElement.innerHTML = '<div class="status-info">SD Card inserted</div>';
+                    }
+                    
+                    // Only reload directory contents if the file manager shows the "not inserted" error message
+                    const errorMsg = fileListContainer.querySelector('.error-message');
+                    if (errorMsg && errorMsg.textContent.includes('not inserted')) {
+                        loadDirectory(currentPath);
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error checking SD status:', error);
+                // Don't update the UI on fetch errors to avoid flickering
+            });
+    }
+    
+    // Function to load directory contents with retry
+    function loadDirectory(path, retryCount = 0) {
+        const maxRetries = 3;
+        fileListContainer.innerHTML = '<div class="loading">Loading files...</div>';
+        updatePathNavigator(path);
+        
+        // Add a short delay before first API call after initialization
+        // This helps ensure the SD card is fully ready
+        const initialDelay = (retryCount === 0) ? 500 : 0;
+        
+        setTimeout(() => {
+            fetch(`/api/sd/list?path=${encodeURIComponent(path)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        // If we get a non-OK response but the SD is inserted according to the system status
+                        // it could be a timing issue with the SD card initialization
+                        if (response.status === 503 && retryCount < maxRetries) {
+                            // Wait longer with each retry
+                            const delay = 1000 * (retryCount + 1);
+                            console.log(`SD card not ready, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+                            fileListContainer.innerHTML = `<div class="loading">SD card initializing, please wait... (${retryCount + 1}/${maxRetries})</div>`;
+                            
+                            setTimeout(() => {
+                                loadDirectory(path, retryCount + 1);
+                            }, delay);
+                            return null; // Skip further processing for this attempt
+                        }
+                        
+                        throw new Error(response.status === 503 ? 
+                            'SD card not ready. It may be initializing or experiencing an issue.' :
+                            'Failed to list directory');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data) {
+                        displayDirectoryContents(data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading directory:', error);
+                    fileListContainer.innerHTML = `
+                        <div class="error-message">
+                            ${error.message || 'Failed to load directory contents'}
+                            ${retryCount >= maxRetries ? 
+                                '<div class="retry-action"><button id="retryButton" class="download-btn">Retry</button></div>' : ''}
+                        </div>
+                    `;
+                    
+                    // Add retry button functionality
+                    const retryButton = document.getElementById('retryButton');
+                    if (retryButton) {
+                        retryButton.addEventListener('click', () => {
+                            loadDirectory(path, 0); // Reset retry count on manual retry
+                        });
+                    }
+                });
+        }, initialDelay);
+    }
+    
+    // Function to format file size in a human-readable format
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + units[i];
+    }
+    
+    // Function to update the path navigator
+    function updatePathNavigator(path) {
+        pathNavigator.innerHTML = '';
+        
+        const parts = path.split('/').filter(part => part !== '');
+        
+        // Add root
+        const rootElement = document.createElement('span');
+        rootElement.className = 'path-part';
+        rootElement.textContent = 'Root';
+        rootElement.onclick = () => navigateTo('/');
+        pathNavigator.appendChild(rootElement);
+        
+        let currentPathBuilder = '';
+        parts.forEach((part, index) => {
+            // Add separator
+            const separator = document.createElement('span');
+            separator.className = 'path-separator';
+            separator.textContent = ' / ';
+            pathNavigator.appendChild(separator);
+            
+            // Add path part
+            currentPathBuilder += '/' + part;
+            const pathPart = document.createElement('span');
+            pathPart.className = 'path-part';
+            pathPart.textContent = part;
+            
+            // Only make it clickable if it's not the last part
+            if (index < parts.length - 1) {
+                const pathCopy = currentPathBuilder; // Create a closure copy
+                pathPart.onclick = () => navigateTo(pathCopy);
+            }
+            pathNavigator.appendChild(pathPart);
+        });
+    }
+    
+    // Function to navigate to a directory
+    function navigateTo(path) {
+        currentPath = path;
+        loadDirectory(path);
+    }
+    
+    // Function to display directory contents
+    function displayDirectoryContents(data) {
+        fileListContainer.innerHTML = '';
+        
+        // Constant for maximum file size (should match server MAX_DOWNLOAD_SIZE)
+        const MAX_DOWNLOAD_SIZE = 5242880; // 5MB in bytes
+        
+        // Check if there are no files or directories
+        if (data.directories.length === 0 && data.files.length === 0) {
+            fileListContainer.innerHTML = '<div class="empty-message">This directory is empty</div>';
+            return;
+        }
+        
+        // Display directories first
+        data.directories.forEach(dir => {
+            const dirElement = document.createElement('div');
+            dirElement.className = 'directory-item';
+            dirElement.innerHTML = `
+                <div class="file-name">${dir.name}</div>
+                <div class="file-size">Directory</div>
+                <div class="file-modified">-</div>
+                <div class="file-actions"></div>
+            `;
+            dirElement.onclick = () => navigateTo(dir.path);
+            fileListContainer.appendChild(dirElement);
+        });
+        
+        // Then display files
+        data.files.forEach(file => {
+            const fileElement = document.createElement('div');
+            fileElement.className = 'file-item';
+            
+            // Check if file is too large for download
+            const isTooLarge = file.size > MAX_DOWNLOAD_SIZE;
+            const downloadBtnClass = isTooLarge ? 'download-btn disabled' : 'download-btn';
+            const downloadBtnTitle = isTooLarge 
+                ? `File is too large to download (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(MAX_DOWNLOAD_SIZE)}.`
+                : 'Download this file';
+            
+            fileElement.innerHTML = `
+                <div class="file-name" data-path="${file.path}">${file.name}</div>
+                <div class="file-size">${formatFileSize(file.size)}</div>
+                <div class="file-modified">${file.modified || '-'}</div>
+                <div class="file-actions">
+                    <button class="${downloadBtnClass}" data-path="${file.path}" title="${downloadBtnTitle}">Download</button>
+                </div>
+            `;
+            fileListContainer.appendChild(fileElement);
+            
+            // Add click handler to filename for viewing
+            const fileName = fileElement.querySelector('.file-name');
+            fileName.addEventListener('click', (event) => {
+                event.stopPropagation(); // Prevent bubbling
+                const filePath = event.target.getAttribute('data-path');
+                viewFile(filePath);
+            });
+            
+            // Add download button event listener (only if not too large)
+            const downloadBtn = fileElement.querySelector('.download-btn');
+            if (!isTooLarge) {
+                downloadBtn.addEventListener('click', (event) => {
+                    event.stopPropagation(); // Prevent directory click event
+                    const filePath = event.target.getAttribute('data-path');
+                    downloadFile(filePath);
+                });
+            }
+        });
+    }
+    
+    // Function to download a file
+    function downloadFile(path) {
+        // Extract the filename from the path
+        const filename = path.split('/').pop();
+        const downloadUrl = `/api/sd/download?path=${encodeURIComponent(path)}`;
+        
+        // Create a link and click it to start download
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        // Explicitly set the download attribute with the filename
+        a.download = filename; 
+        a.setAttribute('download', filename); // For older browsers
+        // Don't use _blank as it tends to open in browser
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+    
+    // Function to view a file in the browser
+    function viewFile(path) {
+        // Construct the URL for viewing the file
+        const viewUrl = `/api/sd/view?path=${encodeURIComponent(path)}`;
+        
+        // Open file in a new tab
+        window.open(viewUrl, '_blank');
+    }
+    
+    // Fix to ensure SD card operation succeeds after system boot
+    function checkAndLoadDirectory() {
+        if (!fileManagerActive) return;
+        
+        fetch('/api/system/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.sd && data.sd.inserted && data.sd.ready) {
+                    // If SD card is ready according to status API, try loading the directory
+                    loadDirectory(currentPath);
+                } else if (data.sd && data.sd.inserted) {
+                    // SD card is inserted but not fully ready - wait and retry
+                    sdStatusElement.innerHTML = '<div class="status-info">SD Card initializing, please wait...</div>';
+                    setTimeout(checkAndLoadDirectory, 1500);
+                } else {
+                    // SD card not inserted
+                    sdStatusElement.innerHTML = '<div class="status-error">SD Card not inserted</div>';
+                    fileListContainer.innerHTML = '<div class="error-message">SD Card is not inserted. Please insert an SD card to view files.</div>';
+                    pathNavigator.innerHTML = '';
+                }
+            })
+            .catch(error => {
+                console.error('Error checking SD status:', error);
+                // Retry after a delay
+                setTimeout(checkAndLoadDirectory, 2000);
+            });
+    }
+    
+    // Override the initial checkSDCardStatus call to use the improved function
+    checkSDCardStatus = () => {
+        if (!fileManagerActive) return;
+        
+        fetch('/api/system/status')
+            .then(response => response.json())
+            .then(data => {
+                if (!data.sd.inserted) {
+                    // SD card is physically not inserted
+                    sdStatusElement.innerHTML = '<div class="status-error">SD Card not inserted</div>';
+                    fileListContainer.innerHTML = '<div class="error-message">SD Card is not inserted. Please insert an SD card to view files.</div>';
+                    pathNavigator.innerHTML = '';
+                } else {
+                    // SD card is physically present - show basic info regardless of ready status
+                    if (data.sd.ready && data.sd.capacityGB) {
+                        sdStatusElement.innerHTML = `<div class="status-good">SD Card Ready - ${data.sd.freeSpaceGB.toFixed(2)} GB free of ${data.sd.capacityGB.toFixed(2)} GB</div>`;
+                        
+                        // If we show Loading... but the card is ready, trigger a directory load
+                        const loadingMsg = fileListContainer.querySelector('.loading');
+                        if (loadingMsg) {
+                            loadDirectory(currentPath);
+                        }
+                    } else {
+                        sdStatusElement.innerHTML = '<div class="status-info">SD Card inserted</div>';
+                    }
+                    
+                    // Only reload directory contents if the file manager shows the "not inserted" error message
+                    const errorMsg = fileListContainer.querySelector('.error-message');
+                    if (errorMsg && errorMsg.textContent.includes('not inserted')) {
+                        checkAndLoadDirectory();
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error checking SD status:', error);
+            });
+    };
+    
+    // Initialize with our improved function
+    checkAndLoadDirectory();
+};
+
+// Initialize File Manager when switching to the tab
+document.addEventListener('DOMContentLoaded', () => {
+    // Add tab switching behavior for File Manager tab
+    const fileManagerTab = document.querySelector('a[data-page="filemanager"]');
+    if (fileManagerTab) {
+        fileManagerTab.addEventListener('click', () => {
+            fileManagerActive = true;
+            initFileManager();
+        });
+    }
+    
+    // Handle switching away from file manager
+    document.querySelectorAll('nav a:not([data-page="filemanager"])').forEach(tab => {
+        tab.addEventListener('click', () => {
+            fileManagerActive = false;
+            // Clear the interval when leaving the file manager tab
+            if (sdStatusInterval) {
+                clearInterval(sdStatusInterval);
+                sdStatusInterval = null;
+            }
+        });
+    });
+    
+    // Initialize if file manager is the active tab on page load
+    if (document.querySelector('#filemanager.active')) {
+        fileManagerActive = true;
+        initFileManager();
+    }
+});

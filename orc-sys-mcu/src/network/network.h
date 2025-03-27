@@ -16,6 +16,9 @@
 #define NTP_STATUS_STALE 1
 #define NTP_STATUS_FAILED 2
 
+// Maximum file size for downloads (5MB to be safe)
+#define MAX_DOWNLOAD_SIZE 5242880
+
 void init_network(void);
 void manageNetwork(void);
 
@@ -36,6 +39,13 @@ void handleRoot(void);
 void handleFile(const char *path);
 void handleNTPUpdates(bool forceUpdate);
 void ntpUpdate(void);
+
+// File manager API functions
+void handleFileManager(void);
+void handleSDListDirectory(void);
+void handleSDDownloadFile(void);
+void handleSDViewFile(void);
+void handleFileManagerPage(void);
 
 // Network configuration structure
 struct NetworkConfig
