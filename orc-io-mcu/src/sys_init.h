@@ -9,6 +9,8 @@
 
 #include "MCP48FEB.h"
 #include "MCP346x.h"
+#include "TMC5130.h"
+#include "TMC5130_reg.h"
 
 #include "hardware/pins.h"
 
