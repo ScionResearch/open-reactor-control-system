@@ -2,6 +2,8 @@
 
 #include "sys_init.h"
 
+#include "MCP48FEB.h"
+
 #define DAC_RANGE         4095
 #define VREF_mV           2048
 #define OP_AMP_GAIN       5

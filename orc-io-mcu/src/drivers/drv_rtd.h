@@ -2,6 +2,8 @@
 
 #include "sys_init.h"
 
+#include <Adafruit_MAX31865.h>
+
 #define NUM_MAX31865_INTERFACES 3
 
 // Driver file for MAX31865 RTD sensor interfaces over SPI

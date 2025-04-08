@@ -2,9 +2,10 @@
 #include <FlashStorage_SAMD.h>
 
 MCP48FEBxx dac(PIN_DAC_CS, PIN_DAC_SYNC, &SPI);
-TMC5130 stepper = TMC5130(PIN_STP_CS, &SPI1);
+//TMC5130 stepper = TMC5130(PIN_STP_CS, &SPI1);
 
 uint32_t loopTargetTime = 0;
+uint32_t longLoopTargetTime = 0;
 uint32_t loopCounter = 0;
 
 void setupCSpins(void) {
@@ -36,45 +37,43 @@ void setupRtdInterface(void) {
   Serial.println("Changed sensor 2 to PT100, 4 wire.");
 }
 
-void printTMC5130registers(void) {
-  uint32_t data = 0;
-
+/*void printTMC5130registers(void) {
   // Print registers
   Serial.println("Reading TMC5130 registers");
   Serial.println("\nGeneral Configuration:");
-  Serial.printf("Status: 0x%02X, GCONF:       0x%08X\n", stepper.readRegister(TMC5130_REG_GCONF, &data), data);
-  Serial.printf("Status: 0x%02X, GSTAT:       0x%08X\n", stepper.readRegister(TMC5130_REG_GSTAT, &data), data);
-  Serial.printf("Status: 0x%02X, IFCNT:       0x%08X\n", stepper.readRegister(TMC5130_REG_IFCNT, &data), data);
-  Serial.printf("Status: 0x%02X, IOIN:        0x%08X\n", stepper.readRegister(TMC5130_REG_IOIN, &data), data);
+  Serial.printf("GCONF:       0x%08X\n", stepper.reg.GCONF);
+  Serial.printf("GSTAT:       0x%08X\n", stepper.reg.GSTAT);
+  Serial.printf("IFCNT:       0x%08X\n", stepper.reg.IFCNT);
+  Serial.printf("IOIN:        0x%08X\n", stepper.reg.IOIN);
 
   Serial.println("\nVelocity Dependent Driver Feature Control Register Set:");
-  Serial.printf("Status: 0x%02X, TSTEP:       0x%08X\n", stepper.readRegister(TMC5130_REG_TSTEP, &data), data);
+  Serial.printf("TSTEP:       0x%08X\n", stepper.reg.TSTEP);
 
   Serial.println("\nRamp Generator Motion Control Register Set:");
-  Serial.printf("Status: 0x%02X, RAMPMODE:    0x%08X\n", stepper.readRegister(TMC5130_REG_RAMPMODE, &data), data);
-  Serial.printf("Status: 0x%02X, XACTUAL:     0x%08X\n", stepper.readRegister(TMC5130_REG_XACTUAL, &data), data);
-  Serial.printf("Status: 0x%02X, VACTUAL:     0x%08X\n", stepper.readRegister(TMC5130_REG_VACTUAL, &data), data);
-  Serial.printf("Status: 0x%02X, XTARGET:     0x%08X\n", stepper.readRegister(TMC5130_REG_XTARGET, &data), data);
+  Serial.printf("RAMPMODE:    0x%08X\n", stepper.reg.RAMPMODE);
+  Serial.printf("XACTUAL:     0x%08X\n", stepper.reg.XACTUAL);
+  Serial.printf("VACTUAL:     0x%08X\n", stepper.reg.VACTUAL);
+  Serial.printf("XTARGET:     0x%08X\n", stepper.reg.XTARGET);
 
   Serial.println("\nRamp Generator Driver Feature Control Register Set:");
-  Serial.printf("Status: 0x%02X, SW_MODE:     0x%08X\n", stepper.readRegister(TMC5130_REG_SW_MODE, &data), data);
-  Serial.printf("Status: 0x%02X, RAMP_STAT:   0x%08X\n", stepper.readRegister(TMC5130_REG_RAMP_STAT, &data), data);
-  Serial.printf("Status: 0x%02X, XLATCH:      0x%08X\n", stepper.readRegister(TMC5130_REG_XLATCH, &data), data);
+  Serial.printf("SW_MODE:     0x%08X\n", stepper.reg.SW_MODE);
+  Serial.printf("RAMP_STAT:   0x%08X\n", stepper.reg.RAMP_STAT);
+  Serial.printf("XLATCH:      0x%08X\n", stepper.reg.XLATCH);
 
   Serial.println("\nEncoder Registers:");
-  Serial.printf("Status: 0x%02X, ENCMODE:     0x%08X\n", stepper.readRegister(TMC5130_REG_ENCMODE, &data), data);
-  Serial.printf("Status: 0x%02X, X_ENC:       0x%08X\n", stepper.readRegister(TMC5130_REG_X_ENC, &data), data);
-  Serial.printf("Status: 0x%02X, ENC_STATUS:  0x%08X\n", stepper.readRegister(TMC5130_REG_ENC_STATUS, &data), data);
-  Serial.printf("Status: 0x%02X, ENC_LATCH:   0x%08X\n", stepper.readRegister(TMC5130_REG_ENC_LATCH, &data), data);
+  Serial.printf("ENCMODE:     0x%08X\n", stepper.reg.ENCMODE);
+  Serial.printf("X_ENC:       0x%08X\n", stepper.reg.X_ENC);
+  Serial.printf("ENC_STATUS:  0x%08X\n", stepper.reg.ENC_STATUS);
+  Serial.printf("ENC_LATCH:   0x%08X\n", stepper.reg.ENC_LATCH);
 
   Serial.println("\nMotor Driver Registers:");
-  Serial.printf("Status: 0x%02X, MSCNT:       0x%08X\n", stepper.readRegister(TMC5130_REG_MSCNT, &data), data);
-  Serial.printf("Status: 0x%02X, MSCURACT:    0x%08X\n", stepper.readRegister(TMC5130_REG_MSCURACT, &data), data);
-  Serial.printf("Status: 0x%02X, CHOPCONF:    0x%08X\n", stepper.readRegister(TMC5130_REG_CHOPCONF, &data), data);;
-  Serial.printf("Status: 0x%02X, DRV_STATUS:  0x%08X\n", stepper.readRegister(TMC5130_REG_DRV_STATUS, &data), data);
-  Serial.printf("Status: 0x%02X, PWM_SCALE:   0x%08X\n", stepper.readRegister(TMC5130_REG_PWM_SCALE, &data), data);
-  Serial.printf("Status: 0x%02X, LOST_STEPS:  0x%08X\n", stepper.readRegister(TMC5130_REG_LOST_STEPS, &data), data);
-}
+  Serial.printf("MSCNT:       0x%08X\n", stepper.reg.MSCNT);
+  Serial.printf("MSCURACT:    0x%08X\n", stepper.reg.MSCURACT);
+  Serial.printf("CHOPCONF:    0x%08X\n", stepper.reg.CHOPCONF);
+  Serial.printf("DRV_STATUS:  0x%08X\n", stepper.reg.DRV_STATUS);
+  Serial.printf("PWM_SCALE:   0x%08X\n", stepper.reg.PWM_SCALE);
+  Serial.printf("LOST_STEPS:  0x%08X\n", stepper.reg.LOST_STEPS);
+}*/
 
 /*void runStepper(void) {
   stepper.writeRegister
@@ -130,7 +129,7 @@ void setup() {
 
   // TMC5130 stepper setup testing
   Serial.println("Initialising TMC5130 driver");
-  if (!stepper.begin()) {
+  /*if (!stepper.begin()) {
     Serial.println("Failed to initialise TMC5130 driver.");
   } else {
     Serial.println("TMC5130 driver initialised.");
@@ -138,17 +137,59 @@ void setup() {
   printTMC5130registers();
 
   // TMC5160 write test
-  Serial.println("\nSetting I hold and I run to 16:");
-  stepper.writeRegister(TMC5130_REG_XACTUAL, 976);
-  uint32_t data = 0;
-  Serial.printf("Status: 0x%02X, XACTUAL:  0x%08X\n", stepper.readRegister(TMC5130_REG_XACTUAL, &data), data);
+  Serial.println("\nStopping motor:");
+  stepper.stop();
+
+  delay(2000);  // Wind down
+
+  stepper.setDirection(0);
+  stepper.setStepsPerRev(200);
+  stepper.setMaxRPM(800);
+  stepper.setIhold(150);
+  stepper.setIrun(300);
+  
+  Serial.println("Setting Amax to 12RPM/sec:");
+  stepper.setAcceleration(100);
+  //stepper.writeRegister(TMC5130_REG_AMAX, 146); //0.2rps/sec, 12rpm/sec
+
+  Serial.println("Starting motor:");
+
+  stepper.setRPM(270);
+  stepper.run();*/
+
+  if (!stepper_init()) {
+    Serial.println("Failed to initialise TMC5130 driver.");
+  }
+  stepperDevice.maxRPM = 800;
+  stepperDevice.stepsPerRev = 200;
+  stepperDevice.inverted = false;
+  stepperDevice.direction = 0;
+  stepperDevice.acceleration = 100;
+  stepperDevice.holdCurrent = 150;
+  stepperDevice.runCurrent = 300;
+  stepperDevice.enabled = true;
+  stepperDevice.rpm = 120;
+
+  if (!stepper_update(true)) {
+    Serial.println("Failed to update TMC5130 parameters.");
+    if (stepperDriver.newMessage) {
+      Serial.println(stepperDriver.message);
+    }
+  }
+  Serial.println("Setup done");
   
   loopTargetTime = millis();
+  longLoopTargetTime = millis() + 10000;
 }
+
+uint16_t irun = 100;
+float rpm = 270;
+bool rotating = false;
+bool dir = 0;
 
 void loop() {
   if (millis() > loopTargetTime) {
-    loopTargetTime += 5000;
+    loopTargetTime += 1000;
     /*if (!readRtdSensors()) {
       Serial.println("Failed to read RTD sensors.");
     } else {
@@ -185,6 +226,37 @@ void loop() {
       Serial.println("Failed to write DAC outputs.");
     } else {
       Serial.printf("DAC output 0: %dmV, DAC output 1: %dmV\n", (int)dacOutput[0].value, (int)dacOutput[1].value);
+    }*/
+    uint32_t drvStatus = 0;
+    //stepper.readRegister(TMC5130_REG_DRV_STATUS, &drvStatus);
+    uint32_t tStep = 0;
+    /*stepper.readRegister(TMC5130_REG_TSTEP, &tStep);
+    Serial.printf("Stepper DRV_STATUS: 0x%08X", drvStatus);
+    Serial.printf(", SG_RESULT: %u", drvStatus & 0x3FF);
+    Serial.printf(", TSTEP: 0x%08X, IRUN: %umA\n", tStep, stepper.config.irun);*/
+    
+    /*stepper.setIrun(irun);
+    irun += 100;
+    if (irun > 1000) irun = 100;*/
+  } 
+
+  if (millis() > longLoopTargetTime) {
+    longLoopTargetTime += 10000;
+    /*rpm -= 50;
+    if (rpm < 50) rpm = 500;
+    stepper.setRPM(rpm);
+    Serial.printf("RPM: %f\n", rpm);*/
+    /*if (rotating) {
+      Serial.println("Stopping motor...");
+      rotating = false;
+      stepper.setRPM(0);
+    } else {
+      Serial.println("Running motor...");
+      stepper.invertDirection(dir);
+      dir = !dir;
+      stepper.setRPM(rpm);
+      stepper.run();
+      rotating = true;
     }*/
   }
 }

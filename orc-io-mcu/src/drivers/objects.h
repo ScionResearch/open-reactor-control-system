@@ -108,6 +108,26 @@ struct DigitalOutput_t {
     char message[100];
 };
 
+// Device objects
+struct StepperDevice_t {
+    float rpm;
+    float maxRPM;
+    float acceleration;
+    float load;
+    bool direction;
+    bool inverted;
+    bool running;
+    bool enabled;
+    bool stealthChop;
+    uint16_t stepsPerRev;
+    uint16_t holdCurrent;
+    uint16_t runCurrent;
+};
+
+struct MotorDevice_t {
+    
+};
+
 // Control objects
 struct TemperatureControl_t {
     TemperatureSensor_t sensor;

@@ -2,66 +2,66 @@
 // Register Addresses
 // ==============================
 // General configuration
-#define TMC5130_REG_GCONF         0x00
-#define TMC5130_REG_GSTAT         0x01
-#define TMC5130_REG_IFCNT         0x02
-#define TMC5130_REG_NODECONF      0x03
-#define TMC5130_REG_IOIN          0x04
-#define TMC5130_REG_OUTPUT        0x04
-#define TMC5130_REG_X_COMPARE     0x05
+#define TMC5130_REG_GCONF         0x00      // Read + Write
+#define TMC5130_REG_GSTAT         0x01      // Read only
+#define TMC5130_REG_IFCNT         0x02      // Read only
+#define TMC5130_REG_NODECONF      0x03      // Write only
+#define TMC5130_REG_IOIN          0x04      // Read only
+#define TMC5130_REG_OUTPUT        0x04      // Write only
+#define TMC5130_REG_X_COMPARE     0x05      // Write only
 // Velocity Dependent Driver Feature Control Register Set
-#define TMC5130_REG_IHOLD_IRUN    0x10
-#define TMC5130_REG_TPOWERDOWN    0x11
-#define TMC5130_REG_TSTEP         0x12
-#define TMC5130_REG_TPWMTHRS      0x13
-#define TMC5130_REG_TCOOLTHRS     0x14
-#define TMC5130_REG_THIGH         0x15
+#define TMC5130_REG_IHOLD_IRUN    0x10      // Write only
+#define TMC5130_REG_TPOWERDOWN    0x11      // Write only
+#define TMC5130_REG_TSTEP         0x12      // Read only
+#define TMC5130_REG_TPWMTHRS      0x13      // Write only
+#define TMC5130_REG_TCOOLTHRS     0x14      // Write only
+#define TMC5130_REG_THIGH         0x15      // Write only
 // Ramp Generator Motion Control Register Set
-#define TMC5130_REG_RAMPMODE      0x20
-#define TMC5130_REG_XACTUAL       0x21
-#define TMC5130_REG_VACTUAL       0x22
-#define TMC5130_REG_VSTART        0x23
-#define TMC5130_REG_A1            0x24
-#define TMC5130_REG_V1            0x25
-#define TMC5130_REG_AMAX          0x26
-#define TMC5130_REG_VMAX          0x27
-#define TMC5130_REG_DMAX          0x28
-#define TMC5130_REG_D1            0x2A
-#define TMC5130_REG_VSTOP         0x2B
-#define TMC5130_REG_TZEROWAIT     0x2C
-#define TMC5130_REG_XTARGET       0x2D
+#define TMC5130_REG_RAMPMODE      0x20      // Read + Write
+#define TMC5130_REG_XACTUAL       0x21      // Read + Write
+#define TMC5130_REG_VACTUAL       0x22      // Read only
+#define TMC5130_REG_VSTART        0x23      // Write only
+#define TMC5130_REG_A1            0x24      // Write only
+#define TMC5130_REG_V1            0x25      // Write only
+#define TMC5130_REG_AMAX          0x26      // Write only
+#define TMC5130_REG_VMAX          0x27      // Write only
+#define TMC5130_REG_DMAX          0x28      // Write only
+#define TMC5130_REG_D1            0x2A      // Write only
+#define TMC5130_REG_VSTOP         0x2B      // Write only
+#define TMC5130_REG_TZEROWAIT     0x2C      // Write only
+#define TMC5130_REG_XTARGET       0x2D      // Read + Write
 // Ramp Generator Driver Feature Control Register Set
-#define TMC5130_REG_VDCMIN        0x33
-#define TMC5130_REG_SW_MODE       0x34
-#define TMC5130_REG_RAMP_STAT     0x35
-#define TMC5130_REG_XLATCH        0x36
+#define TMC5130_REG_VDCMIN        0x33      // Write only
+#define TMC5130_REG_SW_MODE       0x34      // Read + Write
+#define TMC5130_REG_RAMP_STAT     0x35      // Read only
+#define TMC5130_REG_XLATCH        0x36      // Read only
 // Encoder Registers
-#define TMC5130_REG_ENCMODE       0x38
-#define TMC5130_REG_X_ENC         0x39
-#define TMC5130_REG_ENC_CONST     0x3A
-#define TMC5130_REG_ENC_STATUS    0x3B
-#define TMC5130_REG_ENC_LATCH     0x3C
+#define TMC5130_REG_ENCMODE       0x38      // Read + Write
+#define TMC5130_REG_X_ENC         0x39      // Read + Write
+#define TMC5130_REG_ENC_CONST     0x3A      // Write only
+#define TMC5130_REG_ENC_STATUS    0x3B      // Read only
+#define TMC5130_REG_ENC_LATCH     0x3C      // Read only
 // Motor Driver Registers
-#define TMC5130_REG_MSLUT_0       0x60
-#define TMC5130_REG_MSLUT_1       0x61
-#define TMC5130_REG_MSLUT_2       0x62
-#define TMC5130_REG_MSLUT_3       0x63
-#define TMC5130_REG_MSLUT_4       0x64
-#define TMC5130_REG_MSLUT_5       0x65
-#define TMC5130_REG_MSLUT_6       0x66
-#define TMC5130_REG_MSLUT_7       0x67
-#define TMC5130_REG_MSLUTSEL      0x68
-#define TMC5130_REG_MSLUTSTART    0x69
-#define TMC5130_REG_MSCNT         0x6A
-#define TMC5130_REG_MSCURACT      0x6B
-#define TMC5130_REG_CHOPCONF      0x6C
-#define TMC5130_REG_COOLCONF      0x6D
-#define TMC5130_REG_DCCTRL        0x6E
-#define TMC5130_REG_DRV_STATUS    0x6F
-#define TMC5130_REG_PWMCONF       0x70
-#define TMC5130_REG_PWM_SCALE     0x71
-#define TMC5130_REG_ENCM_CTRL     0x72
-#define TMC5130_REG_LOST_STEPS    0x73
+#define TMC5130_REG_MSLUT_0       0x60      // Write only
+#define TMC5130_REG_MSLUT_1       0x61      // Write only
+#define TMC5130_REG_MSLUT_2       0x62      // Write only
+#define TMC5130_REG_MSLUT_3       0x63      // Write only
+#define TMC5130_REG_MSLUT_4       0x64      // Write only
+#define TMC5130_REG_MSLUT_5       0x65      // Write only
+#define TMC5130_REG_MSLUT_6       0x66      // Write only
+#define TMC5130_REG_MSLUT_7       0x67      // Write only
+#define TMC5130_REG_MSLUTSEL      0x68      // Write only
+#define TMC5130_REG_MSLUTSTART    0x69      // Write only
+#define TMC5130_REG_MSCNT         0x6A      // Read only
+#define TMC5130_REG_MSCURACT      0x6B      // Read only
+#define TMC5130_REG_CHOPCONF      0x6C      // Read + Write
+#define TMC5130_REG_COOLCONF      0x6D      // Write only
+#define TMC5130_REG_DCCTRL        0x6E      // Write only
+#define TMC5130_REG_DRV_STATUS    0x6F      // Read only
+#define TMC5130_REG_PWMCONF       0x70      // Write only
+#define TMC5130_REG_PWM_SCALE     0x71      // Read only
+#define TMC5130_REG_ENCM_CTRL     0x72      // Write only
+#define TMC5130_REG_LOST_STEPS    0x73      // Read only
 
 // ==============================
 // Bit Masks and Bit Positions

@@ -2,6 +2,8 @@
 
 #include "sys_init.h"
 
+#include "MCP346x.h"
+
 #define ADC_V_DIV_RATIO     10.0
 #define ADC_uV_PER_LSB      625.0     //MCP346X_uV_PER_LSB * ADC_V_DIV_RATIO
 #define ADC_mV_PER_LSB      0.625     //ADC_uV_PER_LSB / 1000
