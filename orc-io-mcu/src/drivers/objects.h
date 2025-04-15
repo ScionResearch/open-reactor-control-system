@@ -58,14 +58,6 @@ struct PhSensor_t {
     char message[100];
 };
 
-struct DissolvedOxygenSensor_t {
-    float dissolvedOxygen;
-    char unit[5];
-    bool fault;
-    bool newMessage;
-    char message[100];
-};
-
 struct OpticalDensitySensor_t {
     float opticalDensity;
     char unit[5];
@@ -90,6 +82,24 @@ struct PressureSensor_t {
     char message[100];
 };
 
+struct DissolvedOxygenSensor_t {
+    float dissolvedOxygen; // Value read from sensor
+    float temperature;     // Temperature reading from sensor (if available)
+    char doUnit[10];       // e.g., "% O2", "mg/L"
+    char tempUnit[5];      // e.g., "C"
+    uint8_t modbusAddress; // Modbus slave address
+    bool enabled;          // To enable/disable reading
+    bool fault;
+    bool newMessage;
+    char message[100];
+    // Default constructor
+    DissolvedOxygenSensor_t() : dissolvedOxygen(0.0), temperature(0.0), modbusAddress(0), enabled(false), fault(false), newMessage(false) {
+        strcpy(doUnit, "% O2"); // Default unit
+        strcpy(tempUnit, "C");  // Default unit
+        message[0] = '\\0';
+    }
+};
+
 // Output objects
 struct AnalogOutput_t {
     float value;
@@ -110,7 +120,8 @@ struct DigitalOutput_t {
 
 // Device objects
 struct StepperDevice_t {
-    float rpm;
+float rpm;
+float rpm;
     float maxRPM;
     float acceleration;
     float load;
