@@ -1,6 +1,8 @@
 #pragma once
 
 #include "sys_init.h"
+#include <stdint.h> // Ensure standard types are available
+#include <stdbool.h> // Ensure bool is available
 
 // Constants----------------------------------------------->|
 #define MAX_TEMPERATURE_SENSORS 20
@@ -100,6 +102,26 @@ struct DissolvedOxygenSensor_t {
     }
 };
 
+// --- Structures needed for DO Control Configuration ---
+// Structure for PID controller parameters (moved here from do_control.h)
+typedef struct {
+    float kp;
+    float ki;
+    float kd;
+    float integral_min; // Anti-windup limits
+    float integral_max;
+    float output_min;   // Overall PID output limits
+    float output_max;
+} PID_Params_t;
+
+// Structure for configuring a single cascade parameter (moved here from do_control.h)
+typedef struct {
+    float cv_threshold_min; // Primary CV value to start activating this parameter
+    float cv_threshold_max; // Primary CV value when this parameter reaches its max output
+    float op_range_min;     // Minimum physical operating value (e.g., RPM, LPM, %)
+    float op_range_max;     // Maximum physical operating value
+} Cascade_Param_Config_t;
+
 // Output objects
 struct AnalogOutput_t {
     float value;
@@ -158,11 +180,29 @@ struct PhControl_t {
 };
 
 struct DissolvedOxygenControl_t {
-    DissolvedOxygenSensor_t sensor;
-    bool enabled;
-    float setpoint;
-    float stirrerLUT[2][10];
-    float gasLUT[2][10];
+    DissolvedOxygenSensor_t sensor; // Associated DO sensor
+    bool enabled;                   // Enable/disable control loop
+    float setpoint;                 // Target DO value
+
+    // --- PID/Cascade Configuration (replaces LUTs) ---
+    PID_Params_t pid_params;        // PID tuning parameters
+    Cascade_Param_Config_t stir_config; // Cascade config for stirrer
+    Cascade_Param_Config_t gas_flow_config; // Cascade config for gas flow
+    Cascade_Param_Config_t o2_conc_config;  // Cascade config for O2 concentration
+    float sample_time_s;            // Control loop sample time
+
+    // --- Removed LUTs ---
+    // float stirrerLUT[2][10];
+    // float gasLUT[2][10];
+
+    // Default constructor (optional, adjust as needed)
+    DissolvedOxygenControl_t() : enabled(false), setpoint(0.0f), sample_time_s(1.0f) {
+        // Initialize PID/Cascade params to defaults if desired
+        pid_params = {1.0f, 0.1f, 0.01f, -100.0f, 100.0f, 0.0f, 100.0f};
+        stir_config = {0.0f, 33.0f, 50.0f, 500.0f}; // Example: Stirrer active in lower 1/3rd CV
+        gas_flow_config = {30.0f, 66.0f, 0.1f, 2.0f}; // Example: Gas flow in middle 1/3rd CV
+        o2_conc_config = {60.0f, 100.0f, 21.0f, 100.0f}; // Example: O2 conc in upper 1/3rd CV
+    }
 };
 
 struct gasFlowControl_t {

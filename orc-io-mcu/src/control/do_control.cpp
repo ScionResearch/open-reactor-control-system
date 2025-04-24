@@ -1,172 +1,150 @@
 #include "do_control.h"
-#include <math.h>   // For isnan, isinf, fabs
-#include <string.h> // For memcpy
+#include <math.h>   // For isnan, isinf
+#include <string.h> // For memset
 #include <algorithm> // For std::min, std::max
 
 // --- Private Variables ---
 
-static DO_Control_Config_t current_config;
+// Internal state for the PID controller
 static PID_State_t pid_state;
+
+// Keep track of the last calculated outputs
 static DO_Control_Outputs_t current_outputs;
-static bool control_initialized = false;
+
+// --- Helper Functions ---
 
 // Helper function to constrain a value within limits
 static inline float constrain(float value, float min_val, float max_val) {
     return std::min(std::max(value, min_val), max_val);
 }
 
-// Helper function to scale a value from one range to another
-static inline float scale_value(float value, float in_min, float in_max, float out_min, float out_max) {
-    // Avoid division by zero
-    if (fabs(in_max - in_min) < 1e-6) {
-        return out_min; // Or handle as an error, return midpoint, etc.
-    }
-    // Constrain input value to its range first
-    value = constrain(value, in_min, in_max);
-    // Calculate proportion and scale
-    float proportion = (value - in_min) / (in_max - in_min);
-    return out_min + proportion * (out_max - out_min);
-}
+// Helper function to map the primary PID CV to a specific actuator output
+// based on its cascade configuration.
+static float calculate_cascade_output(float primary_cv, const Cascade_Param_Config_t* config) {
+    if (config == nullptr) return 0.0f; // Safety check
 
+    // Constrain primary_cv to the threshold range for interpolation
+    float constrained_cv = constrain(primary_cv, config->cv_threshold_min, config->cv_threshold_max);
+
+    // Check if the CV is below the minimum threshold for this parameter
+    if (constrained_cv <= config->cv_threshold_min) {
+        return config->op_range_min;
+    }
+
+    // Check if the CV is above the maximum threshold for this parameter
+    if (constrained_cv >= config->cv_threshold_max) {
+        return config->op_range_max;
+    }
+
+    // Calculate the proportion within the active CV range
+    float cv_range = config->cv_threshold_max - config->cv_threshold_min;
+    float proportion = 0.0f;
+    if (fabs(cv_range) > 1e-6) { // Avoid division by zero
+        proportion = (constrained_cv - config->cv_threshold_min) / cv_range;
+    }
+
+    // Interpolate the output within the operational range
+    float op_range = config->op_range_max - config->op_range_min;
+    return config->op_range_min + proportion * op_range;
+}
 
 // --- Public Function Implementations ---
 
-void do_control_init(const DO_Control_Config_t* config) {
-    if (config != nullptr) {
-        memcpy(&current_config, config, sizeof(DO_Control_Config_t));
-    } else {
-        // Initialize with some safe defaults if no config provided
-        // TODO: Define sensible default values
-        memset(&current_config, 0, sizeof(DO_Control_Config_t));
-        current_config.sample_time_s = 1.0f; // Default 1 second sample time
-        // Set default PID gains (example P-only)
-        current_config.do_pid_params.kp = 1.0f;
-        current_config.do_pid_params.output_min = 0.0f;
-        current_config.do_pid_params.output_max = 100.0f; // Example CV range 0-100
-        current_config.do_pid_params.integral_min = 0.0f;
-        current_config.do_pid_params.integral_max = 100.0f;
-        // Set default cascade params (example ranges)
-        current_config.stir_config = {0.0f, 20.0f, 400.0f, 1200.0f};
-        current_config.gas_flow_config = {20.0f, 60.0f, 0.5f, 5.0f};
-        current_config.o2_conc_config = {60.0f, 100.0f, 21.0f, 100.0f}; // Assuming % O2
-    }
-    do_control_reset_pid();
-    memset(&current_outputs, 0, sizeof(DO_Control_Outputs_t));
-    control_initialized = true;
-}
+void do_control_init(const DissolvedOxygenControl_t* control_object) {
+    // Initialize PID state
+    memset(&pid_state, 0, sizeof(PID_State_t));
+    pid_state.initialized = true;
 
-void do_control_update_settings(const DO_Control_Config_t* config) {
-    if (config != nullptr) {
-        memcpy(&current_config, config, sizeof(DO_Control_Config_t));
-        // Consider if PID state needs reset upon config change
-        // do_control_reset_pid();
-    }
+    // Initialize outputs to zero
+    memset(&current_outputs, 0, sizeof(DO_Control_Outputs_t));
+
+    // Note: Configuration (PID params, cascade settings) is taken from
+    // control_object when do_control_run is called.
 }
 
 void do_control_reset_pid(void) {
+    // Reset integral term and previous error/measurement
     pid_state.integral_term = 0.0f;
     pid_state.prev_error = 0.0f;
-    pid_state.prev_measurement = NAN; // Use NAN to indicate first run
-    pid_state.initialized = true;
+    pid_state.prev_measurement = 0.0f; // Or consider setting to current measurement if available
+    // Keep initialized flag true
 }
 
-void do_control_run(float do_setpoint, float do_measurement, DO_Control_Outputs_t* outputs) {
-    if (!control_initialized || !pid_state.initialized) {
-        // Handle error: Controller not initialized
+void do_control_run(const DissolvedOxygenControl_t* control_object, DO_Control_Outputs_t* outputs) {
+    if (!pid_state.initialized || control_object == nullptr || outputs == nullptr) {
+        // Handle error: Controller not initialized or invalid pointers
         if (outputs != nullptr) {
             memset(outputs, 0, sizeof(DO_Control_Outputs_t)); // Zero outputs
         }
         return;
     }
 
+    // Check if control is enabled
+    if (!control_object->enabled) {
+        // Control is disabled, set outputs to zero (or a safe state)
+        current_outputs.primary_cv = 0.0f;
+        current_outputs.stir_output = 0.0f;
+        current_outputs.gas_flow_output = 0.0f;
+        current_outputs.o2_conc_output = 0.0f;
+        do_control_reset_pid(); // Reset PID state when disabled
+        memcpy(outputs, &current_outputs, sizeof(DO_Control_Outputs_t));
+        return;
+    }
+
     // --- Input Validation ---
-    if (isnan(do_setpoint) || isinf(do_setpoint) || isnan(do_measurement) || isinf(do_measurement)) {
-       // Handle invalid inputs - maybe hold last outputs or go to safe state?
-       // For now, just return without updating.
-       if (outputs != nullptr) {
-           memcpy(outputs, &current_outputs, sizeof(DO_Control_Outputs_t));
-       }
+    float do_measurement = control_object->sensor.dissolvedOxygen;
+    float do_setpoint = control_object->setpoint;
+    const PID_Params_t* pid_params = &control_object->pid_params;
+    float sample_time = control_object->sample_time_s;
+
+    if (isnan(do_measurement) || isinf(do_measurement) || control_object->sensor.fault || sample_time <= 0.0f) {
+       // Handle invalid measurement, sensor fault, or invalid sample time
+       // Hold last valid outputs (or go to a defined safe state)
+       memcpy(outputs, &current_outputs, sizeof(DO_Control_Outputs_t));
+       // Optionally reset PID here too, or just prevent integration windup
+       pid_state.integral_term = constrain(pid_state.integral_term, pid_params->integral_min, pid_params->integral_max);
        return;
     }
 
-
     // --- PID Calculation ---
     float error = do_setpoint - do_measurement;
-    float p_term = current_config.do_pid_params.kp * error;
 
-    // Integral Term (with anti-windup)
-    pid_state.integral_term += current_config.do_pid_params.ki * error * current_config.sample_time_s;
-    pid_state.integral_term = constrain(pid_state.integral_term,
-                                        current_config.do_pid_params.integral_min,
-                                        current_config.do_pid_params.integral_max);
+    // Proportional term
+    float p_term = pid_params->kp * error;
+
+    // Integral term with anti-windup
+    pid_state.integral_term += pid_params->ki * error * sample_time;
+    pid_state.integral_term = constrain(pid_state.integral_term, pid_params->integral_min, pid_params->integral_max);
     float i_term = pid_state.integral_term;
 
-    // Derivative Term (using derivative on measurement to avoid derivative kick)
-    float d_term = 0.0f;
-    if (!isnan(pid_state.prev_measurement) && current_config.sample_time_s > 1e-6) {
-         // Check sample_time_s to avoid division by zero
-        float measurement_derivative = (do_measurement - pid_state.prev_measurement) / current_config.sample_time_s;
-        d_term = -current_config.do_pid_params.kd * measurement_derivative; // Note the negative sign
-    }
+    // Derivative term (on measurement to reduce setpoint kick)
+    float derivative = (do_measurement - pid_state.prev_measurement) / sample_time;
+    float d_term = -pid_params->kd * derivative; // Negative because it's on measurement
 
-    // --- Calculate Primary Control Variable (CV) ---
+    // Combine terms for primary control variable (CV)
     float primary_cv = p_term + i_term + d_term;
-    primary_cv = constrain(primary_cv,
-                           current_config.do_pid_params.output_min,
-                           current_config.do_pid_params.output_max);
 
-    // --- Update PID State for next iteration ---
+    // Constrain overall PID output
+    primary_cv = constrain(primary_cv, pid_params->output_min, pid_params->output_max);
+
+    // Update state for next iteration
     pid_state.prev_error = error;
     pid_state.prev_measurement = do_measurement;
 
-    // --- Cascade Logic ---
-
-    // 1. Stirring Speed
-    current_outputs.stir_output = scale_value(primary_cv,
-                                             current_config.stir_config.cv_threshold_min,
-                                             current_config.stir_config.cv_threshold_max,
-                                             current_config.stir_config.op_range_min,
-                                             current_config.stir_config.op_range_max);
-
-    // 2. Gas Flow Rate
-    current_outputs.gas_flow_output = scale_value(primary_cv,
-                                                 current_config.gas_flow_config.cv_threshold_min,
-                                                 current_config.gas_flow_config.cv_threshold_max,
-                                                 current_config.gas_flow_config.op_range_min,
-                                                 current_config.gas_flow_config.op_range_max);
-
-    // 3. O2 Concentration
-    current_outputs.o2_conc_output = scale_value(primary_cv,
-                                                current_config.o2_conc_config.cv_threshold_min,
-                                                current_config.o2_conc_config.cv_threshold_max,
-                                                current_config.o2_conc_config.op_range_min,
-                                                current_config.o2_conc_config.op_range_max);
-
-    // Store the primary CV as well
-    current_outputs.primary_cv = primary_cv;
-
+    // --- Cascade Logic --- 
+    // Calculate individual actuator outputs based on the primary CV and cascade configs
+    current_outputs.stir_output = calculate_cascade_output(primary_cv, &control_object->stir_config);
+    current_outputs.gas_flow_output = calculate_cascade_output(primary_cv, &control_object->gas_flow_config);
+    current_outputs.o2_conc_output = calculate_cascade_output(primary_cv, &control_object->o2_conc_config);
+    current_outputs.primary_cv = primary_cv; // Store the raw PID output as well
 
     // --- Output ---
-    if (outputs != nullptr) {
-        memcpy(outputs, &current_outputs, sizeof(DO_Control_Outputs_t));
-    }
-}
-
-void do_control_get_config(DO_Control_Config_t* config) {
-    if (config != nullptr && control_initialized) {
-        memcpy(config, &current_config, sizeof(DO_Control_Config_t));
-    } else if (config != nullptr) {
-        // Optionally clear the passed struct if not initialized
-         memset(config, 0, sizeof(DO_Control_Config_t));
-    }
+    memcpy(outputs, &current_outputs, sizeof(DO_Control_Outputs_t));
 }
 
 void do_control_get_outputs(DO_Control_Outputs_t* outputs) {
-     if (outputs != nullptr && control_initialized) {
+    if (outputs != nullptr) {
         memcpy(outputs, &current_outputs, sizeof(DO_Control_Outputs_t));
-    } else if (outputs != nullptr) {
-        // Optionally clear the passed struct if not initialized
-         memset(outputs, 0, sizeof(DO_Control_Outputs_t));
     }
 }
 
