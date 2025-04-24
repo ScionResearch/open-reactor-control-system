@@ -28,5 +28,6 @@ extern DoSensorDriver_t doSensorDriver;
 extern DissolvedOxygenSensor_t doSensorDevice; // Defined in objects.h, but declare extern here
 
 // Function prototypes
-bool do_sensor_init(HardwareSerial* port, long baud, int8_t rtsPin = -1, uint32_t readInterval = 1000); // Initialize the driver
+// Pass ModbusRTUMaster pointer, serial port pointer is now mainly for info/debugging
+bool do_sensor_init(ModbusRTUMaster* masterNode, HardwareSerial* port, long baud, int8_t rtsPin = -1, uint32_t readInterval = 1000); // Initialize the driver
 bool do_sensor_update(void); // Update function to read data periodically

@@ -1,5 +1,7 @@
 #include "sys_init.h"
 #include <FlashStorage_SAMD.h>
+#include "drivers/drv_do_sensor.h" // Include DO sensor driver
+#include "drivers/drv_ph_sensor.h" // Include pH sensor driver
 
 MCP48FEBxx dac(PIN_DAC_CS, PIN_DAC_SYNC, &SPI);
 //TMC5130 stepper = TMC5130(PIN_STP_CS, &SPI1);
@@ -129,34 +131,6 @@ void setup() {
 
   // TMC5130 stepper setup testing
   Serial.println("Initialising TMC5130 driver");
-  /*if (!stepper.begin()) {
-    Serial.println("Failed to initialise TMC5130 driver.");
-  } else {
-    Serial.println("TMC5130 driver initialised.");
-  }
-  printTMC5130registers();
-
-  // TMC5160 write test
-  Serial.println("\nStopping motor:");
-  stepper.stop();
-
-  delay(2000);  // Wind down
-
-  stepper.setDirection(0);
-  stepper.setStepsPerRev(200);
-  stepper.setMaxRPM(800);
-  stepper.setIhold(150);
-  stepper.setIrun(300);
-  
-  Serial.println("Setting Amax to 12RPM/sec:");
-  stepper.setAcceleration(100);
-  //stepper.writeRegister(TMC5130_REG_AMAX, 146); //0.2rps/sec, 12rpm/sec
-
-  Serial.println("Starting motor:");
-
-  stepper.setRPM(270);
-  stepper.run();*/
-
   if (!stepper_init()) {
     Serial.println("Failed to initialise TMC5130 driver.");
   }
@@ -176,8 +150,37 @@ void setup() {
       Serial.println(stepperDriver.message);
     }
   }
+
+  // --- Initialize Shared Modbus Master for RS485-1 ---
+  Serial.println("Initialising Shared Modbus Master (RS485-1 on Serial1)");
+  // Using Serial1 (Pins 31=TX, 32=RX), Baud 19200, No RTS Pin (-1)
+  if (!modbus_init(&Serial1, 19200, -1)) {
+      Serial.println("Failed to initialize shared Modbus master!");
+      // Handle error appropriately - perhaps halt or set a system fault flag
+  } else {
+      Serial.println("Shared Modbus Master initialized.");
+
+      // --- Initialize DO Sensor Driver ---
+      Serial.println("Initialising DO Sensor Driver");
+      if (!do_sensor_init(modbusMaster1, &Serial1, 19200, -1, 1000)) { // Pass shared master
+          Serial.println("Failed to initialize DO sensor driver!");
+          if (doSensorDriver.newMessage) Serial.println(doSensorDriver.message);
+      } else {
+          Serial.println("DO Sensor driver initialized.");
+      }
+
+      // --- Initialize pH Sensor Driver ---
+      Serial.println("Initialising pH Sensor Driver");
+      if (!ph_sensor_init(modbusMaster1, &Serial1, 19200, -1, 1000)) { // Pass shared master
+          Serial.println("Failed to initialize pH sensor driver!");
+          if (phSensorDriver.newMessage) Serial.println(phSensorDriver.message);
+      } else {
+          Serial.println("pH Sensor driver initialized.");
+      }
+  }
+
   Serial.println("Setup done");
-  
+
   loopTargetTime = millis();
   longLoopTargetTime = millis() + 10000;
 }
@@ -189,7 +192,37 @@ bool dir = 0;
 
 void loop() {
   if (millis() > loopTargetTime) {
-    loopTargetTime += 1000;
+    loopTargetTime += 1000; // Run this block every 1 second
+
+    // --- Update Modbus Sensors ---
+    if (doSensorDriver.ready) {
+        if (!do_sensor_update()) {
+            // Log DO sensor update failure
+            if (doSensorDevice.newMessage) {
+                Serial.print("DO Sensor Update Error: ");
+                Serial.println(doSensorDevice.message);
+                doSensorDevice.newMessage = false; // Clear message flag
+            }
+        } else {
+            // Optionally log successful DO readings
+            // Serial.printf("DO: %.2f, Temp: %.2f\n", doSensorDevice.dissolvedOxygen, doSensorDevice.temperature);
+        }
+    }
+
+    if (phSensorDriver.ready) {
+        if (!ph_sensor_update()) {
+            // Log pH sensor update failure
+            if (phSensorDevice.newMessage) {
+                Serial.print("pH Sensor Update Error: ");
+                Serial.println(phSensorDevice.message);
+                phSensorDevice.newMessage = false; // Clear message flag
+            }
+        } else {
+            // Optionally log successful pH readings
+            // Serial.printf("pH: %.2f, Temp: %.2f\n", phSensorDevice.pH, phSensorDevice.temperature);
+        }
+    }
+
     /*if (!readRtdSensors()) {
       Serial.println("Failed to read RTD sensors.");
     } else {
@@ -234,14 +267,15 @@ void loop() {
     Serial.printf("Stepper DRV_STATUS: 0x%08X", drvStatus);
     Serial.printf(", SG_RESULT: %u", drvStatus & 0x3FF);
     Serial.printf(", TSTEP: 0x%08X, IRUN: %umA\n", tStep, stepper.config.irun);*/
-    
+
     /*stepper.setIrun(irun);
     irun += 100;
     if (irun > 1000) irun = 100;*/
   } 
 
   if (millis() > longLoopTargetTime) {
-    longLoopTargetTime += 10000;
+    longLoopTargetTime += 10000; // Run this block every 10 seconds
+
     /*rpm -= 50;
     if (rpm < 50) rpm = 500;
     stepper.setRPM(rpm);
@@ -258,5 +292,19 @@ void loop() {
       stepper.run();
       rotating = true;
     }*/
+
+    // Example: Print sensor values every 10 seconds
+    if (doSensorDriver.ready && !doSensorDevice.fault) {
+        Serial.printf("[10s] DO: %.2f %s, Temp: %.1f C\n",
+                      doSensorDevice.dissolvedOxygen,
+                      doSensorDevice.unit, // Assuming unit is set somewhere
+                      doSensorDevice.temperature);
+    }
+    if (phSensorDriver.ready && !phSensorDevice.fault) {
+        Serial.printf("[10s] pH: %.2f, Temp: %.1f C\n",
+                      phSensorDevice.pH,
+                      phSensorDevice.temperature);
+    }
+
   }
 }

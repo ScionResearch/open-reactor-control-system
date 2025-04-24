@@ -14,88 +14,89 @@ PhSensor_t phSensorDevice; // Assuming one global instance for now
 #define PH_SENSOR_DEFAULT_ADDRESS 1 // Placeholder: Default Modbus slave address (Check sensor manual)
 #define REG_PH_BLOCK_START 0x0829   // Starting register for pH data block (2089 decimal)
 #define REG_TEMP_BLOCK_START 0x0969 // Starting register for Temperature data block (2409 decimal)
-#define NUM_REGISTERS_PER_BLOCK 10  // Number of registers per measurement block
+#define NUM_REGISTERS_PER_BLOCK 2  // Number of registers for a float value
 #define FLOAT_VALUE_OFFSET 0        // Offset within the block for the float value (assuming first 2 registers)
 
-// Initialization function
-bool ph_sensor_init(HardwareSerial* port, long baud, int8_t rtsPin, uint32_t readInterval) {
+// Initialization function - Accepts the shared Modbus master node
+bool ph_sensor_init(ModbusRTUMaster* masterNode, HardwareSerial* port, long baud, int8_t rtsPin, uint32_t readInterval) {
+    if (!masterNode) {
+        // Cannot initialize without a valid master node
+        phSensorDriver.fault = true;
+        phSensorDriver.newMessage = true;
+        strcpy(phSensorDriver.message, "Invalid Modbus master provided");
+        return false;
+    }
+
+    phSensorDriver.node = masterNode; // Use the provided shared master node
     phSensorDriver.device = &phSensorDevice; // Link driver to the data object
-    phSensorDriver.serial_port = port;
-    phSensorDriver.baud_rate = baud;
-    phSensorDriver.rts_pin = rtsPin;
+    phSensorDriver.serial_port = port; // Store for reference/debugging if needed
+    phSensorDriver.baud_rate = baud;   // Store for reference/debugging if needed
+    phSensorDriver.rts_pin = rtsPin;   // Store for reference/debugging if needed
     phSensorDriver.read_interval_ms = readInterval;
     phSensorDriver.ready = false;
     phSensorDriver.fault = false;
     phSensorDriver.newMessage = false;
     phSensorDriver.last_read_time = 0;
-    // phSensorDriver.message[0] = '\0'; // Initialize message buffer if needed
+    phSensorDriver.message[0] = '\0'; // Initialize message buffer
 
     // --- Configure the device defaults ---
     phSensorDevice.modbusAddress = PH_SENSOR_DEFAULT_ADDRESS; // Set default address
     phSensorDevice.enabled = true; // Enable by default
     phSensorDevice.fault = false;
     phSensorDevice.newMessage = false;
-    // phSensorDevice.message[0] = '\0';
+    phSensorDevice.message[0] = '\0';
 
-    // --- Initialize Modbus Master --- 
-    // IMPORTANT: This creates a NEW master. For shared bus, this needs refactoring.
-    // A single ModbusRTUMaster instance should be shared between drivers on the same port.
-    phSensorDriver.node = new ModbusRTUMaster(phSensorDriver.serial_port);
-    if (!phSensorDriver.node) {
-        phSensorDriver.fault = true;
-        phSensorDriver.newMessage = true;
-        // strcpy(phSensorDriver.message, "Failed to allocate ModbusRTUMaster");
-        return false;
-    }
-
-    // Configure RTS pin if used for RS485 direction control
-    if (phSensorDriver.rts_pin >= 0) {
-        phSensorDriver.node->useRts(true, phSensorDriver.rts_pin);
-        pinMode(phSensorDriver.rts_pin, OUTPUT);
-        digitalWrite(phSensorDriver.rts_pin, LOW); // Default state for RTS
-    }
-
-    // Initialize the serial port for Modbus
-    // Note: If shared, this might be done elsewhere
-    phSensorDriver.serial_port->begin(phSensorDriver.baud_rate);
-
-    // Start the Modbus node
-    if (!phSensorDriver.node->begin()) {
-        phSensorDriver.fault = true;
-        phSensorDriver.newMessage = true;
-        // strcpy(phSensorDriver.message, "ModbusRTUMaster begin failed");
-        delete phSensorDriver.node; // Clean up allocated memory
-        phSensorDriver.node = nullptr;
-        return false;
-    }
+    // --- Modbus Master Initialization is now done externally ---
+    // No need to: new ModbusRTUMaster(...)
+    // No need to: node->useRts(...)
+    // No need to: pinMode/digitalWrite for RTS
+    // No need to: serial_port->begin(...)
+    // No need to: node->begin()
 
     phSensorDriver.ready = true;
     phSensorDriver.newMessage = true;
-    // strcpy(phSensorDriver.message, "pH Sensor Modbus driver initialized (shared bus needs refactor)");
+    strcpy(phSensorDriver.message, "pH Sensor driver initialized (shared Modbus)");
     return true;
 }
 
 // Helper function to read a block and extract float value
 // Returns true on success, false on failure
 bool read_sensor_float_block(uint16_t startReg, float &value) {
-    uint8_t result = phSensorDriver.node->readHoldingRegisters(
-        phSensorDevice.modbusAddress,
-        startReg,
-        NUM_REGISTERS_PER_BLOCK
-    );
+    // Ensure the node pointer is valid before using
+    if (!phSensorDriver.node) {
+        phSensorDevice.fault = true;
+        phSensorDevice.newMessage = true;
+        strcpy(phSensorDevice.message, "Modbus master node is null");
+        return false;
+    }
 
-    if (result == ModbusRTUMaster::MODBUS_SUCCESS) {
-        // Assuming the float value is in the first two registers of the block
+    uint16_t buffer[NUM_REGISTERS_PER_BLOCK]; // Buffer to hold the read registers
+
+    // Read the required number of registers (typically 2 for a float)
+    if (phSensorDriver.node->readHoldingRegisters(
+            phSensorDevice.modbusAddress,
+            startReg,
+            buffer, // Pass the buffer
+            NUM_REGISTERS_PER_BLOCK // Read only the registers needed for the float
+        )) {
         // Use ModbusRTUMasterUtils::bufferToFloatBE or LE depending on sensor byte order
         // Assuming Big-Endian (check sensor manual)
-        value = ModbusRTUMasterUtils::bufferToFloatBE(phSensorDriver.node->getResponseBuffer(FLOAT_VALUE_OFFSET));
+        value = ModbusRTUMasterUtils::bufferToFloatBE(buffer);
+
+        // Clear communication fault if present
+        if (phSensorDevice.fault) {
+            phSensorDevice.fault = false;
+            phSensorDevice.newMessage = true;
+            strcpy(phSensorDevice.message, "Communication restored");
+        }
         return true;
     } else {
         phSensorDevice.fault = true;
         phSensorDevice.newMessage = true;
-        // snprintf(phSensorDevice.message, sizeof(phSensorDevice.message),
-        //          "Modbus read failed, addr: %d, reg: 0x%04X, err: 0x%02X",
-        //          phSensorDevice.modbusAddress, startReg, result);
+        snprintf(phSensorDevice.message, sizeof(phSensorDevice.message),
+                 "Modbus read failed, addr: %d, reg: 0x%04X, err: 0x%02X",
+                 phSensorDevice.modbusAddress, startReg, phSensorDriver.node->getExceptionResponse());
+        // Consider adding timeout check: phSensorDriver.node->getTimeoutFlag()
         return false;
     }
 }
@@ -103,7 +104,7 @@ bool read_sensor_float_block(uint16_t startReg, float &value) {
 // Update function (call this periodically from the main loop)
 bool ph_sensor_update(void) {
     if (!phSensorDriver.ready || phSensorDriver.fault || !phSensorDevice.enabled) {
-        return false; // Don't update if not ready, faulted, or disabled
+        return false; // Don't update if not ready, driver faulted, or device disabled
     }
 
     uint32_t current_time = millis();
@@ -111,36 +112,23 @@ bool ph_sensor_update(void) {
         phSensorDriver.last_read_time = current_time;
 
         bool read_ok = true;
-        float temp_ph = 0.0;
-        float temp_temp = 0.0;
 
-        // Read pH value block
-        if (!read_sensor_float_block(REG_PH_BLOCK_START, temp_ph)) {
-            read_ok = false; // Error message handled in helper function
+        // Read pH value
+        if (!read_sensor_float_block(REG_PH_BLOCK_START + FLOAT_VALUE_OFFSET, phSensorDevice.pH)) {
+            read_ok = false;
+            // Error message already set in read_sensor_float_block
         }
 
-        // Read Temperature value block (only if pH read was okay or if we want to try anyway)
-        if (read_ok) { // Optionally, attempt temp read even if pH failed: if (!read_sensor_float_block(...)) { read_ok = false; }
-           if (!read_sensor_float_block(REG_TEMP_BLOCK_START, temp_temp)) {
-               read_ok = false; // Error message handled in helper function
-           }
+        // Read Temperature value (only proceed if pH read was okay or if independent reads are desired)
+        // If one read fails, should we attempt the next? Depends on requirements.
+        // Assuming we attempt both reads regardless.
+        if (!read_sensor_float_block(REG_TEMP_BLOCK_START + FLOAT_VALUE_OFFSET, phSensorDevice.temperature)) {
+            read_ok = false;
+            // Error message already set in read_sensor_float_block
+            // Note: This might overwrite the pH read error message if both fail.
         }
 
-        if (read_ok) {
-            // --- Process Successful Reads ---
-            phSensorDevice.pH = temp_ph;
-            phSensorDevice.temperature = temp_temp;
-
-            // Clear any previous fault state related to communication
-            if (phSensorDevice.fault) {
-                 phSensorDevice.fault = false;
-                 phSensorDevice.newMessage = true;
-                 // strcpy(phSensorDevice.message, "Communication restored");
-            }
-        } else {
-            // Fault flags and messages are set within read_sensor_float_block on error
-            return false; // Indicate update failed
-        }
+        return read_ok;
     }
-    return true; // Indicate update cycle completed (or wasn't time yet)
+    return true; // No update needed this cycle
 }
