@@ -52,13 +52,16 @@ struct TemperatureSensor_t {
     char message[100];
 };
 
-struct PhSensor_t {
-    float ph;
-    char unit[5];
-    bool fault;
-    bool newMessage;
-    char message[100];
-};
+// Structure to hold data for a pH Sensor
+typedef struct {
+    uint8_t modbusAddress; // Modbus address of the sensor
+    float pH;              // Current pH reading
+    float temperature;     // Current temperature reading from the sensor
+    bool enabled;          // Is the sensor reading enabled?
+    bool fault;            // Is the sensor in a fault state?
+    bool newMessage;       // Flag for new status messages
+    char message[100];     // Buffer for status messages
+} PhSensor_t;
 
 struct OpticalDensitySensor_t {
     float opticalDensity;
