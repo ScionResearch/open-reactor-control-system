@@ -125,7 +125,12 @@ struct StepperDevice_t {
 };
 
 struct MotorDevice_t {
-    
+    float power;
+    bool direction;
+    bool inverted;
+    bool running;
+    bool enabled;
+    uint16_t runCurrent;
 };
 
 // Control objects

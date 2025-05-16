@@ -13,6 +13,7 @@
 #include "drivers/drv_dac.h"
 #include "drivers/drv_rtd.h"
 #include "drivers/drv_stepper.h"
+#include "drivers/drv_bdc_motor.h"
 
 #include "utility/calibrate.h"
 

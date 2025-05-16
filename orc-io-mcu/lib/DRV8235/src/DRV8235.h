@@ -150,6 +150,7 @@ class DRV8235
         bool direction(bool reverse);   // Set/clear the PH input
 
         // Fault status register flags
+        bool faultActive = false;
         bool fault = false;
         bool stall = false;
         bool overVoltage = false;

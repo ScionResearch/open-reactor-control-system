@@ -50,10 +50,6 @@ bool DRV8235::begin(void)
     config_data = 0;
     if (!_write_byte(DRV8325_REG_CTRL1, config_data)) return false;
 
-    // Config 0 - Enable motor
-    /*config_data = (1 << DRV8235_EN_OUT_bp);
-    if (!_write_byte(DRV8325_CONFIG0, config_data)) return false;*/
-
     _initialised = true;
 
     return true;
@@ -71,6 +67,7 @@ void DRV8235::set_fault_cb(void (*cb)()) {
 uint8_t DRV8235::read_status(void) {
     uint8_t flt_reg = _read_byte(DRV8325_FAULT_STATUS);
     if (flt_reg > 0) {
+        faultActive = true;
         fault = (flt_reg >> DRV8235_FAULT_bp) & 1;
         stall = (flt_reg >> DRV8235_STALL_bp) & 1;
         overCurrent = (flt_reg >> DRV8235_OCP_bp) & 1;

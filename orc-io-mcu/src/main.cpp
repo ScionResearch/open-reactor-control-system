@@ -3,8 +3,6 @@
 
 MCP48FEBxx dac(PIN_DAC_CS, PIN_DAC_SYNC, &SPI);
 
-DRV8235 mot1(DRV8325_I2C_BASE_ADDR, &Wire, PIN_MOT_IRQ_1, PIN_MOT_I_FB_1);
-
 uint32_t loopTargetTime = 0;
 uint32_t longLoopTargetTime = 0;
 uint32_t loopCounter = 0;
@@ -112,11 +110,13 @@ void setup() {
 
   // DRV8235 initialisation
   Serial.println("Initialising DRV8235 driver");
-  if (!mot1.begin()) {
+  if (!motor_init()) {
     Serial.println("Failed to initialise DRV8235 driver.");
   } else Serial.println("DRV8235 driver initialised.");
+
+  motorDriver[0].device->enabled = true;
   
-  mot1.setSpeed(100);
+  motor_run(0, 100, false);
 
   Serial.println("Setup done");
   
@@ -125,28 +125,25 @@ void setup() {
 }
 
 void loop() {
-  static bool motorRunning = false;
   static bool reverse = false;
 
-  mot1.manage();
+  motor_update();
 
   if (millis() > loopTargetTime) {
     loopTargetTime += 1000;
-    if (motorRunning) Serial.printf("Motor current: %d mA, IC current: %d, IC voltage: %d, IC speed: %d\n", mot1.motorCurrent(), mot1.motorCurrentIC(), mot1.motorVoltageIC(), mot1.motorSpeedIC());
+    if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
   } 
 
   if (millis() > longLoopTargetTime) {
     longLoopTargetTime += 5000;
-    if (!motorRunning) {
+    if (!motorDriver[0].device->running) {
       reverse = !reverse;
-      mot1.direction(reverse);
-      Serial.printf("Starting motor in %s direction\n", reverse ? "reverse" : "forward");
-      motorRunning = true;
-      mot1.run();
+      if (motor_run(0, 25, reverse)) Serial.printf("Starting motor in %s direction\n", reverse ? "reverse" : "forward");
+      else Serial.println("Failed to start motor");
     } else {
-      Serial.println("Stopping motor");
-      motorRunning = false;
-      mot1.stop();
+      Serial.print("Stopping motor... ");
+      if (motor_stop(0)) Serial.println("Motor stopped");
+      else Serial.println("Failed to stop motor");
     }
   }
 }
