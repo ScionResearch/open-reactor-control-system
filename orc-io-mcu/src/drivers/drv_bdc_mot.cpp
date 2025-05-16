@@ -57,7 +57,12 @@ bool motor_update(void) {
 }
 
 bool motor_stop(uint8_t motor) {
-    if (!motorDriver[motor].motor->stop()) return false;
+    if (!motorDriver[motor].motor->stop()) {
+        strcpy(motorDriver[motor].message, "Failed to stop motor");
+        motorDriver[motor].newMessage = true;
+        motorDriver[motor].fault = true;
+        return false;
+    }
     motorDriver[motor].device->running = false;
     motorDriver[motor].device->runCurrent = 0;
     return true;
@@ -66,15 +71,19 @@ bool motor_stop(uint8_t motor) {
 bool motor_run(uint8_t motor) {
     if (motor >= 4) return false;
     if (!motorDriver[motor].ready) {
-        Serial.println("Motor driver not ready");
+        strcpy(motorDriver[motor].message, "Motor driver not ready");
+        motorDriver[motor].newMessage = true;
         return false;
     }
     if (!motorDriver[motor].device->enabled) {
-        Serial.println("Motor driver not enabled");
+        strcpy(motorDriver[motor].message, "Motor driver not enabled");
+        motorDriver[motor].newMessage = true;
         return false;
     }
     if (!motorDriver[motor].motor->run()) {
-        Serial.println("Failed to run motor");
+        strcpy(motorDriver[motor].message, "Failed to run motor");
+        motorDriver[motor].newMessage = true;
+        motorDriver[motor].fault = true;
         return false;
     }
     motorDriver[motor].device->running = true;
@@ -89,11 +98,15 @@ bool motor_run(uint8_t motor, uint8_t power, bool reverse) {
             motorDriver[motor].motor->direction(reverse ^ motorDriver[motor].device->inverted) && 
             motor_run(motor);*/
     if (!motorDriver[motor].motor->setSpeed(power)) {
-        Serial.println("Failed to set speed");
+        strcpy(motorDriver[motor].message, "Failed to set speed");
+        motorDriver[motor].newMessage = true;
+        motorDriver[motor].fault = true;
         return false;
     }
     if (!motorDriver[motor].motor->direction(reverse ^ motorDriver[motor].device->inverted)) {
-        Serial.println("Failed to set direction");
+        strcpy(motorDriver[motor].message, "Failed to set direction");
+        motorDriver[motor].newMessage = true;
+        motorDriver[motor].fault = true;
         return false;
     }
     return motor_run(motor);
