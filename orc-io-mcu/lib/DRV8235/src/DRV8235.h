@@ -170,4 +170,6 @@ class DRV8235
         bool _initialised;
         void (*_fault_cb)();
         bool _fault_cb_set = false;
+
+        bool drv8235_debug = true;
 };

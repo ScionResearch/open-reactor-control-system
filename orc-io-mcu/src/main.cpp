@@ -1,6 +1,10 @@
 #include "sys_init.h"
 #include <FlashStorage_SAMD.h>
 
+#include "INA260.h"
+
+INA260 pwrSensor(INA260_BASE_ADDRESS, &Wire, PIN_P_MAIN_IRQ);
+
 MCP48FEBxx dac(PIN_DAC_CS, PIN_DAC_SYNC, &SPI);
 
 uint32_t loopTargetTime = 0;
@@ -116,7 +120,18 @@ void setup() {
 
   motorDriver[0].device->enabled = true;
   
-  motor_run(0, 100, false);
+  motor_run(0, 20, false);
+
+  // INA260 initialisation
+  Serial.println("Initialising INA260 driver");
+  if (!pwrSensor.begin()) {
+    Serial.println("Failed to initialise INA260 driver.");
+  }
+
+  // Set INA260 avergaing and conversion time settings
+  if (!pwrSensor.setAverage(IN260_AVERAGE::INA260_AVERAGE_1024)) Serial.println("Failed to set INA260 averaging.");
+  if (!pwrSensor.setVoltageConversionTime(INA260_V_CONV_TIME::INA260_VBUSCT_1100US)) Serial.println("Failed to set INA260 voltage conversion time.");
+  if (!pwrSensor.setCurrentConversionTime(INA260_I_CONV_TIME::INA260_ISHCT_1100US)) Serial.println("Failed to set INA260 current conversion time.");
 
   Serial.println("Setup done");
   
@@ -125,18 +140,21 @@ void setup() {
 }
 
 void loop() {
-  static bool reverse = false;
+  //static bool reverse = false;
 
   motor_update();
 
   if (millis() > loopTargetTime) {
     loopTargetTime += 1000;
-    if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
+    //if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
+    Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwrSensor.volts(), pwrSensor.amps(), pwrSensor.watts());
   } 
 
   if (millis() > longLoopTargetTime) {
     longLoopTargetTime += 5000;
-    if (!motorDriver[0].device->running) {
+
+
+    /*if (!motorDriver[0].device->running) {
       reverse = !reverse;
       if (motor_run(0, 25, reverse)) Serial.printf("Starting motor in %s direction\n", reverse ? "reverse" : "forward");
       else Serial.println("Failed to start motor");
@@ -144,6 +162,6 @@ void loop() {
       Serial.print("Stopping motor... ");
       if (motor_stop(0)) Serial.println("Motor stopped");
       else Serial.println("Failed to stop motor");
-    }
+    }*/
   }
 }
