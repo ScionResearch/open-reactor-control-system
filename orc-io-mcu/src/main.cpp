@@ -112,44 +112,15 @@ void setup() {
     }
   }
 
-  // --- Initialize Shared Modbus Master for RS485-1 ---
-  Serial.println("Initialising Shared Modbus Master (RS485-1 on Serial1)");
-  // Using Serial1 (Pins 31=TX, 32=RX), Baud 19200, No RTS Pin (-1)
-  if (!modbus_init(&Serial1, 19200, -1)) {
-      Serial.println("Failed to initialize shared Modbus master!");
-      // Handle error appropriately - perhaps halt or set a system fault flag
+  // DRV8235 initialisation
+  Serial.println("Initialising DRV8235 driver");
+  if (!motor_init()) {
+    Serial.println("Failed to initialise DRV8235 driver.");
   } else {
-      Serial.println("Shared Modbus Master initialized.");
-
-      // --- Initialize DO Sensor Driver ---
-      Serial.println("Initialising DO Sensor Driver");
-      if (!do_sensor_init(modbusMaster1, &Serial1, 19200, -1, 1000)) { // Pass shared master
-          Serial.println("Failed to initialize DO sensor driver!");
-          if (doSensorDriver.newMessage) Serial.println(doSensorDriver.message);
-      } else {
-          Serial.println("DO Sensor driver initialized.");
-      }
-
-      // --- Initialize pH Sensor Driver ---
-      Serial.println("Initialising pH Sensor Driver");
-      if (!ph_sensor_init(modbusMaster1, &Serial1, 19200, -1, 1000)) { // Pass shared master
-          Serial.println("Failed to initialize pH sensor driver!");
-          if (phSensorDriver.newMessage) Serial.println(phSensorDriver.message);
-      } else {
-          Serial.println("pH Sensor driver initialized.");
-      }
+    Serial.println("DRV8235 driver initialised.");
   }
 
-  Serial.println("Setup done");
-
-  // DRV8235 initialisation
-  Serial.println("Initialising DRV8235 driver");
-  if (!motor_init()) {
-    Serial.println("Failed to initialise DRV8235 driver.");
-  } else Serial.println("DRV8235 driver initialised.");
-
   motorDriver[0].device->enabled = true;
-  
   motor_run(0, 20, false);
 
   // INA260 initialisation
@@ -162,30 +133,6 @@ void setup() {
   if (!pwrSensor.setAverage(IN260_AVERAGE::INA260_AVERAGE_1024)) Serial.println("Failed to set INA260 averaging.");
   if (!pwrSensor.setVoltageConversionTime(INA260_V_CONV_TIME::INA260_VBUSCT_1100US)) Serial.println("Failed to set INA260 voltage conversion time.");
   if (!pwrSensor.setCurrentConversionTime(INA260_I_CONV_TIME::INA260_ISHCT_1100US)) Serial.println("Failed to set INA260 current conversion time.");
-
-  Serial.println("Setup done");
-
-  // DRV8235 initialisation
-  Serial.println("Initialising DRV8235 driver");
-  if (!motor_init()) {
-    Serial.println("Failed to initialise DRV8235 driver.");
-  } else Serial.println("DRV8235 driver initialised.");
-
-  motorDriver[0].device->enabled = true;
-  
-  motor_run(0, 20, false);
-
-  // INA260 initialisation
-  Serial.println("Initialising INA260 driver");
-  if (!pwrSensor.begin()) {
-    Serial.println("Failed to initialise INA260 driver.");
-  }
-
-  // Set INA260 avergaing and conversion time settings
-  if (!pwrSensor.setAverage(IN260_AVERAGE::INA260_AVERAGE_1024)) Serial.println("Failed to set INA260 averaging.");
-  if (!pwrSensor.setVoltageConversionTime(INA260_V_CONV_TIME::INA260_VBUSCT_1100US)) Serial.println("Failed to set INA260 voltage conversion time.");
-  if (!pwrSensor.setCurrentConversionTime(INA260_I_CONV_TIME::INA260_ISHCT_1100US)) Serial.println("Failed to set INA260 current conversion time.");
-
 
   // --- Initialize Shared Modbus Master for RS485-1 ---
   Serial.println("Initialising Shared Modbus Master (RS485-1 on Serial1)");
