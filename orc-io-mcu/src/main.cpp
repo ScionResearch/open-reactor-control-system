@@ -2,9 +2,12 @@
 #include <FlashStorage_SAMD.h>
 #include "drivers/drv_do_sensor.h" // Include DO sensor driver
 #include "drivers/drv_ph_sensor.h" // Include pH sensor driver
+#include "INA260.h"
+
+INA260 pwrSensor(INA260_BASE_ADDRESS, &Wire, PIN_P_MAIN_IRQ);
+
 
 MCP48FEBxx dac(PIN_DAC_CS, PIN_DAC_SYNC, &SPI);
-//TMC5130 stepper = TMC5130(PIN_STP_CS, &SPI1);
 
 uint32_t loopTargetTime = 0;
 uint32_t longLoopTargetTime = 0;
@@ -38,48 +41,6 @@ void setupRtdInterface(void) {
   setRtdWires(&rtd_interface[2], MAX31865_4WIRE);
   Serial.println("Changed sensor 2 to PT100, 4 wire.");
 }
-
-/*void printTMC5130registers(void) {
-  // Print registers
-  Serial.println("Reading TMC5130 registers");
-  Serial.println("\nGeneral Configuration:");
-  Serial.printf("GCONF:       0x%08X\n", stepper.reg.GCONF);
-  Serial.printf("GSTAT:       0x%08X\n", stepper.reg.GSTAT);
-  Serial.printf("IFCNT:       0x%08X\n", stepper.reg.IFCNT);
-  Serial.printf("IOIN:        0x%08X\n", stepper.reg.IOIN);
-
-  Serial.println("\nVelocity Dependent Driver Feature Control Register Set:");
-  Serial.printf("TSTEP:       0x%08X\n", stepper.reg.TSTEP);
-
-  Serial.println("\nRamp Generator Motion Control Register Set:");
-  Serial.printf("RAMPMODE:    0x%08X\n", stepper.reg.RAMPMODE);
-  Serial.printf("XACTUAL:     0x%08X\n", stepper.reg.XACTUAL);
-  Serial.printf("VACTUAL:     0x%08X\n", stepper.reg.VACTUAL);
-  Serial.printf("XTARGET:     0x%08X\n", stepper.reg.XTARGET);
-
-  Serial.println("\nRamp Generator Driver Feature Control Register Set:");
-  Serial.printf("SW_MODE:     0x%08X\n", stepper.reg.SW_MODE);
-  Serial.printf("RAMP_STAT:   0x%08X\n", stepper.reg.RAMP_STAT);
-  Serial.printf("XLATCH:      0x%08X\n", stepper.reg.XLATCH);
-
-  Serial.println("\nEncoder Registers:");
-  Serial.printf("ENCMODE:     0x%08X\n", stepper.reg.ENCMODE);
-  Serial.printf("X_ENC:       0x%08X\n", stepper.reg.X_ENC);
-  Serial.printf("ENC_STATUS:  0x%08X\n", stepper.reg.ENC_STATUS);
-  Serial.printf("ENC_LATCH:   0x%08X\n", stepper.reg.ENC_LATCH);
-
-  Serial.println("\nMotor Driver Registers:");
-  Serial.printf("MSCNT:       0x%08X\n", stepper.reg.MSCNT);
-  Serial.printf("MSCURACT:    0x%08X\n", stepper.reg.MSCURACT);
-  Serial.printf("CHOPCONF:    0x%08X\n", stepper.reg.CHOPCONF);
-  Serial.printf("DRV_STATUS:  0x%08X\n", stepper.reg.DRV_STATUS);
-  Serial.printf("PWM_SCALE:   0x%08X\n", stepper.reg.PWM_SCALE);
-  Serial.printf("LOST_STEPS:  0x%08X\n", stepper.reg.LOST_STEPS);
-}*/
-
-/*void runStepper(void) {
-  stepper.writeRegister
-}*/
 
 void setup() {
   asm(".global _printf_float");
@@ -181,17 +142,94 @@ void setup() {
 
   Serial.println("Setup done");
 
+  // DRV8235 initialisation
+  Serial.println("Initialising DRV8235 driver");
+  if (!motor_init()) {
+    Serial.println("Failed to initialise DRV8235 driver.");
+  } else Serial.println("DRV8235 driver initialised.");
+
+  motorDriver[0].device->enabled = true;
+  
+  motor_run(0, 20, false);
+
+  // INA260 initialisation
+  Serial.println("Initialising INA260 driver");
+  if (!pwrSensor.begin()) {
+    Serial.println("Failed to initialise INA260 driver.");
+  }
+
+  // Set INA260 avergaing and conversion time settings
+  if (!pwrSensor.setAverage(IN260_AVERAGE::INA260_AVERAGE_1024)) Serial.println("Failed to set INA260 averaging.");
+  if (!pwrSensor.setVoltageConversionTime(INA260_V_CONV_TIME::INA260_VBUSCT_1100US)) Serial.println("Failed to set INA260 voltage conversion time.");
+  if (!pwrSensor.setCurrentConversionTime(INA260_I_CONV_TIME::INA260_ISHCT_1100US)) Serial.println("Failed to set INA260 current conversion time.");
+
+  Serial.println("Setup done");
+
+  // DRV8235 initialisation
+  Serial.println("Initialising DRV8235 driver");
+  if (!motor_init()) {
+    Serial.println("Failed to initialise DRV8235 driver.");
+  } else Serial.println("DRV8235 driver initialised.");
+
+  motorDriver[0].device->enabled = true;
+  
+  motor_run(0, 20, false);
+
+  // INA260 initialisation
+  Serial.println("Initialising INA260 driver");
+  if (!pwrSensor.begin()) {
+    Serial.println("Failed to initialise INA260 driver.");
+  }
+
+  // Set INA260 avergaing and conversion time settings
+  if (!pwrSensor.setAverage(IN260_AVERAGE::INA260_AVERAGE_1024)) Serial.println("Failed to set INA260 averaging.");
+  if (!pwrSensor.setVoltageConversionTime(INA260_V_CONV_TIME::INA260_VBUSCT_1100US)) Serial.println("Failed to set INA260 voltage conversion time.");
+  if (!pwrSensor.setCurrentConversionTime(INA260_I_CONV_TIME::INA260_ISHCT_1100US)) Serial.println("Failed to set INA260 current conversion time.");
+
+
+  // --- Initialize Shared Modbus Master for RS485-1 ---
+  Serial.println("Initialising Shared Modbus Master (RS485-1 on Serial1)");
+  // Using Serial1 (Pins 31=TX, 32=RX), Baud 19200, No RTS Pin (-1)
+  if (!modbus_init(&Serial1, 19200, -1)) {
+      Serial.println("Failed to initialize shared Modbus master!");
+      // Handle error appropriately - perhaps halt or set a system fault flag
+  } else {
+      Serial.println("Shared Modbus Master initialized.");
+
+      // --- Initialize DO Sensor Driver ---
+      Serial.println("Initialising DO Sensor Driver");
+      if (!do_sensor_init(modbusMaster1, &Serial1, 19200, -1, 1000)) { // Pass shared master
+          Serial.println("Failed to initialize DO sensor driver!");
+          if (doSensorDriver.newMessage) Serial.println(doSensorDriver.message);
+      } else {
+          Serial.println("DO Sensor driver initialized.");
+      }
+
+      // --- Initialize pH Sensor Driver ---
+      Serial.println("Initialising pH Sensor Driver");
+      if (!ph_sensor_init(modbusMaster1, &Serial1, 19200, -1, 1000)) { // Pass shared master
+          Serial.println("Failed to initialize pH sensor driver!");
+          if (phSensorDriver.newMessage) Serial.println(phSensorDriver.message);
+      } else {
+          Serial.println("pH Sensor driver initialized.");
+      }
+  }
+
+  Serial.println("Setup done");
+
   loopTargetTime = millis();
-  longLoopTargetTime = millis() + 10000;
+  longLoopTargetTime = millis() + 5000;
 }
 
-uint16_t irun = 100;
-float rpm = 270;
-bool rotating = false;
-bool dir = 0;
-
 void loop() {
+  //static bool reverse = false;
+
+  motor_update();
+
   if (millis() > loopTargetTime) {
+    loopTargetTime += 1000;
+    //if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
+    Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwrSensor.volts(), pwrSensor.amps(), pwrSensor.watts());
     loopTargetTime += 1000; // Run this block every 1 second
 
     // --- Update Modbus Sensors ---
@@ -274,16 +312,14 @@ void loop() {
   } 
 
   if (millis() > longLoopTargetTime) {
-    longLoopTargetTime += 10000; // Run this block every 10 seconds
+    longLoopTargetTime += 5000; // Run this block every 10 seconds
 
-    /*rpm -= 50;
-    if (rpm < 50) rpm = 500;
-    stepper.setRPM(rpm);
-    Serial.printf("RPM: %f\n", rpm);*/
-    /*if (rotating) {
-      Serial.println("Stopping motor...");
-      rotating = false;
-      stepper.setRPM(0);
+
+
+    /*if (!motorDriver[0].device->running) {
+      reverse = !reverse;
+      if (motor_run(0, 25, reverse)) Serial.printf("Starting motor in %s direction\n", reverse ? "reverse" : "forward");
+      else Serial.println("Failed to start motor");
     } else {
       Serial.println("Running motor...");
       stepper.invertDirection(dir);

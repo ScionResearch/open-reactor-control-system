@@ -13,6 +13,7 @@
 #include "drivers/drv_dac.h"
 #include "drivers/drv_rtd.h"
 #include "drivers/drv_stepper.h"
+#include "drivers/drv_bdc_motor.h"
 #include <ModbusRTUMaster.h> // Include Modbus library
 
 // Declare global Modbus master instance for RS485 bus 1
