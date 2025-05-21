@@ -14,5 +14,10 @@
 #include "drivers/drv_rtd.h"
 #include "drivers/drv_stepper.h"
 #include "drivers/drv_bdc_motor.h"
+#include <ModbusRTUMaster.h> // Include Modbus library
 
-#include "utility/calibrate.h"
+// Declare global Modbus master instance for RS485 bus 1
+extern ModbusRTUMaster* modbusMaster1;
+
+// Function Prototypes
+bool modbus_init(HardwareSerial* port, long baud, int8_t rtsPin = -1);

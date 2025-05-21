@@ -1,0 +1,45 @@
+# General OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+
+# IDE/Editor specific files
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+# PlatformIO specific files
+.pio/
+.pioenvs/
+.piolibdeps/
+firmware*.bin
+firmware*.elf
+firmware*.hex
+
+# C/C++ build files
+*.o
+*.a
+*.so
+*.dylib
+*.lib
+*.dll
+*.exe
+*.out
+
+# Altium Designer specific files (optional, if generated files are not needed)
+# History/
+# *.PrjPcbStructure
+# *.__Previews/
+# *.SchDocPreview
+# *.PcbDocPreview
+
+# Dependency directories (if managed outside PlatformIO's lib_deps)
+# lib/
+# include/
+
+# Build directories
+build/
+Build/
+Debug/
+Release/
