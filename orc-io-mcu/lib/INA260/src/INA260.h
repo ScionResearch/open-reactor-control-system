@@ -110,7 +110,7 @@ enum class INA260_MODE {
     INA260_MODE_SHUNT_BUS_CONTINUOUS = INA260_MODE_SHUNT_BUS_CONTINUOUS_bm
 };
 
-enum class IN260_AVERAGE {
+enum class INA260_AVERAGE {
     INA260_AVERAGE_1 = INA260_AVG_1_bm,
     INA260_AVERAGE_4 = INA260_AVG_4_bm,
     INA260_AVERAGE_16 = INA260_AVG_16_bm,
@@ -153,7 +153,7 @@ class INA260 {
         bool reset();
         void set_irq_cb(void (*cb)());
         bool setMode(INA260_MODE mode);
-        bool setAverage(IN260_AVERAGE avg);
+        bool setAverage(INA260_AVERAGE avg);
         bool setVoltageConversionTime(INA260_V_CONV_TIME busTime);
         bool setCurrentConversionTime(INA260_I_CONV_TIME shuntTime);
 

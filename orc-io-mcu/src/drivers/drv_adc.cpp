@@ -6,10 +6,19 @@ ADCDriver_t adcDriver;
 bool ADC_init(void) {
     adcDriver.adc = new MCP346x(PIN_ADC_CS, PIN_ADC_IRQ, &SPI);
     for (int i = 0; i < 8; i++) {
+        // Pre-set inpud data objects
         adcDriver.inputObj[i] = &adcInput[i];
         adcDriver.inputObj[i]->value = 0;
         adcDriver.inputObj[i]->cal = &calTable[i + CAL_ADC_PTR];
         strcpy(adcDriver.inputObj[i]->unit, "mV");
+
+        // Add to object index
+        objIndex[numObjects].type = OBJ_T_ANALOG_INPUT;
+        objIndex[numObjects].obj = &adcDriver.inputObj[i];
+        strcpy(objIndex[numObjects].name, "Analogue Input ");
+        strcat(objIndex[numObjects].name, String(i+1).c_str());
+        objIndex[numObjects].valid = true;
+        numObjects++;
     }
     if (!adcDriver.adc->begin()) {
         adcDriver.fault = true;

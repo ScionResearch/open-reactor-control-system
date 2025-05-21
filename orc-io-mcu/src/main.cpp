@@ -1,12 +1,6 @@
 #include "sys_init.h"
 #include <FlashStorage_SAMD.h>
 
-#include "INA260.h"
-
-INA260 pwrSensor(INA260_BASE_ADDRESS, &Wire, PIN_P_MAIN_IRQ);
-
-MCP48FEBxx dac(PIN_DAC_CS, PIN_DAC_SYNC, &SPI);
-
 uint32_t loopTargetTime = 0;
 uint32_t longLoopTargetTime = 0;
 uint32_t loopCounter = 0;
@@ -124,14 +118,11 @@ void setup() {
 
   // INA260 initialisation
   Serial.println("Initialising INA260 driver");
-  if (!pwrSensor.begin()) {
+  if (!pwrSensor_init()) {
     Serial.println("Failed to initialise INA260 driver.");
   }
 
-  // Set INA260 avergaing and conversion time settings
-  if (!pwrSensor.setAverage(IN260_AVERAGE::INA260_AVERAGE_1024)) Serial.println("Failed to set INA260 averaging.");
-  if (!pwrSensor.setVoltageConversionTime(INA260_V_CONV_TIME::INA260_VBUSCT_1100US)) Serial.println("Failed to set INA260 voltage conversion time.");
-  if (!pwrSensor.setCurrentConversionTime(INA260_I_CONV_TIME::INA260_ISHCT_1100US)) Serial.println("Failed to set INA260 current conversion time.");
+
 
   Serial.println("Setup done");
   
@@ -146,8 +137,9 @@ void loop() {
 
   if (millis() > loopTargetTime) {
     loopTargetTime += 1000;
+    //pwrSensor_update();
     //if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
-    Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwrSensor.volts(), pwrSensor.amps(), pwrSensor.watts());
+    //Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[0].voltage, pwr_sensor[0].current, pwr_sensor[0].power);
   } 
 
   if (millis() > longLoopTargetTime) {
