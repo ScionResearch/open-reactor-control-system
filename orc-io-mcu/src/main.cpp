@@ -140,6 +140,10 @@ void setup() {
   outputDriver.outputObj[3]->pwmDuty = 0;
   outputDriver.outputObj[3]->state = false;
 
+  Serial.println("Setting heater output");
+  heaterOutput[0].pwmEnabled = true;
+  heaterOutput[0].pwmDuty = 20;
+
   Serial.println("Setup done");
   
   loopTargetTime = millis();
@@ -172,14 +176,15 @@ void loop() {
     /*Serial.print("PMUX for PB18: ");
     Serial.println((PORT->Group[1].PMUX[18 >> 1].reg >> ((18 & 1) ? 4 : 0)) & 0xF, HEX);*/
 
-    //pwrSensor_update();
+    pwrSensor_update();
     //if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
-    //Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[0].voltage, pwr_sensor[0].current, pwr_sensor[0].power);
+    Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[0].voltage, pwr_sensor[0].current, pwr_sensor[0].power);
+    Serial.printf("Heater power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[1].voltage, pwr_sensor[1].current, pwr_sensor[1].power);
   } 
 
   if (millis() > longLoopTargetTime) {
     longLoopTargetTime += 5000;
-
+    heaterOutput[0].pwmEnabled = !heaterOutput[0].pwmEnabled;
 
     /*if (!motorDriver[0].device->running) {
       reverse = !reverse;
