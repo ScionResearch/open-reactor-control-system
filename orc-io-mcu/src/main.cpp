@@ -122,7 +122,23 @@ void setup() {
     Serial.println("Failed to initialise INA260 driver.");
   }
 
+  // Outputs initialisation
+  Serial.println("Initialising outputs");
+  output_init();
 
+  Serial.println("Setting PWM values");
+  outputDriver.outputObj[0]->pwmEnabled = true;
+  outputDriver.outputObj[0]->pwmDuty = 50;
+  outputDriver.outputObj[0]->state = false;
+  outputDriver.outputObj[1]->pwmEnabled = true;
+  outputDriver.outputObj[1]->pwmDuty = 75;
+  outputDriver.outputObj[1]->state = false;
+  outputDriver.outputObj[2]->pwmEnabled = true;
+  outputDriver.outputObj[2]->pwmDuty = 25;
+  outputDriver.outputObj[2]->state = false;
+  outputDriver.outputObj[3]->pwmEnabled = true;
+  outputDriver.outputObj[3]->pwmDuty = 0;
+  outputDriver.outputObj[3]->state = false;
 
   Serial.println("Setup done");
   
@@ -133,10 +149,29 @@ void setup() {
 void loop() {
   //static bool reverse = false;
 
-  motor_update();
+  //motor_update();
+  output_update();
+
+  //static uint32_t pwmVal = 0;
 
   if (millis() > loopTargetTime) {
     loopTargetTime += 1000;
+
+    // Digital toggle OUT_1
+    //outputDriver.outputObj[0]->state = !outputDriver.outputObj[0]->state;
+    //digitalWrite(PIN_OUT_1, !digitalRead(PIN_OUT_1));
+
+    // PWM control OUT_2 - 4
+    /*pwmVal += 8;
+    if (pwmVal > 255) pwmVal = 0;
+    for (int i = 0; i < 4; i++) {
+      outputDriver.outputObj[i]->pwmDuty = pwmVal;
+    }
+    Serial.printf("PWM value: %d\n", pwmVal);*/
+    // Debug OUT_1 not working:
+    /*Serial.print("PMUX for PB18: ");
+    Serial.println((PORT->Group[1].PMUX[18 >> 1].reg >> ((18 & 1) ? 4 : 0)) & 0xF, HEX);*/
+
     //pwrSensor_update();
     //if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
     //Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[0].voltage, pwr_sensor[0].current, pwr_sensor[0].power);

@@ -150,6 +150,8 @@ struct AnalogOutput_t {
 
 struct DigitalOutput_t {
     bool state;
+    bool pwmEnabled;
+    float pwmDuty;  // Duty cycle in percent (0-100)
     bool fault;
     bool newMessage;
     char message[100];
