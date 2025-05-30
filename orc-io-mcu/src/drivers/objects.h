@@ -79,6 +79,12 @@ struct AnalogInput_t {
     char message[100];
     Calibrate_t *cal;
 };
+
+struct DigitalIO_t {
+    bool pullup;
+    bool output;
+    bool state;
+};
 struct TemperatureSensor_t {
     float temperature;
     char unit[5];

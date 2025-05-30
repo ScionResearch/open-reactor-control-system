@@ -144,6 +144,9 @@ void setup() {
   heaterOutput[0].pwmEnabled = true;
   heaterOutput[0].pwmDuty = 20;
 
+  Serial.println("Initialising GPIO pins");
+  gpio_init();
+
   Serial.println("Setup done");
   
   loopTargetTime = millis();
@@ -155,6 +158,7 @@ void loop() {
 
   //motor_update();
   output_update();
+  gpio_update();
 
   //static uint32_t pwmVal = 0;
 
@@ -176,10 +180,13 @@ void loop() {
     /*Serial.print("PMUX for PB18: ");
     Serial.println((PORT->Group[1].PMUX[18 >> 1].reg >> ((18 & 1) ? 4 : 0)) & 0xF, HEX);*/
 
-    pwrSensor_update();
+    /*pwrSensor_update();
     //if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
     Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[0].voltage, pwr_sensor[0].current, pwr_sensor[0].power);
-    Serial.printf("Heater power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[1].voltage, pwr_sensor[1].current, pwr_sensor[1].power);
+    Serial.printf("Heater power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[1].voltage, pwr_sensor[1].current, pwr_sensor[1].power);*/
+
+    Serial.printf("Pin states (GPIO): %d  %d  %d  %d  %d  %d  %d  %d\n", gpio[0].state, gpio[1].state, gpio[2].state, gpio[3].state, gpio[4].state, gpio[5].state, gpio[6].state, gpio[7].state);
+    Serial.printf("Pin states (Exp) : %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d\n", gpioExp[0].state, gpioExp[1].state, gpioExp[2].state, gpioExp[3].state, gpioExp[4].state, gpioExp[5].state, gpioExp[6].state, gpioExp[7].state, gpioExp[8].state, gpioExp[9].state, gpioExp[10].state, gpioExp[11].state, gpioExp[12].state, gpioExp[13].state, gpioExp[14].state);
   } 
 
   if (millis() > longLoopTargetTime) {
