@@ -1,9 +1,16 @@
 #include "sys_init.h"
 #include <FlashStorage_SAMD.h>
 
+// Most of this is debug code!!!! Very much a work in progress
+
 uint32_t loopTargetTime = 0;
 uint32_t longLoopTargetTime = 0;
 uint32_t loopCounter = 0;
+
+void printStuff(void) {
+  Serial.printf("Pin states (GPIO): %d  %d  %d  %d  %d  %d  %d  %d\n", gpio[0].state, gpio[1].state, gpio[2].state, gpio[3].state, gpio[4].state, gpio[5].state, gpio[6].state, gpio[7].state);
+  Serial.printf("Pin states (Exp) : %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d\n", gpioExp[0].state, gpioExp[1].state, gpioExp[2].state, gpioExp[3].state, gpioExp[4].state, gpioExp[5].state, gpioExp[6].state, gpioExp[7].state, gpioExp[8].state, gpioExp[9].state, gpioExp[10].state, gpioExp[11].state, gpioExp[12].state, gpioExp[13].state, gpioExp[14].state);
+}
 
 void setupCSpins(void) {
   pinMode(PIN_ADC_CS, OUTPUT);
@@ -147,6 +154,11 @@ void setup() {
   Serial.println("Initialising GPIO pins");
   gpio_init();
 
+  Serial.println("Adding tasks to scheduler");
+  tasks.addTask(output_update, 100, true, false);
+  tasks.addTask(gpio_update, 100, true, true);
+  tasks.addTask(printStuff, 2000, true, false);
+
   Serial.println("Setup done");
   
   loopTargetTime = millis();
@@ -154,53 +166,5 @@ void setup() {
 }
 
 void loop() {
-  //static bool reverse = false;
-
-  //motor_update();
-  output_update();
-  gpio_update();
-
-  //static uint32_t pwmVal = 0;
-
-  if (millis() > loopTargetTime) {
-    loopTargetTime += 1000;
-
-    // Digital toggle OUT_1
-    //outputDriver.outputObj[0]->state = !outputDriver.outputObj[0]->state;
-    //digitalWrite(PIN_OUT_1, !digitalRead(PIN_OUT_1));
-
-    // PWM control OUT_2 - 4
-    /*pwmVal += 8;
-    if (pwmVal > 255) pwmVal = 0;
-    for (int i = 0; i < 4; i++) {
-      outputDriver.outputObj[i]->pwmDuty = pwmVal;
-    }
-    Serial.printf("PWM value: %d\n", pwmVal);*/
-    // Debug OUT_1 not working:
-    /*Serial.print("PMUX for PB18: ");
-    Serial.println((PORT->Group[1].PMUX[18 >> 1].reg >> ((18 & 1) ? 4 : 0)) & 0xF, HEX);*/
-
-    /*pwrSensor_update();
-    //if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
-    Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[0].voltage, pwr_sensor[0].current, pwr_sensor[0].power);
-    Serial.printf("Heater power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwr_sensor[1].voltage, pwr_sensor[1].current, pwr_sensor[1].power);*/
-
-    Serial.printf("Pin states (GPIO): %d  %d  %d  %d  %d  %d  %d  %d\n", gpio[0].state, gpio[1].state, gpio[2].state, gpio[3].state, gpio[4].state, gpio[5].state, gpio[6].state, gpio[7].state);
-    Serial.printf("Pin states (Exp) : %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d\n", gpioExp[0].state, gpioExp[1].state, gpioExp[2].state, gpioExp[3].state, gpioExp[4].state, gpioExp[5].state, gpioExp[6].state, gpioExp[7].state, gpioExp[8].state, gpioExp[9].state, gpioExp[10].state, gpioExp[11].state, gpioExp[12].state, gpioExp[13].state, gpioExp[14].state);
-  } 
-
-  if (millis() > longLoopTargetTime) {
-    longLoopTargetTime += 5000;
-    heaterOutput[0].pwmEnabled = !heaterOutput[0].pwmEnabled;
-
-    /*if (!motorDriver[0].device->running) {
-      reverse = !reverse;
-      if (motor_run(0, 25, reverse)) Serial.printf("Starting motor in %s direction\n", reverse ? "reverse" : "forward");
-      else Serial.println("Failed to start motor");
-    } else {
-      Serial.print("Stopping motor... ");
-      if (motor_stop(0)) Serial.println("Motor stopped");
-      else Serial.println("Failed to stop motor");
-    }*/
-  }
+  tasks.update();
 }

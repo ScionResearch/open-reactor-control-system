@@ -6,6 +6,9 @@
 #include <SPI.h>
 #include <FlashStorage_SAMD.hpp>
 
+// Task scheduler
+#include "tasks/taskManager.h"
+
 // Hardware specific
 #include "hardware/pins.h"
 
