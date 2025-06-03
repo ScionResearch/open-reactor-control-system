@@ -22,6 +22,7 @@
 #include "drivers/drv_stepper.h"
 #include "drivers/drv_bdc_motor.h"
 #include "drivers/drv_pwr_sensor.h"
+#include "drivers/drv_modbus.h"
 
 // Utility
 #include "utility/calibrate.h"

@@ -3,13 +3,97 @@
 
 // Most of this is debug code!!!! Very much a work in progress
 
-uint32_t loopTargetTime = 0;
-uint32_t longLoopTargetTime = 0;
-uint32_t loopCounter = 0;
-
 void printStuff(void) {
-  Serial.printf("Pin states (GPIO): %d  %d  %d  %d  %d  %d  %d  %d\n", gpio[0].state, gpio[1].state, gpio[2].state, gpio[3].state, gpio[4].state, gpio[5].state, gpio[6].state, gpio[7].state);
-  Serial.printf("Pin states (Exp) : %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d\n", gpioExp[0].state, gpioExp[1].state, gpioExp[2].state, gpioExp[3].state, gpioExp[4].state, gpioExp[5].state, gpioExp[6].state, gpioExp[7].state, gpioExp[8].state, gpioExp[9].state, gpioExp[10].state, gpioExp[11].state, gpioExp[12].state, gpioExp[13].state, gpioExp[14].state);
+  if (output_task) {
+    Serial.printf("Output task µs last: %d, min: %d, max: %d, avg: %0.2f\n", output_task->getLastExecTime(), output_task->getMinExecTime(), output_task->getMaxExecTime(), output_task->getAverageExecTime());
+  } else Serial.println("Output task not created.");
+
+  if (gpio_task) {
+    Serial.printf("GPIO task µs last: %d, min: %d, max: %d, avg: %0.2f\n", gpio_task->getLastExecTime(), gpio_task->getMinExecTime(), gpio_task->getMaxExecTime(), gpio_task->getAverageExecTime());
+  } else Serial.println("GPIO task not created.");
+
+  if (modbus_task) {
+    Serial.printf("Modbus task µs last: %d, min: %d, max: %d, avg: %0.2f\n", modbus_task->getLastExecTime(), modbus_task->getMinExecTime(), modbus_task->getMaxExecTime(), modbus_task->getAverageExecTime());
+  } else Serial.println("Modbus task not created.");
+
+  if (phProbe_task) {
+    Serial.printf("PH probe task µs last: %d, min: %d, max: %d, avg: %0.2f\n", phProbe_task->getLastExecTime(), phProbe_task->getMinExecTime(), phProbe_task->getMaxExecTime(), phProbe_task->getAverageExecTime());
+  } else Serial.println("PH probe task not created.");
+
+  if (levelProbe_task) {
+    Serial.printf("Level probe task µs last: %d, min: %d, max: %d, avg: %0.2f\n", levelProbe_task->getLastExecTime(), levelProbe_task->getMinExecTime(), levelProbe_task->getMaxExecTime(), levelProbe_task->getAverageExecTime());
+  } else Serial.println("Level probe task not created.");
+  
+  if (PARsensor_task) {
+    Serial.printf("PAR sensor task µs last: %d, min: %d, max: %d, avg: %0.2f\n", PARsensor_task->getLastExecTime(), PARsensor_task->getMinExecTime(), PARsensor_task->getMaxExecTime(), PARsensor_task->getAverageExecTime());
+  } else Serial.println("PAR sensor task not created.");
+
+  if (printStuff_task) {
+    Serial.printf("Print stuff task µs last: %d, min: %d, max: %d, avg: %0.2f\n", printStuff_task->getLastExecTime(), printStuff_task->getMinExecTime(), printStuff_task->getMaxExecTime(), printStuff_task->getAverageExecTime());
+  }
+}
+
+void phProbeHandler(bool valid, uint16_t *data) {
+  if (!valid /*|| (sizeof(data) / sizeof(uint16_t)) != 2*/) {
+    Serial.println("Invalid ph probe data.");
+    return;
+  }
+  float temperature = static_cast<int>(data[0]) / 100.0f;
+  float pH = static_cast<int>(data[1]) / 100.0f;
+  Serial.printf("PH probe data: Temperature: %0.2f °C, pH: %0.2f\n", temperature, pH);
+}
+
+void phProbeRequest(void) {
+  Serial.println("Queuing pH probe modbus request");
+  uint8_t slaveID = 12;
+  uint8_t functionCode = 4;
+  uint16_t address = 0;
+  static uint16_t data[2];
+  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 2, phProbeHandler)) {
+    Serial.println("ERROR - queue full");
+  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+}
+
+void levelProbeHandler(bool valid, uint16_t *data) {
+  if (!valid /*|| (sizeof(data) / sizeof(uint16_t)) != 6*/) {
+    Serial.println("Invalid level probe data.");
+    return;
+  }
+  int value = static_cast<int>(data[4]);
+  float level = value / pow(10, data[3]);
+  const char *unit[7] = {"", "cm", "mm", "Mpa", "Pa", "kPa", "MA"};
+  int baud[8] = {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200};
+  Serial.printf("Level probe data: Level: %0.2f %s, ID: %d, Baud: %d, Zero pt: %d\n", level, unit[data[2]], data[0], baud[data[1]], data[5]);
+}
+
+void levelProbeRequest(void) {
+  Serial.println("Queuing level probe modbus request");
+  uint8_t slaveID = 26;
+  uint8_t functionCode = 3;
+  uint16_t address = 0;
+  static uint16_t data[6];
+  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 6, levelProbeHandler)) {
+    Serial.println("ERROR - queue full");
+  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+}
+
+void PARsensorHandler(bool valid, uint16_t *data) {
+  if (!valid /*|| (sizeof(data) / sizeof(uint16_t)) != 2*/) {
+    Serial.println("Invalid PAR sensor data.");
+    return;
+  }
+  Serial.printf("PAR sensor data: %d µmol/m²/s\n", data[0]);
+}
+
+void PARsensorRequest(void) {
+  Serial.println("Queuing PAR sensor modbus request");
+  uint8_t slaveID = 34;
+  uint8_t functionCode = 3;
+  uint16_t address = 0;
+  static uint16_t data[1];
+  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 1, PARsensorHandler)) {
+    Serial.println("ERROR - queue full");
+  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
 }
 
 void setupCSpins(void) {
@@ -154,15 +238,19 @@ void setup() {
   Serial.println("Initialising GPIO pins");
   gpio_init();
 
+  Serial.println("Starting Modbus interface");
+  modbus_init();
+
   Serial.println("Adding tasks to scheduler");
-  tasks.addTask(output_update, 100, true, false);
-  tasks.addTask(gpio_update, 100, true, true);
-  tasks.addTask(printStuff, 2000, true, false);
+  output_task = tasks.addTask(output_update, 100, true, false);
+  gpio_task = tasks.addTask(gpio_update, 100, true, true);
+  modbus_task = tasks.addTask(modbus_manage, 10, true, true);
+  phProbe_task = tasks.addTask(phProbeRequest, 2000, true, false);
+  levelProbe_task = tasks.addTask(levelProbeRequest, 2000, true, false);
+  PARsensor_task = tasks.addTask(PARsensorRequest, 2000, true, false);
+  printStuff_task = tasks.addTask(printStuff, 2000, true, false);
 
   Serial.println("Setup done");
-  
-  loopTargetTime = millis();
-  longLoopTargetTime = millis() + 5000;
 }
 
 void loop() {

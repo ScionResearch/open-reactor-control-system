@@ -58,7 +58,10 @@ public:
 
     void update() {
         if (!_paused && _timer.complete()) {
+            unsigned long start = micros();
             if (_callback) _callback();
+            unsigned long elapsed = micros() - start;
+            _updateStats(elapsed);
         }
     }
 
@@ -70,43 +73,64 @@ public:
         return _callback == other._callback && _interval == other._interval;
     }
 
+    unsigned long getLastExecTime() const { return _lastExecTime; }
+    unsigned long getMinExecTime() const { return _minExecTime; }
+    unsigned long getMaxExecTime() const { return _maxExecTime; }
+    float getAverageExecTime() const { return _execCount ? ((float)_totalExecTime / _execCount) : 0; }
+
 private:
+    void _updateStats(unsigned long duration) {
+        _lastExecTime = duration;
+        if (duration < _minExecTime || _execCount == 0) _minExecTime = duration;
+        if (duration > _maxExecTime) _maxExecTime = duration;
+        _totalExecTime += duration;
+        ++_execCount;
+    }
+
     TaskCallback _callback;
     unsigned long _interval;
     bool _repeat;
     bool _paused;
     bool _highPriority;
     NoBlockDelay _timer;
+
+    // Execution timing stats
+    unsigned long _lastExecTime = 0;
+    unsigned long _minExecTime = 0;
+    unsigned long _maxExecTime = 0;
+    unsigned long _totalExecTime = 0;
+    unsigned long _execCount = 0;
 };
 
 class TaskScheduler {
 public:
     ScheduledTask* addTask(TaskCallback callback, unsigned long interval, bool repeat = true, bool highPriority = false) {
-        _tasks.emplace_back(callback, interval, repeat, highPriority);
-        return &_tasks.back();
+        ScheduledTask* task = new ScheduledTask(callback, interval, repeat, highPriority);
+        _tasks.push_back(task);
+        return task;
+    }
+    void removeTask(ScheduledTask* task) {
+        _tasks.erase(std::remove(_tasks.begin(), _tasks.end(), task), _tasks.end());
+        delete task;
     }
 
-    void removeTask(ScheduledTask* task) {
-        _tasks.erase(std::remove_if(_tasks.begin(), _tasks.end(), [task](const ScheduledTask& t) {
-            return &t == task;
-        }), _tasks.end());
-    }
 
     void update() {
-        // High priority tasks first
-        for (auto& task : _tasks) {
-            if (task.isHighPriority()) {
-                task.update();
-            }
+        for (auto* task : _tasks) {
+            if (task->isHighPriority()) task->update();
         }
-        // Then low priority
-        for (auto& task : _tasks) {
-            if (!task.isHighPriority()) {
-                task.update();
-            }
+        for (auto* task : _tasks) {
+            if (!task->isHighPriority()) task->update();
         }
+    }
+
+    ~TaskScheduler() {
+        for (auto* task : _tasks) {
+            delete task;
+        }
+        _tasks.clear();
     }
 
 private:
-    std::vector<ScheduledTask> _tasks;
+    std::vector<ScheduledTask*> _tasks;
 };

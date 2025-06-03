@@ -29,7 +29,7 @@ bool NoBlockDelay::isRunning() {
 }
 
 unsigned long NoBlockDelay::getRemainingTime() {
-    return _running? (_startTime + _duration - millis()) : 0;
+    return _running ? (_duration - (millis() - _startTime)) : 0;
 }
 
 unsigned long NoBlockDelay::getDuration() {
