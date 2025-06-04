@@ -34,7 +34,7 @@ void printStuff(void) {
 }
 
 void phProbeHandler(bool valid, uint16_t *data) {
-  if (!valid /*|| (sizeof(data) / sizeof(uint16_t)) != 2*/) {
+  if (!valid) {
     Serial.println("Invalid ph probe data.");
     return;
   }
@@ -55,7 +55,7 @@ void phProbeRequest(void) {
 }
 
 void levelProbeHandler(bool valid, uint16_t *data) {
-  if (!valid /*|| (sizeof(data) / sizeof(uint16_t)) != 6*/) {
+  if (!valid) {
     Serial.println("Invalid level probe data.");
     return;
   }
@@ -78,7 +78,7 @@ void levelProbeRequest(void) {
 }
 
 void PARsensorHandler(bool valid, uint16_t *data) {
-  if (!valid /*|| (sizeof(data) / sizeof(uint16_t)) != 2*/) {
+  if (!valid) {
     Serial.println("Invalid PAR sensor data.");
     return;
   }
