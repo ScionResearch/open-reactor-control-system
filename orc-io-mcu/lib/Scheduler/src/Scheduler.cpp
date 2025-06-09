@@ -45,16 +45,24 @@ bool NoBlockDelay::complete() {
 }
 
 // Scheduled task class
-ScheduledTask::ScheduledTask(TaskCallback callback, unsigned long interval, bool repeat, bool highPriority) :
-    _callback(callback),
-    _interval(interval),
-    _repeat(repeat),
-    _paused(false),
-    _highPriority(highPriority),
-    _timer() {
-        _timer.setMode(_repeat);
-        if (_interval > 0) _timer.start(_interval);
-    }
+ScheduledTask::ScheduledTask(TaskCallback callback, unsigned long interval, bool repeat, bool highPriority)
+    : _callback(callback),
+      _interval(interval),
+      _repeat(repeat),
+      _paused(false),
+      _highPriority(highPriority),
+      _timer(),                 // _timer comes before stats variables
+      _lastExecTime(0),
+      _minExecTime(ULONG_MAX),
+      _maxExecTime(0),
+      _totalExecTime(0),
+      _execCount(0)
+{
+    _timer.setMode(_repeat);
+    if (_interval > 0) _timer.start(_interval);
+}
+
+
 
 void ScheduledTask::update() {
     if (!_paused && _timer.complete()) {
@@ -87,6 +95,14 @@ unsigned long ScheduledTask::getMinExecTime() const { return _minExecTime; }
 unsigned long ScheduledTask::getMaxExecTime() const { return _maxExecTime; }
 
 float ScheduledTask::getAverageExecTime() const { return _execCount ? ((float)_totalExecTime / _execCount) : 0; }
+
+void ScheduledTask::resetStats() {
+    _lastExecTime = 0;
+    _minExecTime = ULONG_MAX;
+    _maxExecTime = 0;
+    _totalExecTime = 0;
+    _execCount = 0;
+}
 
 void ScheduledTask::_updateStats(unsigned long duration) {
     _lastExecTime = duration;

@@ -28,6 +28,10 @@ void printStuff(void) {
     Serial.printf("PAR sensor task µs last: %d, min: %d, max: %d, avg: %0.2f\n", PARsensor_task->getLastExecTime(), PARsensor_task->getMinExecTime(), PARsensor_task->getMaxExecTime(), PARsensor_task->getAverageExecTime());
   } else Serial.println("PAR sensor task not created.");
 
+  if (RTDsensor_task) {
+    Serial.printf("RTD task µs last: %d, min: %d, max: %d, avg: %0.2f\n", RTDsensor_task->getLastExecTime(), RTDsensor_task->getMinExecTime(), RTDsensor_task->getMaxExecTime(), RTDsensor_task->getAverageExecTime());
+  } else Serial.println("RTD task not created.");
+
   if (printStuff_task) {
     Serial.printf("Print stuff task µs last: %d, min: %d, max: %d, avg: %0.2f\n", printStuff_task->getLastExecTime(), printStuff_task->getMinExecTime(), printStuff_task->getMaxExecTime(), printStuff_task->getAverageExecTime());
   }
@@ -96,6 +100,17 @@ void PARsensorRequest(void) {
   } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
 }
 
+void RTD_manage(void) {
+  readRtdSensors();
+  for (int i = 0; i < 3; i++) {
+    if (rtd_interface[i].temperatureObj->fault) {
+      Serial.println(rtd_interface[i].temperatureObj->message);
+    } else {
+      Serial.printf("RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
+    }
+  }
+}
+
 void setupCSpins(void) {
   pinMode(PIN_ADC_CS, OUTPUT);
   pinMode(PIN_DAC_CS, OUTPUT);
@@ -139,11 +154,8 @@ void setup() {
   else Serial.println("Calibration data read from EEPROM");
 
   Serial.println("Initialising ADC interface");
-  if (!ADC_init()) {
-    Serial.println("Failed to initialise ADC driver.");
-  } else {
-    Serial.println("ADC driver initialised.");
-  }
+  ADC_init();
+  Serial.printf("Result: %s\n", adcDriver.message);
 
   // PT100 setup testing
   Serial.println("Initialising RTD interface");
@@ -153,6 +165,7 @@ void setup() {
   Serial.println("Initialising DAC interface");
   if (!DAC_init()) {
     Serial.println("Failed to initialise DAC driver.");
+    Serial.printf("Result: %s, Result Ch1: %s, Result Ch2: %s\n", dacDriver.message, dacDriver.outputObj[0]->message, dacDriver.outputObj[1]->message);
   } else {
     Serial.println("DAC driver initialised.");
   }
@@ -249,6 +262,8 @@ void setup() {
   levelProbe_task = tasks.addTask(levelProbeRequest, 2000, true, false);
   PARsensor_task = tasks.addTask(PARsensorRequest, 2000, true, false);
   printStuff_task = tasks.addTask(printStuff, 2000, true, false);
+  RTDsensor_task = tasks.addTask(RTD_manage, 1000, true, false);
+
 
   Serial.println("Setup done");
 }

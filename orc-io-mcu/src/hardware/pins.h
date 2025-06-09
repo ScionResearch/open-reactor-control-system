@@ -42,9 +42,9 @@
 #define PIN_ADC_MOSI        38
 #define PIN_ADC_SCK         39
 #define PIN_ADC_MISO        40
-#define PIN_PT100_IRQ_1     41
-#define PIN_PT100_IRQ_2     42
-#define PIN_PT100_IRQ_3     43
+#define PIN_PT100_DRDY_1    41
+#define PIN_PT100_DRDY_2    42
+#define PIN_PT100_DRDY_3    43
 #define PIN_RS232_TX_2      44
 #define PIN_RS232_RX_2      45
 #define PIN_OUT_1           46

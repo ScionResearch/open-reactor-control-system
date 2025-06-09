@@ -9,3 +9,4 @@ ScheduledTask *phProbe_task;
 ScheduledTask *levelProbe_task;
 ScheduledTask *PARsensor_task;
 ScheduledTask *printStuff_task;
+ScheduledTask *RTDsensor_task;

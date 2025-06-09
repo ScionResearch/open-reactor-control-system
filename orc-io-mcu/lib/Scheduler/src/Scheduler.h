@@ -43,6 +43,8 @@ public:
     unsigned long getMaxExecTime() const;
     float getAverageExecTime() const;
 
+    void resetStats();
+
 private:
     void _updateStats(unsigned long duration);
 
@@ -53,11 +55,11 @@ private:
     bool _highPriority;
     NoBlockDelay _timer;
 
-    unsigned long _lastExecTime;
-    unsigned long _minExecTime;
-    unsigned long _maxExecTime;
-    unsigned long _totalExecTime;
-    unsigned long _execCount;
+    unsigned long _lastExecTime = 0;
+    unsigned long _minExecTime = ULONG_MAX;
+    unsigned long _maxExecTime = 0;
+    unsigned long _totalExecTime = 0;
+    unsigned long _execCount = 0;
 };
 
 class TaskScheduler {
