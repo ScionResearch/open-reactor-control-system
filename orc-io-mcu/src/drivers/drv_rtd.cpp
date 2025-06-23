@@ -23,14 +23,6 @@ bool init_rtdDriver(void) {
         digitalWrite(rtdPins[i], HIGH);
     }
 
-    // ----- Temp code- init other CS pins too ----- //
-    pinMode(PIN_ADC_CS, OUTPUT);
-    pinMode(PIN_DAC_CS, OUTPUT);
-
-    digitalWrite(PIN_ADC_CS, HIGH);
-    digitalWrite(PIN_DAC_CS, HIGH);
-    // --------------- End temp code --------------- //
-
     // Initialise config
     for (int i = 0; i < NUM_MAX31865_INTERFACES; i++) {
         rtd_interface[i].temperatureObj = &rtd_sensor[i];

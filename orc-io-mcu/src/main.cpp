@@ -1,17 +1,115 @@
 #include "sys_init.h"
 #include <FlashStorage_SAMD.h>
-#include "drivers/drv_do_sensor.h" // Include DO sensor driver
-#include "drivers/drv_ph_sensor.h" // Include pH sensor driver
-#include "INA260.h"
 
-INA260 pwrSensor(INA260_BASE_ADDRESS, &Wire, PIN_P_MAIN_IRQ);
+// Most of this is debug code!!!! Very much a work in progress
 
+void printStuff(void) {
+  if (output_task) {
+    Serial.printf("Output task µs last: %d, min: %d, max: %d, avg: %0.2f\n", output_task->getLastExecTime(), output_task->getMinExecTime(), output_task->getMaxExecTime(), output_task->getAverageExecTime());
+  } else Serial.println("Output task not created.");
 
-MCP48FEBxx dac(PIN_DAC_CS, PIN_DAC_SYNC, &SPI);
+  if (gpio_task) {
+    Serial.printf("GPIO task µs last: %d, min: %d, max: %d, avg: %0.2f\n", gpio_task->getLastExecTime(), gpio_task->getMinExecTime(), gpio_task->getMaxExecTime(), gpio_task->getAverageExecTime());
+  } else Serial.println("GPIO task not created.");
 
-uint32_t loopTargetTime = 0;
-uint32_t longLoopTargetTime = 0;
-uint32_t loopCounter = 0;
+  if (modbus_task) {
+    Serial.printf("Modbus task µs last: %d, min: %d, max: %d, avg: %0.2f\n", modbus_task->getLastExecTime(), modbus_task->getMinExecTime(), modbus_task->getMaxExecTime(), modbus_task->getAverageExecTime());
+  } else Serial.println("Modbus task not created.");
+
+  if (phProbe_task) {
+    Serial.printf("PH probe task µs last: %d, min: %d, max: %d, avg: %0.2f\n", phProbe_task->getLastExecTime(), phProbe_task->getMinExecTime(), phProbe_task->getMaxExecTime(), phProbe_task->getAverageExecTime());
+  } else Serial.println("PH probe task not created.");
+
+  if (levelProbe_task) {
+    Serial.printf("Level probe task µs last: %d, min: %d, max: %d, avg: %0.2f\n", levelProbe_task->getLastExecTime(), levelProbe_task->getMinExecTime(), levelProbe_task->getMaxExecTime(), levelProbe_task->getAverageExecTime());
+  } else Serial.println("Level probe task not created.");
+  
+  if (PARsensor_task) {
+    Serial.printf("PAR sensor task µs last: %d, min: %d, max: %d, avg: %0.2f\n", PARsensor_task->getLastExecTime(), PARsensor_task->getMinExecTime(), PARsensor_task->getMaxExecTime(), PARsensor_task->getAverageExecTime());
+  } else Serial.println("PAR sensor task not created.");
+
+  if (RTDsensor_task) {
+    Serial.printf("RTD task µs last: %d, min: %d, max: %d, avg: %0.2f\n", RTDsensor_task->getLastExecTime(), RTDsensor_task->getMinExecTime(), RTDsensor_task->getMaxExecTime(), RTDsensor_task->getAverageExecTime());
+  } else Serial.println("RTD task not created.");
+
+  if (printStuff_task) {
+    Serial.printf("Print stuff task µs last: %d, min: %d, max: %d, avg: %0.2f\n", printStuff_task->getLastExecTime(), printStuff_task->getMinExecTime(), printStuff_task->getMaxExecTime(), printStuff_task->getAverageExecTime());
+  }
+}
+
+void phProbeHandler(bool valid, uint16_t *data) {
+  if (!valid) {
+    Serial.println("Invalid ph probe data.");
+    return;
+  }
+  float temperature = static_cast<int>(data[0]) / 100.0f;
+  float pH = static_cast<int>(data[1]) / 100.0f;
+  Serial.printf("PH probe data: Temperature: %0.2f °C, pH: %0.2f\n", temperature, pH);
+}
+
+void phProbeRequest(void) {
+  Serial.println("Queuing pH probe modbus request");
+  uint8_t slaveID = 12;
+  uint8_t functionCode = 4;
+  uint16_t address = 0;
+  static uint16_t data[2];
+  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 2, phProbeHandler)) {
+    Serial.println("ERROR - queue full");
+  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+}
+
+void levelProbeHandler(bool valid, uint16_t *data) {
+  if (!valid) {
+    Serial.println("Invalid level probe data.");
+    return;
+  }
+  int value = static_cast<int>(data[4]);
+  float level = value / pow(10, data[3]);
+  const char *unit[7] = {"", "cm", "mm", "Mpa", "Pa", "kPa", "MA"};
+  int baud[8] = {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200};
+  Serial.printf("Level probe data: Level: %0.2f %s, ID: %d, Baud: %d, Zero pt: %d\n", level, unit[data[2]], data[0], baud[data[1]], data[5]);
+}
+
+void levelProbeRequest(void) {
+  Serial.println("Queuing level probe modbus request");
+  uint8_t slaveID = 26;
+  uint8_t functionCode = 3;
+  uint16_t address = 0;
+  static uint16_t data[6];
+  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 6, levelProbeHandler)) {
+    Serial.println("ERROR - queue full");
+  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+}
+
+void PARsensorHandler(bool valid, uint16_t *data) {
+  if (!valid) {
+    Serial.println("Invalid PAR sensor data.");
+    return;
+  }
+  Serial.printf("PAR sensor data: %d µmol/m²/s\n", data[0]);
+}
+
+void PARsensorRequest(void) {
+  Serial.println("Queuing PAR sensor modbus request");
+  uint8_t slaveID = 34;
+  uint8_t functionCode = 3;
+  uint16_t address = 0;
+  static uint16_t data[1];
+  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 1, PARsensorHandler)) {
+    Serial.println("ERROR - queue full");
+  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+}
+
+void RTD_manage(void) {
+  readRtdSensors();
+  for (int i = 0; i < 3; i++) {
+    if (rtd_interface[i].temperatureObj->fault) {
+      Serial.println(rtd_interface[i].temperatureObj->message);
+    } else {
+      Serial.printf("RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
+    }
+  }
+}
 
 void setupCSpins(void) {
   pinMode(PIN_ADC_CS, OUTPUT);
@@ -56,11 +154,8 @@ void setup() {
   else Serial.println("Calibration data read from EEPROM");
 
   Serial.println("Initialising ADC interface");
-  if (!ADC_init()) {
-    Serial.println("Failed to initialise ADC driver.");
-  } else {
-    Serial.println("ADC driver initialised.");
-  }
+  ADC_init();
+  Serial.printf("Result: %s\n", adcDriver.message);
 
   // PT100 setup testing
   Serial.println("Initialising RTD interface");
@@ -70,6 +165,7 @@ void setup() {
   Serial.println("Initialising DAC interface");
   if (!DAC_init()) {
     Serial.println("Failed to initialise DAC driver.");
+    Serial.printf("Result: %s, Result Ch1: %s, Result Ch2: %s\n", dacDriver.message, dacDriver.outputObj[0]->message, dacDriver.outputObj[1]->message);
   } else {
     Serial.println("DAC driver initialised.");
   }
@@ -125,14 +221,48 @@ void setup() {
 
   // INA260 initialisation
   Serial.println("Initialising INA260 driver");
-  if (!pwrSensor.begin()) {
+  if (!pwrSensor_init()) {
     Serial.println("Failed to initialise INA260 driver.");
   }
 
-  // Set INA260 avergaing and conversion time settings
-  if (!pwrSensor.setAverage(IN260_AVERAGE::INA260_AVERAGE_1024)) Serial.println("Failed to set INA260 averaging.");
-  if (!pwrSensor.setVoltageConversionTime(INA260_V_CONV_TIME::INA260_VBUSCT_1100US)) Serial.println("Failed to set INA260 voltage conversion time.");
-  if (!pwrSensor.setCurrentConversionTime(INA260_I_CONV_TIME::INA260_ISHCT_1100US)) Serial.println("Failed to set INA260 current conversion time.");
+  // Outputs initialisation
+  Serial.println("Initialising outputs");
+  output_init();
+
+  Serial.println("Setting PWM values");
+  outputDriver.outputObj[0]->pwmEnabled = true;
+  outputDriver.outputObj[0]->pwmDuty = 50;
+  outputDriver.outputObj[0]->state = false;
+  outputDriver.outputObj[1]->pwmEnabled = true;
+  outputDriver.outputObj[1]->pwmDuty = 75;
+  outputDriver.outputObj[1]->state = false;
+  outputDriver.outputObj[2]->pwmEnabled = true;
+  outputDriver.outputObj[2]->pwmDuty = 25;
+  outputDriver.outputObj[2]->state = false;
+  outputDriver.outputObj[3]->pwmEnabled = true;
+  outputDriver.outputObj[3]->pwmDuty = 0;
+  outputDriver.outputObj[3]->state = false;
+
+  Serial.println("Setting heater output");
+  heaterOutput[0].pwmEnabled = true;
+  heaterOutput[0].pwmDuty = 20;
+
+  Serial.println("Initialising GPIO pins");
+  gpio_init();
+
+  Serial.println("Starting Modbus interface");
+  modbus_init();
+
+  Serial.println("Adding tasks to scheduler");
+  output_task = tasks.addTask(output_update, 100, true, false);
+  gpio_task = tasks.addTask(gpio_update, 100, true, true);
+  modbus_task = tasks.addTask(modbus_manage, 10, true, true);
+  phProbe_task = tasks.addTask(phProbeRequest, 2000, true, false);
+  levelProbe_task = tasks.addTask(levelProbeRequest, 2000, true, false);
+  PARsensor_task = tasks.addTask(PARsensorRequest, 2000, true, false);
+  printStuff_task = tasks.addTask(printStuff, 2000, true, false);
+  RTDsensor_task = tasks.addTask(RTD_manage, 1000, true, false);
+
 
   // --- Initialize Shared Modbus Master for RS485-1 ---
   Serial.println("Initialising Shared Modbus Master (RS485-1 on Serial1)");
@@ -163,131 +293,8 @@ void setup() {
   }
 
   Serial.println("Setup done");
-
-  loopTargetTime = millis();
-  longLoopTargetTime = millis() + 5000;
 }
 
 void loop() {
-  //static bool reverse = false;
-
-  motor_update();
-
-  if (millis() > loopTargetTime) {
-    loopTargetTime += 1000;
-    //if (motorDriver[0].device->running) Serial.printf("Motor current: %d mA\n", motorDriver[0].device->runCurrent);
-    Serial.printf("Main power sensor voltage: %0.3f V, current: %0.3f A, power: %0.2f W\n", pwrSensor.volts(), pwrSensor.amps(), pwrSensor.watts());
-    loopTargetTime += 1000; // Run this block every 1 second
-
-    // --- Update Modbus Sensors ---
-    if (doSensorDriver.ready) {
-        if (!do_sensor_update()) {
-            // Log DO sensor update failure
-            if (doSensorDevice.newMessage) {
-                Serial.print("DO Sensor Update Error: ");
-                Serial.println(doSensorDevice.message);
-                doSensorDevice.newMessage = false; // Clear message flag
-            }
-        } else {
-            // Optionally log successful DO readings
-            // Serial.printf("DO: %.2f, Temp: %.2f\n", doSensorDevice.dissolvedOxygen, doSensorDevice.temperature);
-        }
-    }
-
-    if (phSensorDriver.ready) {
-        if (!ph_sensor_update()) {
-            // Log pH sensor update failure
-            if (phSensorDevice.newMessage) {
-                Serial.print("pH Sensor Update Error: ");
-                Serial.println(phSensorDevice.message);
-                phSensorDevice.newMessage = false; // Clear message flag
-            }
-        } else {
-            // Optionally log successful pH readings
-            // Serial.printf("pH: %.2f, Temp: %.2f\n", phSensorDevice.pH, phSensorDevice.temperature);
-        }
-    }
-
-    /*if (!readRtdSensors()) {
-      Serial.println("Failed to read RTD sensors.");
-    } else {
-      for (int i = 0; i < NUM_MAX31865_INTERFACES; i++) {
-        if (rtd_sensor[i].newMessage) {
-          Serial.print("RTD ");
-          Serial.print(i + 1);
-          Serial.print(" message: ");
-          Serial.println(rtd_sensor[i].message);
-          rtd_sensor[i].newMessage = false;
-        } else {
-          Serial.print("RTD ");
-          Serial.print(i + 1);
-          Serial.print(" temperature: ");
-          Serial.print(rtd_sensor[i].temperature);
-          Serial.println(" °C");
-        }
-      }
-    }*/
-
-    /*if (!ADC_readInputs()) {
-      Serial.printf("Failed to read ADC with error: %s\n", adcDriver.message);
-      adcDriver.newMessage = false;
-    } else {
-      Serial.println("ADC inputs read.");
-    }
-
-    dacOutput[0].value += 1000;
-    if (dacOutput[0].value > 10000) dacOutput[0].value = 0;
-    dacOutput[1].value -=1000;
-    if (dacOutput[1].value < 0) dacOutput[1].value = 10000;
-
-    if (!DAC_writeOutputs()) {
-      Serial.println("Failed to write DAC outputs.");
-    } else {
-      Serial.printf("DAC output 0: %dmV, DAC output 1: %dmV\n", (int)dacOutput[0].value, (int)dacOutput[1].value);
-    }*/
-    uint32_t drvStatus = 0;
-    //stepper.readRegister(TMC5130_REG_DRV_STATUS, &drvStatus);
-    uint32_t tStep = 0;
-    /*stepper.readRegister(TMC5130_REG_TSTEP, &tStep);
-    Serial.printf("Stepper DRV_STATUS: 0x%08X", drvStatus);
-    Serial.printf(", SG_RESULT: %u", drvStatus & 0x3FF);
-    Serial.printf(", TSTEP: 0x%08X, IRUN: %umA\n", tStep, stepper.config.irun);*/
-
-    /*stepper.setIrun(irun);
-    irun += 100;
-    if (irun > 1000) irun = 100;*/
-  } 
-
-  if (millis() > longLoopTargetTime) {
-    longLoopTargetTime += 5000; // Run this block every 10 seconds
-
-
-
-    /*if (!motorDriver[0].device->running) {
-      reverse = !reverse;
-      if (motor_run(0, 25, reverse)) Serial.printf("Starting motor in %s direction\n", reverse ? "reverse" : "forward");
-      else Serial.println("Failed to start motor");
-    } else {
-      Serial.println("Running motor...");
-      stepper.invertDirection(dir);
-      dir = !dir;
-      stepper.setRPM(rpm);
-      stepper.run();
-      rotating = true;
-    }*/
-
-    // Example: Print sensor values every 10 seconds
-    if (doSensorDriver.ready && !doSensorDevice.fault) {
-        Serial.printf("[10s] DO: %.2f %s, Temp: %.1f C\n",
-                      doSensorDevice.dissolvedOxygen,
-                      doSensorDevice.unit, // Assuming unit is set somewhere
-                      doSensorDevice.temperature);
-    }
-    if (phSensorDriver.ready && !phSensorDevice.fault) {
-        Serial.printf("[10s] pH: %.2f, Temp: %.1f C\n",
-                      phSensorDevice.pH,
-                      phSensorDevice.temperature);
-    }
-
-  }
+  tasks.update();
 }

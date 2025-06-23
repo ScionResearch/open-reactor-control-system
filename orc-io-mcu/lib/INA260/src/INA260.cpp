@@ -50,7 +50,7 @@ bool INA260::setMode(INA260_MODE mode) {
     return _write_16(INA260_REG_CONFIG, config_reg);
 }
 
-bool INA260::setAverage(IN260_AVERAGE avg) {
+bool INA260::setAverage(INA260_AVERAGE avg) {
     uint16_t config_reg = _read_16(INA260_REG_CONFIG, 100);
     config_reg &= ~INA260_AVG_MASK;
     config_reg |= static_cast<uint16_t>(avg);
