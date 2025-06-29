@@ -12,6 +12,7 @@
         <nav>
             <ul>
                 <li><a href="#" class="active" data-page="dashboard">Dashboard</a></li>
+                <li><a href="#" data-page="control">Control</a></li>
                 <li><a href="#" data-page="filemanager">File Manager</a></li>
                 <li><a href="#" data-page="system">System</a></li>
                 <li><a href="#" data-page="settings">Settings</a></li>
@@ -45,18 +46,261 @@
                         <div class="sensor-card">
                             <h3>Temperature</h3>
                             <div class="value" id="temp">--°C</div>
+                            <div class="trend-indicator" id="temp-trend"></div>
                         </div>
                         <div class="sensor-card">
                             <h3>pH Level</h3>
                             <div class="value" id="ph">--</div>
+                            <div class="trend-indicator" id="ph-trend"></div>
                         </div>
                         <div class="sensor-card">
                             <h3>Dissolved Oxygen</h3>
                             <div class="value" id="do">-- mg/L</div>
+                            <div class="trend-indicator" id="do-trend"></div>
+                        </div>
+                        <div class="sensor-card">
+                            <h3>Stirrer Speed</h3>
+                            <div class="value" id="stirrer">-- RPM</div>
                         </div>
                     </div>
                     <div class="chart-container">
                         <canvas id="sensorChart"></canvas>
+                    </div>
+                    <div class="status-bar">
+                        <div class="status-item">
+                            <span class="status-label">System:</span>
+                            <span class="status-value" id="system-status">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Last Update:</span>
+                            <span class="status-value" id="last-update">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="control" class="page">
+                    <h1>Reactor Control</h1>
+                    <div class="control-grid">
+                        <div class="control-card">
+                            <h3>Temperature Control</h3>
+                            <div class="control-form">
+                                <div class="form-group">
+                                    <label for="temp-setpoint">Setpoint (°C):</label>
+                                    <input type="number" id="temp-setpoint" min="0" max="100" step="0.1" value="37.0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="temp-enabled">Enabled:</label>
+                                    <input type="checkbox" id="temp-enabled">
+                                </div>
+                                <div class="pid-params">
+                                    <div class="form-group">
+                                        <label for="temp-kp">Kp:</label>
+                                        <input type="number" id="temp-kp" min="0" step="0.1" value="1.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="temp-ki">Ki:</label>
+                                        <input type="number" id="temp-ki" min="0" step="0.01" value="0.1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="temp-kd">Kd:</label>
+                                        <input type="number" id="temp-kd" min="0" step="0.01" value="0.01">
+                                    </div>
+                                </div>
+                                <button id="temp-save" class="control-btn">Save</button>
+                            </div>
+                        </div>
+                        
+                        <div class="control-card">
+                            <h3>pH Control</h3>
+                            <div class="control-form">
+                                <div class="form-group">
+                                    <label for="ph-setpoint">Setpoint:</label>
+                                    <input type="number" id="ph-setpoint" min="0" max="14" step="0.1" value="7.0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="ph-enabled">Enabled:</label>
+                                    <input type="checkbox" id="ph-enabled">
+                                </div>
+                                <div class="form-group">
+                                    <label for="ph-period">Period (s):</label>
+                                    <input type="number" id="ph-period" min="0" step="1" value="60">
+                                </div>
+                                <div class="form-group">
+                                    <label for="ph-max-dose">Max Dose (s):</label>
+                                    <input type="number" id="ph-max-dose" min="0" step="0.1" value="5.0">
+                                </div>
+                                <button id="ph-save" class="control-btn">Save</button>
+                            </div>
+                        </div>
+                        
+                        <div class="control-card">
+                            <h3>Dissolved Oxygen Control</h3>
+                            <div class="control-form">
+                                <div class="form-group">
+                                    <label for="do-setpoint">Setpoint (mg/L):</label>
+                                    <input type="number" id="do-setpoint" min="0" max="20" step="0.1" value="6.0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="do-enabled">Enabled:</label>
+                                    <input type="checkbox" id="do-enabled">
+                                </div>
+                                <div class="pid-params">
+                                    <div class="form-group">
+                                        <label for="do-kp">Kp:</label>
+                                        <input type="number" id="do-kp" min="0" step="0.1" value="1.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="do-ki">Ki:</label>
+                                        <input type="number" id="do-ki" min="0" step="0.01" value="0.1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="do-kd">Kd:</label>
+                                        <input type="number" id="do-kd" min="0" step="0.01" value="0.01">
+                                    </div>
+                                </div>
+                                <button id="do-save" class="control-btn">Save</button>
+                            </div>
+                        </div>
+                        
+                        <div class="control-card">
+                            <h3>Stirrer Control</h3>
+                            <div class="control-form">
+                                <div class="form-group">
+                                    <label for="stirrer-setpoint">Setpoint (RPM):</label>
+                                    <input type="number" id="stirrer-setpoint" min="0" max="1000" step="10" value="200">
+                                </div>
+                                <div class="form-group">
+                                    <label for="stirrer-enabled">Enabled:</label>
+                                    <input type="checkbox" id="stirrer-enabled">
+                                </div>
+                                <div class="pid-params">
+                                    <div class="form-group">
+                                        <label for="stirrer-kp">Kp:</label>
+                                        <input type="number" id="stirrer-kp" min="0" step="0.1" value="1.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="stirrer-ki">Ki:</label>
+                                        <input type="number" id="stirrer-ki" min="0" step="0.01" value="0.1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="stirrer-kd">Kd:</label>
+                                        <input type="number" id="stirrer-kd" min="0" step="0.01" value="0.01">
+                                    </div>
+                                </div>
+                                <button id="stirrer-save" class="control-btn">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="filemanager" class="page">
+                    <h1>SD Card File Manager</h1>
+                    <p class="page-description">Browse and download files from the device's SD card.</p>
+                    
+                    <div class="file-manager">
+                        <div id="sd-status" class="status-message"></div>
+                        
+                        <div id="path-navigator" class="path-navigator"></div>
+                        
+                        <div class="file-list">
+                            <div class="file-list-header">
+                                <div>Name</div>
+                                <div>Size</div>
+                                <div>Modified</div>
+                                <div>Actions</div>
+                            </div>
+                            <div id="file-list-items" class="file-list-items">
+                                <div class="loading">Loading files...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="system" class="page">
+                    <h1>System Status</h1>
+                    <div class="system-header">
+                        <p class="page-description">Current status of system components and resources</p>
+                        <button id="rebootButton" class="reboot-button">Reboot System</button>
+                    </div>
+                    <div class="status-section-grid">
+                        <div class="status-card">
+                            <h3>Power Supplies</h3>
+                            <div class="status-values">
+                                <div class="status-item">
+                                    <span class="label">Main Supply:</span>
+                                    <span class="value" id="mainVoltage">--V</span>
+                                    <span class="status" id="mainVoltageStatus">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="label">20V Supply:</span>
+                                    <span class="value" id="v20Voltage">--V</span>
+                                    <span class="status" id="v20VoltageStatus">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="label">5V Supply:</span>
+                                    <span class="value" id="v5Voltage">--V</span>
+                                    <span class="status" id="v5VoltageStatus">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="status-card">
+                            <h3>Real Time Clock</h3>
+                            <div class="status-values">
+                                <div class="status-item">
+                                    <span class="label">Status:</span>
+                                    <span class="status" id="rtcStatus">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="label">Time:</span>
+                                    <span class="value" id="rtcTime">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="status-card">
+                            <h3>Communications</h3>
+                            <div class="status-values">
+                                <div class="status-item">
+                                    <span class="label">IPC Status:</span>
+                                    <span class="status" id="ipcStatus">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="label">MQTT Status:</span>
+                                    <span class="status" id="mqttStatus">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="label">Modbus Status:</span>
+                                    <span class="status" id="modbusStatus">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="status-card">
+                            <h3>SD Card</h3>
+                            <div class="status-values">
+                                <div class="status-item">
+                                    <span class="label">Status:</span>
+                                    <span class="status" id="sdStatus">--</span>
+                                </div>
+                                <div class="status-item" id="sdCapacityContainer">
+                                    <span class="label">Capacity:</span>
+                                    <span class="value" id="sdCapacity">-- GB</span>
+                                </div>
+                                <div class="status-item" id="sdFreeSpaceContainer">
+                                    <span class="label">Free Space:</span>
+                                    <span class="value" id="sdFreeSpace">-- GB</span>
+                                </div>
+                                <div class="status-item" id="sdLogSizeContainer">
+                                    <span class="label">Log File Size:</span>
+                                    <span class="value" id="sdLogSize">-- kB</span>
+                                </div>
+                                <div class="status-item" id="sdSensorSizeContainer">
+                                    <span class="label">Sensor File Size:</span>
+                                    <span class="value" id="sdSensorSize">-- kB</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -220,117 +464,6 @@
                             </div>
                             <button type="submit" class="btn">Save MQTT Settings</button>
                         </form>
-                    </div>
-                </div>
-
-                <div id="filemanager" class="page">
-                    <h1>SD Card File Manager</h1>
-                    <p class="page-description">Browse and download files from the device's SD card.</p>
-                    
-                    <div class="file-manager">
-                        <div id="sd-status" class="status-message"></div>
-                        
-                        <div id="path-navigator" class="path-navigator"></div>
-                        
-                        <div class="file-list">
-                            <div class="file-list-header">
-                                <div>Name</div>
-                                <div>Size</div>
-                                <div>Modified</div>
-                                <div>Actions</div>
-                            </div>
-                            <div id="file-list-items" class="file-list-items">
-                                <div class="loading">Loading files...</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="system" class="page">
-                    <h1>System Status</h1>
-                    <div class="system-header">
-                        <p class="page-description">Current status of system components and resources</p>
-                        <button id="rebootButton" class="reboot-button">Reboot System</button>
-                    </div>
-                    <div class="status-section-grid">
-                        <div class="status-card">
-                            <h3>Power Supplies</h3>
-                            <div class="status-values">
-                                <div class="status-item">
-                                    <span class="label">Main Supply:</span>
-                                    <span class="value" id="mainVoltage">--V</span>
-                                    <span class="status" id="mainVoltageStatus">--</span>
-                                </div>
-                                <div class="status-item">
-                                    <span class="label">20V Supply:</span>
-                                    <span class="value" id="v20Voltage">--V</span>
-                                    <span class="status" id="v20VoltageStatus">--</span>
-                                </div>
-                                <div class="status-item">
-                                    <span class="label">5V Supply:</span>
-                                    <span class="value" id="v5Voltage">--V</span>
-                                    <span class="status" id="v5VoltageStatus">--</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="status-card">
-                            <h3>Real Time Clock</h3>
-                            <div class="status-values">
-                                <div class="status-item">
-                                    <span class="label">Status:</span>
-                                    <span class="status" id="rtcStatus">--</span>
-                                </div>
-                                <div class="status-item">
-                                    <span class="label">Time:</span>
-                                    <span class="value" id="rtcTime">--</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="status-card">
-                            <h3>Communications</h3>
-                            <div class="status-values">
-                                <div class="status-item">
-                                    <span class="label">IPC Status:</span>
-                                    <span class="status" id="ipcStatus">--</span>
-                                </div>
-                                <div class="status-item">
-                                    <span class="label">MQTT Status:</span>
-                                    <span class="status" id="mqttStatus">--</span>
-                                </div>
-                                <div class="status-item">
-                                    <span class="label">Modbus Status:</span>
-                                    <span class="status" id="modbusStatus">--</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="status-card">
-                            <h3>SD Card</h3>
-                            <div class="status-values">
-                                <div class="status-item">
-                                    <span class="label">Status:</span>
-                                    <span class="status" id="sdStatus">--</span>
-                                </div>
-                                <div class="status-item" id="sdCapacityContainer">
-                                    <span class="label">Capacity:</span>
-                                    <span class="value" id="sdCapacity">-- GB</span>
-                                </div>
-                                <div class="status-item" id="sdFreeSpaceContainer">
-                                    <span class="label">Free Space:</span>
-                                    <span class="value" id="sdFreeSpace">-- GB</span>
-                                </div>
-                                <div class="status-item" id="sdLogSizeContainer">
-                                    <span class="label">Log File Size:</span>
-                                    <span class="value" id="sdLogSize">-- kB</span>
-                                </div>
-                                <div class="status-item" id="sdSensorSizeContainer">
-                                    <span class="label">Sensor File Size:</span>
-                                    <span class="value" id="sdSensorSize">-- kB</span>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </main>
