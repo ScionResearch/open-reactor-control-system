@@ -19,6 +19,7 @@
 #include "hardware/pins.h"
 
 #include "network/network.h"
+#include "network/mqttManager.h"
 
 #include "utils/logger.h"
 #include "utils/statusManager.h"

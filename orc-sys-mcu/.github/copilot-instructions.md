@@ -5,11 +5,16 @@
 
 ### 🛠️ PlatformIO Workflow
 
-- **Use the PlatformIO CLI for all builds and uploads.**
-- **Build project:** `pio run`
-- **Upload firmware:** `pio run -t upload`
-- **View serial logs:** `pio device monitor`
-- **Clean build files:** `pio run -t clean`
+- **Use VS Code's built-in PlatformIO extension for all builds and uploads.**
+- **Build project:** Use VS Code Task "PlatformIO: Build" or the PlatformIO toolbar
+- **Upload firmware:** Use VS Code Task "PlatformIO: Upload" or the PlatformIO toolbar
+- **View serial logs:** Use VS Code Task "PlatformIO: Monitor" or the PlatformIO toolbar
+- **Clean build files:** Use VS Code Task "PlatformIO: Clean" or the PlatformIO toolbar
+- **Alternative CLI commands (if needed):**
+  - Build: `C:\Users\vanderwt\.platformio\penv\Scripts\platformio.exe run`
+  - Upload: `C:\Users\vanderwt\.platformio\penv\Scripts\platformio.exe run -t upload`
+  - Monitor: `C:\Users\vanderwt\.platformio\penv\Scripts\platformio.exe device monitor`
+  - Clean: `C:\Users\vanderwt\.platformio\penv\Scripts\platformio.exe run -t clean`
 - **Manage libraries via `platformio.ini` only.** Do not install them manually.
 
 ### 🧪 Testing Strategy

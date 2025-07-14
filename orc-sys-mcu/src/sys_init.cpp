@@ -15,6 +15,7 @@ void init_core1(void);
 void init_core0(void) {
     init_logger();
     init_network();
+    init_mqttManager();
 }
 
 void init_core1(void) {
@@ -29,6 +30,7 @@ void init_core1(void) {
 
 void manage_core0(void) {
     manageNetwork();
+    manageMqtt();
 }
 
 void manage_core1(void) {
