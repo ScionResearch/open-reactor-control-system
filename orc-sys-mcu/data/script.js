@@ -7,41 +7,100 @@ document.querySelectorAll('nav a').forEach(link => {
         document.querySelector(`#${page}`).classList.add('active');
         document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
         e.target.classList.add('active');
+        
+        // Initialize specific page content if needed
+        if (page === 'system') {
+            updateSystemStatus();
+        } else if (page === 'filemanager') {
+            initFileManager();
+        }
     });
 });
 
-// Chart initialization
+// Chart initialization with sample data
 const ctx = document.getElementById('sensorChart').getContext('2d');
 const sensorChart = new Chart(ctx, {
     type: 'line',
     data: {
         labels: [],
         datasets: [{
-            label: 'Temperature',
+            label: 'Temperature (°C)',
             data: [],
             borderColor: 'rgb(255, 99, 132)',
-            tension: 0.1
+            tension: 0.1,
+            yAxisID: 'y'
         }, {
             label: 'pH',
             data: [],
             borderColor: 'rgb(54, 162, 235)',
-            tension: 0.1
+            tension: 0.1,
+            yAxisID: 'y1'
         }, {
-            label: 'DO',
+            label: 'DO (mg/L)',
             data: [],
             borderColor: 'rgb(75, 192, 192)',
-            tension: 0.1
+            tension: 0.1,
+            yAxisID: 'y2'
         }]
     },
     options: {
         responsive: true,
+        interaction: {
+            mode: 'index',
+            intersect: false,
+        },
+        stacked: false,
         scales: {
             y: {
-                beginAtZero: true
+                type: 'linear',
+                display: true,
+                position: 'left',
+                title: {
+                    display: true,
+                    text: 'Temperature (°C)'
+                },
+                min: 0,
+                max: 100
+            },
+            y1: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                title: {
+                    display: true,
+                    text: 'pH'
+                },
+                min: 0,
+                max: 14,
+                grid: {
+                    drawOnChartArea: false
+                }
+            },
+            y2: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                title: {
+                    display: true,
+                    text: 'DO (mg/L)'
+                },
+                min: 0,
+                max: 20,
+                grid: {
+                    drawOnChartArea: false
+                }
             }
         }
     }
 });
+
+// Store historical data for trends
+let sensorHistory = {
+    temp: [],
+    ph: [],
+    do: [],
+    stirrer: []
+};
 
 // Network and sensor data updates
 async function updateSensorData() {
@@ -49,16 +108,109 @@ async function updateSensorData() {
         const response = await fetch('/api/sensors');
         const data = await response.json();
         
-        // Update each sensor value
-        Object.keys(data).forEach(sensorId => {
-            const element = document.getElementById(sensorId);
-            if (element) {
-                element.textContent = data[sensorId];
-            }
-        });
+        // Update each sensor value and calculate trends
+        if (data.temp !== undefined) {
+            const tempElement = document.getElementById('temp');
+            const oldTemp = parseFloat(tempElement.textContent);
+            tempElement.textContent = `${data.temp}°C`;
+            
+            // Update trend indicator
+            updateTrend('temp-trend', data.temp, oldTemp);
+            
+            // Add to history
+            sensorHistory.temp.push(data.temp);
+            if (sensorHistory.temp.length > 50) sensorHistory.temp.shift();
+        }
+        
+        if (data.ph !== undefined) {
+            const phElement = document.getElementById('ph');
+            const oldPh = parseFloat(phElement.textContent);
+            phElement.textContent = data.ph;
+            
+            // Update trend indicator
+            updateTrend('ph-trend', data.ph, oldPh);
+            
+            // Add to history
+            sensorHistory.ph.push(data.ph);
+            if (sensorHistory.ph.length > 50) sensorHistory.ph.shift();
+        }
+        
+        if (data.do !== undefined) {
+            const doElement = document.getElementById('do');
+            const oldDo = parseFloat(doElement.textContent);
+            doElement.textContent = `${data.do} mg/L`;
+            
+            // Update trend indicator
+            updateTrend('do-trend', data.do, oldDo);
+            
+            // Add to history
+            sensorHistory.do.push(data.do);
+            if (sensorHistory.do.length > 50) sensorHistory.do.shift();
+        }
+        
+        if (data.stirrer !== undefined) {
+            const stirrerElement = document.getElementById('stirrer');
+            stirrerElement.textContent = `${data.stirrer} RPM`;
+            
+            // Add to history
+            sensorHistory.stirrer.push(data.stirrer);
+            if (sensorHistory.stirrer.length > 50) sensorHistory.stirrer.shift();
+        }
+        
+        // Update last update time
+        if (data.timestamp) {
+            document.getElementById('last-update').textContent = data.timestamp;
+        }
+        
+        // Update chart
+        updateChart();
+        
     } catch (error) {
         console.error('Error updating sensor data:', error);
     }
+}
+
+function updateTrend(elementId, newValue, oldValue) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    // Remove all existing classes
+    element.classList.remove('trend-up', 'trend-down', 'trend-stable');
+    
+    // Don't show trend if we don't have valid old value
+    if (isNaN(oldValue)) return;
+    
+    const diff = newValue - oldValue;
+    if (diff > 0.1) {
+        element.classList.add('trend-up');
+    } else if (diff < -0.1) {
+        element.classList.add('trend-down');
+    } else {
+        element.classList.add('trend-stable');
+    }
+}
+
+function updateChart() {
+    // Get current time for x-axis
+    const now = new Date();
+    const timeString = now.toLocaleTimeString();
+    
+    // Add new data point to chart
+    sensorChart.data.labels.push(timeString);
+    sensorChart.data.datasets[0].data.push(sensorHistory.temp[sensorHistory.temp.length - 1]);
+    sensorChart.data.datasets[1].data.push(sensorHistory.ph[sensorHistory.ph.length - 1]);
+    sensorChart.data.datasets[2].data.push(sensorHistory.do[sensorHistory.do.length - 1]);
+    
+    // Remove old data points if we have too many
+    if (sensorChart.data.labels.length > 20) {
+        sensorChart.data.labels.shift();
+        sensorChart.data.datasets.forEach(dataset => {
+            dataset.data.shift();
+        });
+    }
+    
+    // Update chart
+    sensorChart.update();
 }
 
 async function updateNetworkInfo() {
@@ -278,11 +430,25 @@ async function loadMqttSettings() {
     }
 }
 
+// Function to load control settings
+async function loadControlSettings() {
+    try {
+        // This would be replaced with actual API calls when implemented
+        console.log('Loading control settings...');
+        
+        // For now, we'll just use default values in the HTML
+        // In the future, this would fetch actual values from the backend
+    } catch (error) {
+        console.error('Error loading control settings:', error);
+    }
+}
+
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
     loadInitialSettings();  // Load initial NTP and timezone settings
     loadNetworkSettings();  // Load initial network settings
     loadMqttSettings();     // Load initial MQTT settings
+    loadControlSettings();  // Load initial control settings
     updateLiveClock();
     updateSensorData();
     updateNetworkInfo();
@@ -317,7 +483,71 @@ document.addEventListener('DOMContentLoaded', () => {
         // Set initial state
         updateStaticFields();
     }
+    
+    // Set up control save buttons
+    const controlButtons = document.querySelectorAll('.control-btn');
+    controlButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+            const controlType = e.target.id.split('-')[0]; // temp, ph, do, stirrer
+            saveControlSettings(controlType);
+        });
+    });
 });
+
+// Function to save control settings
+async function saveControlSettings(controlType) {
+    // Get values from form
+    const setpoint = document.getElementById(`${controlType}-setpoint`).value;
+    const enabled = document.getElementById(`${controlType}-enabled`).checked;
+    
+    // Build data object based on control type
+    let data = {
+        setpoint: parseFloat(setpoint),
+        enabled: enabled
+    };
+    
+    // Add PID parameters if applicable
+    if (controlType === 'temp' || controlType === 'do' || controlType === 'stirrer') {
+        data.kp = parseFloat(document.getElementById(`${controlType}-kp`).value);
+        data.ki = parseFloat(document.getElementById(`${controlType}-ki`).value);
+        data.kd = parseFloat(document.getElementById(`${controlType}-kd`).value);
+    }
+    
+    // Add pH specific parameters
+    if (controlType === 'ph') {
+        data.period = parseFloat(document.getElementById('ph-period').value);
+        data.maxDoseTime = parseFloat(document.getElementById('ph-max-dose').value);
+    }
+    
+    // Show loading toast
+    const loadingToast = showToast('info', 'Saving...', `Updating ${controlType} control settings`, 5000);
+    
+    try {
+        // This would be replaced with actual API call when implemented
+        console.log(`Saving ${controlType} control settings:`, data);
+        
+        // Simulate API call success
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Remove loading toast
+        if (loadingToast.parentNode) {
+            loadingToast.parentNode.removeChild(loadingToast);
+        }
+        
+        // Show success toast
+        showToast('success', 'Success', `${controlType.toUpperCase()} control settings saved successfully`);
+    } catch (error) {
+        console.error(`Error saving ${controlType} control settings:`, error);
+        
+        // Remove loading toast if it still exists
+        if (loadingToast.parentNode) {
+            loadingToast.parentNode.removeChild(loadingToast);
+        }
+        
+        // Show error toast
+        showToast('error', 'Error', `Failed to save ${controlType} control settings`);
+    }
+}
 
 // Update intervals
 setInterval(updateLiveClock, 1000);    // Update clock every second
@@ -473,7 +703,9 @@ function showToast(type, title, message, duration = 3000) {
     setTimeout(() => {
         toast.classList.add('toast-exit');
         setTimeout(() => {
-            toastContainer.removeChild(toast);
+            if (toast.parentNode) {
+                toastContainer.removeChild(toast);
+            }
         }, 300); // Wait for exit animation to complete
     }, duration);
     
@@ -546,16 +778,6 @@ document.getElementById('networkForm').addEventListener('submit', async function
         }
         
         showToast('error', 'Network Error', error.message || 'Failed to connect to the server');
-    }
-});
-
-// Show/hide static IP settings
-document.getElementById('ipConfig').addEventListener('change', function() {
-    const staticSettings = document.getElementById('staticSettings');
-    if (this.value === 'static') {
-        staticSettings.classList.remove('hidden');
-    } else {
-        staticSettings.classList.add('hidden');
     }
 });
 

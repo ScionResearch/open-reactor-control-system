@@ -83,6 +83,7 @@ h1 {
     padding: 20px;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: relative;
 }
 
 .sensor-card h3 {
@@ -96,12 +97,125 @@ h1 {
     color: #2196F3;
 }
 
+.trend-indicator {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    font-size: 20px;
+}
+
+.trend-up::after {
+    content: "↑";
+    color: #4CAF50;
+}
+
+.trend-down::after {
+    content: "↓";
+    color: #F44336;
+}
+
+.trend-stable::after {
+    content: "→";
+    color: #FFC107;
+}
+
 .chart-container {
     background: white;
     padding: 20px;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     margin-top: 20px;
+    height: 400px;
+}
+
+.status-bar {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+    background: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+}
+
+.status-label {
+    font-weight: bold;
+    margin-right: 10px;
+}
+
+/* Control page styles */
+.control-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.control-card {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.control-card h3 {
+    margin-bottom: 15px;
+    color: #555;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+.control-form {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+}
+
+.form-group label {
+    width: 150px;
+    margin-right: 10px;
+}
+
+.form-group input[type="number"] {
+    width: 100px;
+    padding: 5px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.form-group input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+}
+
+.pid-params {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.control-btn {
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.control-btn:hover {
+    background-color: #0b7dda;
 }
 
 .settings-section {
@@ -165,6 +279,7 @@ h1 {
     border-radius: 8px;
     margin-bottom: 20px;
     text-align: left;
+    padding: 15px;
 }
 
 #liveClock {
@@ -793,4 +908,18 @@ h1 {
     border-radius: 4px;
     margin-bottom: 15px;
     border-left: 4px solid #0066cc;
+}
+
+.retry-action {
+    margin-top: 10px;
+    text-align: center;
+}
+
+.error-message {
+    color: #d32f2f;
+    padding: 20px;
+    text-align: center;
+    background-color: #ffebee;
+    border-radius: 4px;
+    margin: 10px 0;
 }
