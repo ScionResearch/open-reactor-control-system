@@ -1,4 +1,6 @@
 #include "terminalManager.h"
+#include "../network/mqttManager.h" // For publishSensorData
+#include "../lib/IPCprotocol/IPCDataStructs.h" // For sensor data structs
 
 bool terminalReady = false;
 
@@ -52,8 +54,35 @@ void manageTerminal(void)
         }
       }
       else {
+      // --- NEW TEST COMMAND LOGIC ---
+      char command[20], type[20];
+      float value;
+      if (sscanf(serialString, "%s %s %f", command, type, &value) == 3 && strcmp(command, "ipc-test") == 0) {
+        log(LOG_INFO, true, "Simulating IPC message: type=%s, value=%.2f\n", type, value);
+        Message testMsg;
+        testMsg.objId = 0; // Test with object ID 0
+
+        if (strcmp(type, "temp") == 0) {
+          testMsg.msgId = MSG_TEMPERATURE_SENSOR;
+          TemperatureSensor data = {value, true};
+          testMsg.dataLength = sizeof(data);
+          memcpy(testMsg.data, &data, testMsg.dataLength);
+          publishSensorData(testMsg); // Directly call the handler for testing
+        } else if (strcmp(type, "ph") == 0) {
+          testMsg.msgId = MSG_PH_SENSOR;
+          PHSensor data = {value, true};
+          testMsg.dataLength = sizeof(data);
+          memcpy(testMsg.data, &data, testMsg.dataLength);
+          publishSensorData(testMsg);
+        } else {
+          log(LOG_WARNING, true, "Unknown ipc-test type: %s\n", type);
+        }
+
+      } // --- END OF NEW TEST COMMAND LOGIC ---
+      else {
         log(LOG_INFO, false, "Unknown command: %s\n", serialString);
         log(LOG_INFO, false, "Available commands: ip (print IP address), sd (print SD card info), status, reboot\n");
+      }
       }
     }
     // Clear the serial buffer each loop.

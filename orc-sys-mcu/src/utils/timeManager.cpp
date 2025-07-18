@@ -150,3 +150,19 @@ bool updateGlobalDateTime(const DateTime &dt) {
       return false;
   }
 }
+
+/**
+ * @brief Gets the current time as a thread-safe, ISO 8601 formatted string.
+ * @param timeout Milliseconds to wait for the time lock.
+ * @return A string in "YYYY-MM-DDTHH:MM:SSZ" format, or an empty string on timeout.
+ */
+String getISO8601Timestamp(uint32_t timeout) {
+  DateTime now;
+  if (getGlobalDateTime(now, timeout)) {
+    char buf[21]; // YYYY-MM-DDTHH:MM:SSZ + null
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+         now.year, now.month, now.day, now.hour, now.minute, now.second);
+    return String(buf);
+  }
+  return "";
+}

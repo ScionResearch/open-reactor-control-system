@@ -3,7 +3,7 @@
 #include "../sys_init.h"
 #include <PubSubClient.h>
 
-#define MQTT_PUBLISH_INTERVAL 10000 // Publish data every 10 seconds
+#define MQTT_PUBLISH_INTERVAL 1000 // Publish data every 10 seconds
 #define MQTT_RECONNECT_INTERVAL 5000 // Attempt to reconnect every 5 seconds
 
 /**
@@ -21,3 +21,9 @@ void manageMqtt();
  * @brief Publishes sensor data to the MQTT broker.
  */
 void mqttPublishSensorData();
+
+/**
+ * @brief Publishes a single sensor reading received from the I/O controller.
+ * @param msg The IPC message containing the sensor data.
+ */
+void publishSensorData(const Message& msg); // <-- ADDED FOR EVENT-DRIVEN SENSOR PUBLISHING

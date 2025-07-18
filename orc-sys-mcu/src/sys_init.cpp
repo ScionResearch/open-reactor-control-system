@@ -24,6 +24,7 @@ void init_core1(void) {
     init_powerManager();
     init_terminalManager();
     init_ipcManager();
+    registerIpcCallbacks(); // <-- Register IPC-to-MQTT callbacks
     while (!core0setupComplete) delay(100); // 
     init_sdManager();   
 }
