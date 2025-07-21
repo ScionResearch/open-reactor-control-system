@@ -121,16 +121,19 @@ float getMqttBusy() { return status.mqttBusy ? 1.0f : 0.0f; }
 
 
 void init_mqttManager() {
+    log(LOG_DEBUG, false, "[Core0] init_mqttManager() start\n");
     if (strlen(networkConfig.mqttBroker) > 0) {
-    mqttClient.setServer(networkConfig.mqttBroker, networkConfig.mqttPort);
-    log(LOG_INFO, false, "MQTT Manager initialized for broker %s:%d\n", networkConfig.mqttBroker, networkConfig.mqttPort);
+        mqttClient.setServer(networkConfig.mqttBroker, networkConfig.mqttPort);
+        log(LOG_INFO, false, "MQTT Manager initialized for broker %s:%d\n", networkConfig.mqttBroker, networkConfig.mqttPort);
     } else {
         log(LOG_INFO, false, "MQTT broker not configured. MQTT Manager will remain idle.\n");
     }
 }
 
 void manageMqtt() {
+    log(LOG_DEBUG, false, "[MQTT] manageMqtt start\n");
     if (!ethernetConnected || strlen(networkConfig.mqttBroker) == 0) {
+        log(LOG_DEBUG, false, "[MQTT] not connected or broker not set\n");
         if (status.mqttConnected) {
             if (!statusLocked) {
                 statusLocked = true;
@@ -143,6 +146,7 @@ void manageMqtt() {
     }
 
     if (!mqttClient.connected()) {
+        log(LOG_DEBUG, false, "[MQTT] not connected, will try reconnect\n");
         if (status.mqttConnected) { // Update status if we just disconnected
             if (!statusLocked) {
                 statusLocked = true;
@@ -166,14 +170,17 @@ void manageMqtt() {
             }
         }
         // Process MQTT messages and keep-alives
+        log(LOG_DEBUG, false, "[MQTT] calling mqttClient.loop\n");
         mqttClient.loop();
 
         // Check if it's time to publish data
         if (millis() - lastMqttPublishTime > MQTT_PUBLISH_INTERVAL) {
             lastMqttPublishTime = millis();
+            log(LOG_DEBUG, false, "[MQTT] publishing all sensor data\n");
             mqttPublishAllSensorData();
         }
     }
+    log(LOG_DEBUG, false, "[MQTT] manageMqtt end\n");
 }
 
 /**

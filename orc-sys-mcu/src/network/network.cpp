@@ -28,13 +28,18 @@ unsigned long lastNetworkCheckTime = 0;
 
 // Network component initialisation functions ------------------------------>
 void init_network() {
+  log(LOG_DEBUG, false, "[Core0] init_network() start\n");
   setupEthernet();
   setupWebServer();
 }
 
 void manageNetwork(void) {
+  log(LOG_DEBUG, false, "[NET] manageEthernet\n");
   manageEthernet();
-  if (networkConfig.ntpEnabled) handleNTPUpdates(false);
+  if (networkConfig.ntpEnabled) {
+    log(LOG_DEBUG, false, "[NET] handleNTPUpdates\n");
+    handleNTPUpdates(false);
+  }
 }
 
 void setupEthernet()
@@ -370,7 +375,9 @@ void setupNetworkAPI()
 // --- New API Handlers for UI Dashboard ---
 
 void handleGetAllStatus() {
+  log(LOG_DEBUG, false, "[API] handleGetAllStatus called\n");
   if (statusLocked) {
+    log(LOG_DEBUG, false, "[API] statusLocked, returning 503\n");
     server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
     return;
   }
@@ -414,6 +421,7 @@ void handleGetAllStatus() {
 
   String response;
   serializeJson(doc, response);
+  log(LOG_DEBUG, false, "[API] handleGetAllStatus sending response\n");
   server.send(200, "application/json", response);
 }
 
@@ -455,49 +463,52 @@ void handleUpdateControl() {
 
 // --- Add this handler for /api/system/status ---
 void handleSystemStatus() {
-    if (statusLocked || sdLocked) {
-        server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
-        return;
-    }
-    statusLocked = true;
-    sdLocked = true;
+  log(LOG_DEBUG, false, "[API] handleSystemStatus called\n");
+  if (statusLocked || sdLocked) {
+    log(LOG_DEBUG, false, "[API] statusLocked or sdLocked, returning 503\n");
+    server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
+    return;
+  }
+  statusLocked = true;
+  sdLocked = true;
 
-    StaticJsonDocument<1024> doc;
+  StaticJsonDocument<1024> doc;
 
-    // Power info
-    JsonObject power = doc.createNestedObject("power");
-    power["mainVoltage"] = status.Vpsu;
-    power["mainVoltageOK"] = status.psuOK;
-    power["v20Voltage"] = status.V20;
-    power["v20VoltageOK"] = status.V20OK;
-    power["v5Voltage"] = status.V5;
-    power["v5VoltageOK"] = status.V5OK;
+  // Power info
+  JsonObject power = doc.createNestedObject("power");
+  power["mainVoltage"] = status.Vpsu;
+  power["mainVoltageOK"] = status.psuOK;
+  power["v20Voltage"] = status.V20;
+  power["v20VoltageOK"] = status.V20OK;
+  power["v5Voltage"] = status.V5;
+  power["v5VoltageOK"] = status.V5OK;
 
-    // RTC info
-    JsonObject rtc = doc.createNestedObject("rtc");
-    rtc["ok"] = status.rtcOK;
-    rtc["time"] = getISO8601Timestamp(100);
+  // RTC info
+  JsonObject rtc = doc.createNestedObject("rtc");
+  rtc["ok"] = status.rtcOK;
+  rtc["time"] = getISO8601Timestamp(100);
 
-    // Subsystem status
-    doc["ipc"] = status.ipcOK;
-    doc["mqtt"] = status.mqttConnected;
-    doc["modbus"] = status.modbusConnected;
+  // Subsystem status
+  doc["ipc"] = status.ipcOK;
+  doc["mqtt"] = status.mqttConnected;
+  doc["modbus"] = status.modbusConnected;
 
-    // SD card info
-    JsonObject sd = doc.createNestedObject("sd");
-    sd["inserted"] = sdInfo.inserted;
-    sd["ready"] = sdInfo.ready;
-    sd["capacityGB"] = sdInfo.cardSizeBytes * 0.000000001;
-    sd["freeSpaceGB"] = sdInfo.cardFreeBytes * 0.000000001;
-    sd["logFileSizeKB"] = sdInfo.logSizeBytes * 0.001;
-    sd["sensorFileSizeKB"] = sdInfo.sensorSizeBytes * 0.001;
+  // SD card info
+  JsonObject sd = doc.createNestedObject("sd");
+  sd["inserted"] = sdInfo.inserted;
+  sd["ready"] = sdInfo.ready;
+  sd["capacityGB"] = sdInfo.cardSizeBytes * 0.000000001;
+  sd["freeSpaceGB"] = sdInfo.cardFreeBytes * 0.000000001;
+  sd["logFileSizeKB"] = sdInfo.logSizeBytes * 0.001;
+  sd["sensorFileSizeKB"] = sdInfo.sensorSizeBytes * 0.001;
 
-    statusLocked = false;
-    sdLocked = false;
+  statusLocked = false;
+  sdLocked = false;
 
-    String response;
-    serializeJson(doc, response);
-    server.send(200, "application/json", response);
+  String response;
+  serializeJson(doc, response);
+  log(LOG_DEBUG, false, "[API] handleSystemStatus sending response\n");
+  server.send(200, "application/json", response);
 }
 
 void setupWebServer()
