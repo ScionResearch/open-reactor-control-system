@@ -165,3 +165,9 @@ mosquitto_sub -h broker -t "orcs/system/sensors"
 ```bash
 mosquitto_sub -h broker -t "orcs/#"
 ```
+
+
+### Example Command to list all topics if IP is 10.10.37.118
+```bash
+mosquitto_sub -h 10.10.37.118 -p 1883 -t "orcs/#" -v
+```
