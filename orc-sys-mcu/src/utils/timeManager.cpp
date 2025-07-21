@@ -1,3 +1,4 @@
+#include "utils/statusManager.h"
 #include "timeManager.h"
 
 MCP79410 rtc(Wire1);

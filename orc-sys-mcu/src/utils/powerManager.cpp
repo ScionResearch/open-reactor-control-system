@@ -1,3 +1,4 @@
+#include "utils/statusManager.h"
 #include "powerManager.h"
 
 uint32_t powerTS = 0;

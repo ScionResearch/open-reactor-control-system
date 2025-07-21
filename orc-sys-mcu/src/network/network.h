@@ -40,6 +40,11 @@ void handleFile(const char *path);
 void handleNTPUpdates(bool forceUpdate);
 void ntpUpdate(void);
 
+// API handlers for dashboard
+void handleGetAllStatus();
+void handleUpdateControl();
+void handleSystemStatus();
+
 // File manager API functions
 void handleFileManager(void);
 void handleSDListDirectory(void);

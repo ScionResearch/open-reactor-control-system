@@ -1,3 +1,4 @@
+#include "utils/statusManager.h"
 #include "terminalManager.h"
 #include "../network/mqttManager.h" // For publishSensorData
 #include "../lib/IPCprotocol/IPCDataStructs.h" // For sensor data structs

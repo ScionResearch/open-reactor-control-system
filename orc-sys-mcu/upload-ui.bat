@@ -1,0 +1,6 @@
+@echo off
+echo Uploading UI files to device...
+pio run -t uploadfs --upload-port COM21
+echo.
+echo Upload complete! Device should be rebooting...
+pause 

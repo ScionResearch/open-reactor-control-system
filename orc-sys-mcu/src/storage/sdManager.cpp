@@ -1,3 +1,4 @@
+#include "utils/statusManager.h"
 #include "sdManager.h"
 
 SdFs sd;

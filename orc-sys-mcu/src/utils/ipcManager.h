@@ -6,3 +6,7 @@ void init_ipcManager(void);
 void manageIPC(void);
 
 void registerIpcCallbacks(void); // <-- ADDED FOR SENSOR IPC TO MQTT ROUTING
+void processSensorData(const Message& msg);
+
+// Global IPC object
+extern IPCProtocol ipc;
