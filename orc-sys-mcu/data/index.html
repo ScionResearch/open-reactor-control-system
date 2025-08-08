@@ -15,7 +15,6 @@
         <nav class="tabs">
             <button class="tab-link active" onclick="openTab(event, 'dashboard')">Dashboard</button>
             <button class="tab-link" onclick="openTab(event, 'control')">Control</button>
-            <button class="tab-link" onclick="openTab(event, 'graphs')">Graphs</button>
             <button class="tab-link" onclick="openTab(event, 'filemanager')">File Manager</button>
             <button class="tab-link" onclick="openTab(event, 'system')">System</button>
             <button class="tab-link" onclick="openTab(event, 'settings')">Settings</button>
@@ -29,9 +28,9 @@
                     <!-- Temperature Card -->
                     <div class="card">
                         <h3>Temperature</h3>
-                        <p class="sensor-reading"><span id="temp-reading">--</span> &deg;C</p>
+                        <p class="sensor-reading"><span id="temp-reading">--</span> °C</p>
                         <div class="control-group">
-                            <label for="temp-setpoint">Setpoint (&deg;C)</label>
+                            <label for="temp-setpoint">Setpoint (°C)</label>
                             <input type="number" id="temp-setpoint" step="0.1">
                             <label class="switch">
                                 <input type="checkbox" id="temp-enabled">
@@ -63,123 +62,36 @@
                 </div>
             </div>
 
-            <!-- Graphs Tab -->
-            <div id="graphs" class="tab-content">
-                <h2>Data Graphs</h2>
-                <canvas id="sensorChart"></canvas>
-            </div>
+            
             
             <!-- Control Tab -->
+
             <div id="control" class="tab-content">
                 <h2>Reactor Control</h2>
-                <div class="control-grid">
-                    <div class="control-card">
-                        <h3>Temperature Control</h3>
-                        <div class="control-form">
-                            <div class="form-group">
-                                <label for="temp-setpoint-ctrl">Setpoint (°C):</label>
-                                <input type="number" id="temp-setpoint-ctrl" min="0" max="100" step="0.1" value="37.0">
-                            </div>
-                            <div class="form-group">
-                                <label for="temp-enabled-ctrl">Enabled:</label>
-                                <input type="checkbox" id="temp-enabled-ctrl">
-                            </div>
-                            <div class="pid-params">
-                                <div class="form-group">
-                                    <label for="temp-kp">Kp:</label>
-                                    <input type="number" id="temp-kp" min="0" step="0.1" value="1.0">
-                                </div>
-                                <div class="form-group">
-                                    <label for="temp-ki">Ki:</label>
-                                    <input type="number" id="temp-ki" min="0" step="0.01" value="0.1">
-                                </div>
-                                <div class="form-group">
-                                    <label for="temp-kd">Kd:</label>
-                                    <input type="number" id="temp-kd" min="0" step="0.01" value="0.01">
-                                </div>
-                            </div>
-                            <button id="temp-save" class="control-btn">Save</button>
-                        </div>
+                <div class="control-toolbar">
+                    <div class="left">
+                        <button id="customizeControlBtn" class="btn">Customize</button>
                     </div>
-                    
-                    <div class="control-card">
-                        <h3>pH Control</h3>
-                        <div class="control-form">
-                            <div class="form-group">
-                                <label for="ph-setpoint-ctrl">Setpoint:</label>
-                                <input type="number" id="ph-setpoint-ctrl" min="0" max="14" step="0.1" value="7.0">
-                            </div>
-                            <div class="form-group">
-                                <label for="ph-enabled-ctrl">Enabled:</label>
-                                <input type="checkbox" id="ph-enabled-ctrl">
-                            </div>
-                            <div class="form-group">
-                                <label for="ph-period">Period (s):</label>
-                                <input type="number" id="ph-period" min="0" step="1" value="60">
-                            </div>
-                            <div class="form-group">
-                                <label for="ph-max-dose">Max Dose (s):</label>
-                                <input type="number" id="ph-max-dose" min="0" step="0.1" value="5.0">
-                            </div>
-                            <button id="ph-save" class="control-btn">Save</button>
-                        </div>
+                    <div class="right">
+                        <input type="text" id="controlSearch" placeholder="Filter parameters..." />
                     </div>
-                    
-                    <div class="control-card">
-                        <h3>Dissolved Oxygen Control</h3>
-                        <div class="control-form">
-                            <div class="form-group">
-                                <label for="do-setpoint-ctrl">Setpoint (mg/L):</label>
-                                <input type="number" id="do-setpoint-ctrl" min="0" max="20" step="0.1" value="6.0">
-                            </div>
-                            <div class="form-group">
-                                <label for="do-enabled-ctrl">Enabled:</label>
-                                <input type="checkbox" id="do-enabled-ctrl">
-                            </div>
-                            <div class="pid-params">
-                                <div class="form-group">
-                                    <label for="do-kp">Kp:</label>
-                                    <input type="number" id="do-kp" min="0" step="0.1" value="1.0">
-                                </div>
-                                <div class="form-group">
-                                    <label for="do-ki">Ki:</label>
-                                    <input type="number" id="do-ki" min="0" step="0.01" value="0.1">
-                                </div>
-                                <div class="form-group">
-                                    <label for="do-kd">Kd:</label>
-                                    <input type="number" id="do-kd" min="0" step="0.01" value="0.01">
-                                </div>
-                            </div>
-                            <button id="do-save" class="control-btn">Save</button>
+                </div>
+                <div id="controlBoard" class="control-board" aria-live="polite"></div>
+
+                <!-- Control Customize Modal -->
+                <div id="controlCustomizeModal" class="modal-overlay">
+                    <div class="control-customize-modal">
+                        <h3>Manage Parameters</h3>
+                        <p class="modal-subtitle">Toggle visibility and reorder by dragging cards on the main view.</p>
+                        <div class="control-customize-actions">
+                            <button id="selectAllParams" class="btn btn-secondary">Select All</button>
+                            <button id="clearAllParams" class="btn btn-secondary">Clear All</button>
+                            <button id="resetLayout" class="btn btn-secondary">Reset Layout</button>
                         </div>
-                    </div>
-                    
-                    <div class="control-card">
-                        <h3>Stirrer Control</h3>
-                        <div class="control-form">
-                            <div class="form-group">
-                                <label for="stirrer-setpoint">Setpoint (RPM):</label>
-                                <input type="number" id="stirrer-setpoint" min="0" max="1000" step="10" value="200">
-                            </div>
-                            <div class="form-group">
-                                <label for="stirrer-enabled">Enabled:</label>
-                                <input type="checkbox" id="stirrer-enabled">
-                            </div>
-                            <div class="pid-params">
-                                <div class="form-group">
-                                    <label for="stirrer-kp">Kp:</label>
-                                    <input type="number" id="stirrer-kp" min="0" step="0.1" value="1.0">
-                                </div>
-                                <div class="form-group">
-                                    <label for="stirrer-ki">Ki:</label>
-                                    <input type="number" id="stirrer-ki" min="0" step="0.01" value="0.1">
-                                </div>
-                                <div class="form-group">
-                                    <label for="stirrer-kd">Kd:</label>
-                                    <input type="number" id="stirrer-kd" min="0" step="0.01" value="0.01">
-                                </div>
-                            </div>
-                            <button id="stirrer-save" class="control-btn">Save</button>
+                        <div id="paramVisibilityList" class="param-visibility-list"></div>
+                        <div class="modal-buttons">
+                            <button id="closeCustomize" class="modal-cancel">Close</button>
+                            <button id="saveCustomize" class="modal-confirm">Save</button>
                         </div>
                     </div>
                 </div>
@@ -468,7 +380,6 @@
         </div>
     </div>
     
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

@@ -2,6 +2,34 @@
 
 #include <Arduino.h>
 
+// Placeholder struct for Cascade_Param_Config_t
+typedef struct {
+    float min;
+    float max;
+    float param1;
+    float param2;
+} Cascade_Param_Config_t;
+
+// Placeholder struct for PID_Params_t
+typedef struct {
+    float kp;
+    float ki;
+    float kd;
+    float min_output;
+    float max_output;
+    float setpoint;
+    float sample_time;
+} PID_Params_t;
+
+// Placeholder struct for DissolvedOxygenSensor_t
+typedef struct {
+    float value;
+    bool enabled;
+    bool fault;
+    bool newMessage;
+    char message[100];
+} DissolvedOxygenSensor_t;
+
 #define MAX_NUM_OBJECTS 80
 
 // Object index------------------------------------------>|
@@ -160,12 +188,10 @@ struct DigitalOutput_t {
 
 // Device objects
 struct StepperDevice_t {
-float rpm;
-float rpm;
+    float rpm;
     float maxRPM;
     float acceleration;
     float load;
-    bool direction;
     bool inverted;
     bool running;
     bool enabled;
@@ -177,6 +203,7 @@ float rpm;
 
 struct MotorDevice_t {
     float power;
+        // Removed duplicate 'float rpm;'
     bool direction;
     bool inverted;
     bool running;

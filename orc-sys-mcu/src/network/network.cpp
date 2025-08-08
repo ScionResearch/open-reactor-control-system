@@ -176,6 +176,9 @@ bool loadNetworkConfig()
   networkConfig.mqttPort = doc["mqtt_port"] | 1883;
   strlcpy(networkConfig.mqttUsername, doc["mqtt_username"] | "", sizeof(networkConfig.mqttUsername));
   strlcpy(networkConfig.mqttPassword, doc["mqtt_password"] | "", sizeof(networkConfig.mqttPassword));
+  // Optional fields
+  strlcpy(networkConfig.mqttDevicePrefix, doc["mqtt_device_prefix"] | "", sizeof(networkConfig.mqttDevicePrefix));
+  networkConfig.mqttPublishIntervalMs = doc["mqtt_publish_interval_ms"] | 10000;
 
   LittleFS.end();
   //debugPrintNetConfig(networkConfig);
@@ -222,6 +225,9 @@ void saveNetworkConfig()
   doc["mqtt_port"] = networkConfig.mqttPort;
   doc["mqtt_username"] = networkConfig.mqttUsername;
   doc["mqtt_password"] = networkConfig.mqttPassword;
+  // Optional fields
+  doc["mqtt_device_prefix"] = networkConfig.mqttDevicePrefix;
+  doc["mqtt_publish_interval_ms"] = networkConfig.mqttPublishIntervalMs;
   
   // Open file for writing
   File configFile = LittleFS.open(CONFIG_FILENAME, "w");
@@ -511,6 +517,52 @@ void handleSystemStatus() {
   server.send(200, "application/json", response);
 }
 
+// --- Sensors API Handler for Control Tab ---
+void handleGetSensors() {
+  log(LOG_DEBUG, false, "[API] handleGetSensors called\n");
+  if (statusLocked) {
+    log(LOG_DEBUG, false, "[API] statusLocked, returning 503\n");
+    server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
+    return;
+  }
+  statusLocked = true;
+
+  StaticJsonDocument<1024> doc;
+
+  // Current sensor readings from status struct
+  doc["temp"] = status.temperatureSensor.celcius;
+  doc["ph"] = status.phSensor.pH;
+  doc["do"] = status.doSensor.oxygen;
+  doc["stirrer"] = status.stirrerSpeedSensor.rpm;
+  doc["pressure"] = status.pressureSensor.kPa;
+  doc["gasFlow"] = status.gasFlowSensor.mlPerMinute;
+  doc["weight"] = status.weightSensor.grams;
+  doc["opticalDensity"] = status.odSensor.OD;
+  
+  // Power sensor readings
+  doc["powerVolts"] = status.powerSensor.volts;
+  doc["powerAmps"] = status.powerSensor.amps;
+  doc["powerWatts"] = status.powerSensor.watts;
+  
+  // Online status for each sensor
+  doc["tempOnline"] = status.temperatureSensor.online;
+  doc["phOnline"] = status.phSensor.online;
+  doc["doOnline"] = status.doSensor.online;
+  doc["stirrerOnline"] = status.stirrerSpeedSensor.online;
+  doc["pressureOnline"] = status.pressureSensor.online;
+  doc["gasFlowOnline"] = status.gasFlowSensor.online;
+  doc["weightOnline"] = status.weightSensor.online;
+  doc["odOnline"] = status.odSensor.online;
+  doc["powerOnline"] = status.powerSensor.online;
+
+  statusLocked = false;
+
+  String response;
+  serializeJson(doc, response);
+  log(LOG_DEBUG, false, "[API] handleGetSensors sending response\n");
+  server.send(200, "application/json", response);
+}
+
 void setupWebServer()
 {
   // Initialize LittleFS for serving web files
@@ -531,6 +583,9 @@ void setupWebServer()
 
   // NEW: System status endpoint for the UI
   server.on("/api/system/status", HTTP_GET, handleSystemStatus);
+
+  // NEW: Sensors endpoint for the control tab
+  server.on("/api/sensors", HTTP_GET, handleGetSensors);
 
   // SD Card File Manager API endpoint
   server.on("/api/sd/list", HTTP_GET, handleSDListDirectory);
@@ -583,7 +638,9 @@ void setupMqttAPI()
         doc["mqttBroker"] = networkConfig.mqttBroker;
         doc["mqttPort"] = networkConfig.mqttPort;
         doc["mqttUsername"] = networkConfig.mqttUsername;
-        doc["mqttPassword"] = "";
+  doc["mqttPassword"] = ""; // never return stored password
+  doc["mqttPublishIntervalMs"] = networkConfig.mqttPublishIntervalMs;
+  doc["mqttDevicePrefix"] = networkConfig.mqttDevicePrefix;
         String response;
         serializeJson(doc, response);
         server.send(200, "application/json", response);
@@ -606,6 +663,13 @@ void setupMqttAPI()
         if (strlen(newPassword) > 0) {
             strlcpy(networkConfig.mqttPassword, newPassword, sizeof(networkConfig.mqttPassword));
         }
+    // Optional fields
+    if (doc.containsKey("mqttPublishIntervalMs")) {
+      networkConfig.mqttPublishIntervalMs = doc["mqttPublishIntervalMs"];
+    }
+    if (doc.containsKey("mqttDevicePrefix")) {
+      strlcpy(networkConfig.mqttDevicePrefix, doc["mqttDevicePrefix"], sizeof(networkConfig.mqttDevicePrefix));
+    }
         saveNetworkConfig();
         server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"MQTT configuration saved\"}");
     });

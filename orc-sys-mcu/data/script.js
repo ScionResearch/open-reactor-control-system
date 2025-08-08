@@ -1,3 +1,50 @@
+// Unified handler for all control tab Save buttons
+document.addEventListener('DOMContentLoaded', function() {
+    const saveMap = [
+        // Calibration
+        {id: 'calibrate-save', fields: ['calibrate-offset', 'calibrate-scale']},
+        // Sensors
+        {id: 'analog-save', fields: ['analog-value']},
+        {id: 'digital-save', fields: ['digital-state', 'digital-pin']},
+        {id: 'sensor-temp-save', fields: ['sensor-temp']},
+        {id: 'sensor-ph-save', fields: ['sensor-ph']},
+        {id: 'sensor-od-save', fields: ['sensor-od']},
+        {id: 'sensor-flow-save', fields: ['sensor-flow']},
+        {id: 'sensor-pressure-save', fields: ['sensor-pressure']},
+        {id: 'sensor-power-save', fields: ['sensor-power']},
+        // Outputs
+        {id: 'analog-output-save', fields: ['analog-output']},
+        {id: 'digital-output-save', fields: ['digital-output-state', 'digital-output-pin']},
+        // Devices
+        {id: 'stepper-save', fields: ['stepper-position', 'stepper-speed']},
+        {id: 'motor-save', fields: ['motor-rpm', 'motor-direction']},
+        // Communication
+        {id: 'rs232-save', fields: ['rs232-port', 'rs232-baud']},
+        {id: 'rs485-save', fields: ['rs485-port', 'rs485-baud']}
+    ];
+    saveMap.forEach(item => {
+        const btn = document.getElementById(item.id);
+        if (btn) {
+            btn.addEventListener('click', function() {
+                const data = {};
+                item.fields.forEach(f => {
+                    const el = document.getElementById(f);
+                    if (el) {
+                        if (el.type === 'checkbox') {
+                            data[f] = el.checked;
+                        } else if (el.tagName === 'SELECT') {
+                            data[f] = el.value;
+                        } else {
+                            data[f] = el.value;
+                        }
+                    }
+                });
+                console.log(`[${item.id}]`, data);
+                showToast('info', 'Saved', `Settings for ${item.id.replace('-save','').replace(/-/g,' ')} updated.`);
+            });
+        }
+    });
+});
 // Tab switching function
 function openTab(evt, tabName) {
     // Get all tab content elements and hide them
@@ -21,6 +68,8 @@ function openTab(evt, tabName) {
         updateSystemStatus();
     } else if (tabName === 'filemanager') {
         initFileManager();
+    } else if (tabName === 'control') {
+        initControlBoard();
     }
 }
 
@@ -385,82 +434,7 @@ document.querySelectorAll('nav a').forEach(link => {
     });
 });
 
-// Chart initialization with sample data
-const ctx = document.getElementById('sensorChart').getContext('2d');
-const sensorChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-        labels: [],
-        datasets: [{
-            label: 'Temperature (°C)',
-            data: [],
-            borderColor: 'rgb(255, 99, 132)',
-            tension: 0.1,
-            yAxisID: 'y'
-        }, {
-            label: 'pH',
-            data: [],
-            borderColor: 'rgb(54, 162, 235)',
-            tension: 0.1,
-            yAxisID: 'y1'
-        }, {
-            label: 'DO (mg/L)',
-            data: [],
-            borderColor: 'rgb(75, 192, 192)',
-            tension: 0.1,
-            yAxisID: 'y2'
-        }]
-    },
-    options: {
-        responsive: true,
-        interaction: {
-            mode: 'index',
-            intersect: false,
-        },
-        stacked: false,
-        scales: {
-            y: {
-                type: 'linear',
-                display: true,
-                position: 'left',
-                title: {
-                    display: true,
-                    text: 'Temperature (°C)'
-                },
-                min: 0,
-                max: 100
-            },
-            y1: {
-                type: 'linear',
-                display: true,
-                position: 'right',
-                title: {
-                    display: true,
-                    text: 'pH'
-                },
-                min: 0,
-                max: 14,
-                grid: {
-                    drawOnChartArea: false
-                }
-            },
-            y2: {
-                type: 'linear',
-                display: true,
-                position: 'right',
-                title: {
-                    display: true,
-                    text: 'DO (mg/L)'
-                },
-                min: 0,
-                max: 20,
-                grid: {
-                    drawOnChartArea: false
-                }
-            }
-        }
-    }
-});
+// Graphs removed: trending handled in InfluxDB. Chart.js initialization removed.
 
 // Store historical data for trends
 let sensorHistory = {
@@ -506,6 +480,7 @@ async function updateSensorData() {
         // Update each sensor value and calculate trends
         if (data.temp !== undefined) {
             const tempElement = document.getElementById('temp-reading');
+            const tempControlElement = document.getElementById('current-temp');
             if (tempElement) {
                 const oldTemp = parseFloat(tempElement.textContent) || 0;
                 tempElement.textContent = data.temp.toFixed(1);
@@ -517,10 +492,14 @@ async function updateSensorData() {
                 sensorHistory.temp.push(data.temp);
                 if (sensorHistory.temp.length > 50) sensorHistory.temp.shift();
             }
+            if (tempControlElement) {
+                tempControlElement.textContent = data.temp.toFixed(1) + ' °C';
+            }
         }
         
         if (data.ph !== undefined) {
             const phElement = document.getElementById('ph-reading');
+            const phControlElement = document.getElementById('current-ph');
             if (phElement) {
                 const oldPh = parseFloat(phElement.textContent) || 0;
                 phElement.textContent = data.ph.toFixed(2);
@@ -532,10 +511,14 @@ async function updateSensorData() {
                 sensorHistory.ph.push(data.ph);
                 if (sensorHistory.ph.length > 50) sensorHistory.ph.shift();
             }
+            if (phControlElement) {
+                phControlElement.textContent = data.ph.toFixed(2);
+            }
         }
         
         if (data.do !== undefined) {
             const doElement = document.getElementById('do-reading');
+            const doControlElement = document.getElementById('current-do');
             if (doElement) {
                 const oldDo = parseFloat(doElement.textContent) || 0;
                 doElement.textContent = data.do.toFixed(1);
@@ -547,16 +530,74 @@ async function updateSensorData() {
                 sensorHistory.do.push(data.do);
                 if (sensorHistory.do.length > 50) sensorHistory.do.shift();
             }
+            if (doControlElement) {
+                doControlElement.textContent = data.do.toFixed(1) + '%';
+            }
         }
         
         if (data.stirrer !== undefined) {
             const stirrerElement = document.getElementById('stirrer-reading');
+            const stirrerControlElement = document.getElementById('current-stirrer-rpm');
             if (stirrerElement) {
                 stirrerElement.textContent = data.stirrer.toFixed(0);
                 
                 // Add to history
                 sensorHistory.stirrer.push(data.stirrer);
                 if (sensorHistory.stirrer.length > 50) sensorHistory.stirrer.shift();
+            }
+            if (stirrerControlElement) {
+                stirrerControlElement.textContent = data.stirrer.toFixed(0) + ' RPM';
+            }
+        }
+        
+        // Update new sensor parameters
+        if (data.gasFlow !== undefined) {
+            const gasFlowElement = document.getElementById('current-gasflow');
+            if (gasFlowElement) {
+                gasFlowElement.textContent = data.gasFlow.toFixed(1) + ' mL/min';
+            }
+        }
+        
+        if (data.pressure !== undefined) {
+            const pressureElement = document.getElementById('current-pressure');
+            if (pressureElement) {
+                pressureElement.textContent = data.pressure.toFixed(1) + ' kPa';
+            }
+        }
+        
+        if (data.weight !== undefined) {
+            const weightElement = document.getElementById('current-weight');
+            if (weightElement) {
+                weightElement.textContent = data.weight.toFixed(1) + ' g';
+            }
+        }
+        
+        if (data.opticalDensity !== undefined) {
+            const odElement = document.getElementById('current-od');
+            if (odElement) {
+                odElement.textContent = data.opticalDensity.toFixed(3) + ' OD';
+            }
+        }
+        
+        // Update power sensor readings
+        if (data.powerVolts !== undefined) {
+            const powerVoltsElement = document.getElementById('current-power-volts');
+            if (powerVoltsElement) {
+                powerVoltsElement.textContent = data.powerVolts.toFixed(1) + ' V';
+            }
+        }
+        
+        if (data.powerAmps !== undefined) {
+            const powerAmpsElement = document.getElementById('current-power-amps');
+            if (powerAmpsElement) {
+                powerAmpsElement.textContent = data.powerAmps.toFixed(2) + ' A';
+            }
+        }
+        
+        if (data.powerWatts !== undefined) {
+            const powerWattsElement = document.getElementById('current-power-watts');
+            if (powerWattsElement) {
+                powerWattsElement.textContent = data.powerWatts.toFixed(1) + ' W';
             }
         }
         
@@ -595,11 +636,39 @@ function updateSensorPlaceholders() {
     const stirrerElement = document.getElementById('stirrer-reading');
     if (stirrerElement) stirrerElement.textContent = '--';
     
-    // Removed system-status update (Sensors Offline)
-    // const systemStatusElement = document.getElementById('system-status');
-    // if (systemStatusElement) {
-    //     systemStatusElement.innerHTML = '<span class="status warning">Sensors Offline</span>';
-    // }
+    // Update control tab placeholders
+    const tempControlElement = document.getElementById('current-temp');
+    if (tempControlElement) tempControlElement.textContent = '-- °C';
+    
+    const phControlElement = document.getElementById('current-ph');
+    if (phControlElement) phControlElement.textContent = '--';
+    
+    const doControlElement = document.getElementById('current-do');
+    if (doControlElement) doControlElement.textContent = '--%';
+    
+    const stirrerControlElement = document.getElementById('current-stirrer-rpm');
+    if (stirrerControlElement) stirrerControlElement.textContent = '-- RPM';
+    
+    const gasFlowElement = document.getElementById('current-gasflow');
+    if (gasFlowElement) gasFlowElement.textContent = '-- mL/min';
+    
+    const pressureElement = document.getElementById('current-pressure');
+    if (pressureElement) pressureElement.textContent = '-- kPa';
+    
+    const weightElement = document.getElementById('current-weight');
+    if (weightElement) weightElement.textContent = '-- g';
+    
+    const odElement = document.getElementById('current-od');
+    if (odElement) odElement.textContent = '-- OD';
+    
+    const powerVoltsElement = document.getElementById('current-power-volts');
+    if (powerVoltsElement) powerVoltsElement.textContent = '-- V';
+    
+    const powerAmpsElement = document.getElementById('current-power-amps');
+    if (powerAmpsElement) powerAmpsElement.textContent = '-- A';
+    
+    const powerWattsElement = document.getElementById('current-power-watts');
+    if (powerWattsElement) powerWattsElement.textContent = '-- W';
 }
 
 // Update date/time input fields based on NTP state
@@ -692,6 +761,8 @@ async function loadControlSettings() {
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
+    // Switch to light theme by default
+    document.body.classList.add('theme-light');
     loadInitialSettings();  // Load initial NTP and timezone settings
     loadNetworkSettings();  // Load initial network settings
     loadMqttSettings();     // Load initial MQTT settings
@@ -739,6 +810,11 @@ document.addEventListener('DOMContentLoaded', () => {
             saveControlSettings(controlType);
         });
     });
+
+    // Initialize control board if Control tab is active on load
+    if (document.querySelector('#control').classList.contains('active')) {
+        initControlBoard();
+    }
 });
 
 // Function to save control settings
@@ -1305,3 +1381,415 @@ document.addEventListener('DOMContentLoaded', () => {
         initFileManager();
     }
 });
+
+// ================= Modular Control Board =================
+// Contract:
+// - Define parameter registry entries with id, name, type, units, and demo endpoints
+// - Render as draggable cards; reorder persists in localStorage
+// - Visibility toggles stored in localStorage via Customize modal
+// - Save calls demo POST; Read polling maps to update values
+
+const CONTROL_LS_KEYS = {
+    order: 'orc.control.order',
+    visibility: 'orc.control.visibility'
+};
+
+// Demo parameter registry. Replace endpoints when real IO MCU endpoints exist.
+const PARAM_REGISTRY = [
+    {
+        id: 'temp',
+        name: 'Temperature',
+        kind: 'pid', // pid with setpoint
+        units: '°C',
+        min: 0, max: 100, step: 0.1,
+        read: { method: 'GET', url: '/api/demo/temp' },
+        write: { method: 'POST', url: '/api/demo/temp' }
+    },
+    {
+        id: 'ph',
+        name: 'pH',
+        kind: 'doser', // setpoint + enable + dosing params
+        units: '',
+        min: 0, max: 14, step: 0.01,
+        read: { method: 'GET', url: '/api/demo/ph' },
+        write: { method: 'POST', url: '/api/demo/ph' }
+    },
+    {
+        id: 'do',
+        name: 'Dissolved Oxygen',
+        kind: 'pid',
+        units: '%',
+        min: 0, max: 100, step: 1,
+        read: { method: 'GET', url: '/api/demo/do' },
+        write: { method: 'POST', url: '/api/demo/do' }
+    },
+    {
+        id: 'stirrer',
+        name: 'Stirrer Speed',
+        kind: 'pid',
+        units: 'RPM',
+        min: 0, max: 2000, step: 10,
+        read: { method: 'GET', url: '/api/demo/stirrer' },
+        write: { method: 'POST', url: '/api/demo/stirrer' }
+    },
+    {
+        id: 'gasflow',
+        name: 'Gas Flow',
+        kind: 'setpoint',
+        units: 'mL/min',
+        min: 0, max: 1000, step: 10,
+        read: { method: 'GET', url: '/api/demo/gasflow' },
+        write: { method: 'POST', url: '/api/demo/gasflow' }
+    },
+    {
+        id: 'pump1',
+        name: 'Pump 1 (Acid)',
+        kind: 'toggle', // enable only
+        units: '',
+        read: { method: 'GET', url: '/api/demo/pump1' },
+        write: { method: 'POST', url: '/api/demo/pump1' }
+    },
+    {
+        id: 'pump2',
+        name: 'Pump 2 (Base)',
+        kind: 'toggle',
+        units: '',
+        read: { method: 'GET', url: '/api/demo/pump2' },
+        write: { method: 'POST', url: '/api/demo/pump2' }
+    },
+    {
+        id: 'pressure',
+        name: 'Pressure',
+        kind: 'readOnly',
+        units: 'kPa',
+        read: { method: 'GET', url: '/api/demo/pressure' }
+    },
+    {
+        id: 'weight',
+        name: 'Weight',
+        kind: 'readOnly',
+        units: 'g',
+        read: { method: 'GET', url: '/api/demo/weight' }
+    },
+    {
+        id: 'od',
+        name: 'Optical Density',
+        kind: 'readOnly',
+        units: 'OD',
+        read: { method: 'GET', url: '/api/demo/od' }
+    },
+    {
+        id: 'pwrV',
+        name: 'Power (Volts)',
+        kind: 'readOnly',
+        units: 'V',
+        read: { method: 'GET', url: '/api/demo/power/volts' }
+    },
+    {
+        id: 'pwrA',
+        name: 'Power (Amps)',
+        kind: 'readOnly',
+        units: 'A',
+        read: { method: 'GET', url: '/api/demo/power/amps' }
+    },
+    {
+        id: 'pwrW',
+        name: 'Power (Watts)',
+        kind: 'readOnly',
+        units: 'W',
+        read: { method: 'GET', url: '/api/demo/power/watts' }
+    }
+];
+
+let controlBoardInitialized = false;
+let controlPollTimer = null;
+
+function initControlBoard() {
+    if (controlBoardInitialized) return; // idempotent per session
+    controlBoardInitialized = true;
+    const board = document.getElementById('controlBoard');
+    if (!board) return;
+
+    const visibility = loadVisibility();
+    const order = loadOrder();
+
+    const paramsById = Object.fromEntries(PARAM_REGISTRY.map(p => [p.id, p]));
+    const orderedIds = order && order.length ? order.filter(id => paramsById[id]) : PARAM_REGISTRY.map(p => p.id);
+
+    // Render according to order and visibility
+    for (const id of orderedIds) {
+        const p = paramsById[id];
+        if (visibility[id] === false) continue;
+        board.appendChild(renderParamCard(p));
+    }
+
+    setupDragAndDrop(board);
+    setupCustomizeUI();
+    setupFilterUI();
+    startControlPolling();
+}
+
+function renderParamCard(p) {
+    const card = document.createElement('div');
+    card.className = 'param-card';
+    card.setAttribute('draggable', 'true');
+    card.dataset.paramId = p.id;
+
+    card.innerHTML = `
+        <div class="param-card-header">
+            <div class="param-card-title">${p.name}</div>
+            <div class="param-card-actions">
+                <button class="icon-btn" title="Drag" aria-label="Drag to reorder">≡</button>
+            </div>
+        </div>
+        <div class="param-card-body">${getParamBodyHTML(p)}</div>
+        ${p.kind !== 'readOnly' ? `<div class="param-footer"><button class="btn-tiny" data-action="save">Save</button></div>` : ''}
+    `;
+
+    // Wire handlers
+    if (p.kind !== 'readOnly') {
+        const saveBtn = card.querySelector('[data-action="save"]');
+        saveBtn.addEventListener('click', () => saveParam(p, card));
+    }
+
+    return card;
+}
+
+function getParamBodyHTML(p) {
+    // Compose ID prefixes per card for scoping
+    const id = p.id;
+    const numberInput = (name) => `<input type="number" id="${id}-${name}" step="${p.step ?? 1}" ${p.min!=null?`min="${p.min}"`:''} ${p.max!=null?`max="${p.max}"`:''}>`;
+    const switchHTML = (name, checked = false) => `<label class="switch"><input type="checkbox" id="${id}-${name}" ${checked?'checked':''}><span class="slider"></span></label>`;
+
+    switch (p.kind) {
+        case 'pid':
+            return `
+                <div class="param-row"><label>Current</label><div><span id="${id}-current">--</span> ${p.units}</div></div>
+                <div class="param-row"><label>Setpoint</label><div>${numberInput('setpoint')} ${p.units}</div></div>
+                <div class="pid-params">
+                    <div class="form-group"><label>Kp</label>${numberInput('kp')}</div>
+                    <div class="form-group"><label>Ki</label>${numberInput('ki')}</div>
+                    <div class="form-group"><label>Kd</label>${numberInput('kd')}</div>
+                </div>
+                <div class="param-row"><label>Enabled</label><div>${switchHTML('enabled', true)}</div></div>
+            `;
+        case 'doser':
+            return `
+                <div class="param-row"><label>Current</label><div><span id="${id}-current">--</span> ${p.units}</div></div>
+                <div class="param-row"><label>Setpoint</label><div>${numberInput('setpoint')}</div></div>
+                <div class="param-row"><label>Period (s)</label><div>${numberInput('period')}</div></div>
+                <div class="param-row"><label>Max Dose (s)</label><div>${numberInput('maxDose')}</div></div>
+                <div class="param-row"><label>Enabled</label><div>${switchHTML('enabled')}</div></div>
+            `;
+        case 'setpoint':
+            return `
+                <div class="param-row"><label>Current</label><div><span id="${id}-current">--</span> ${p.units}</div></div>
+                <div class="param-row"><label>Setpoint</label><div>${numberInput('setpoint')} ${p.units}</div></div>
+                <div class="param-row"><label>Enabled</label><div>${switchHTML('enabled')}</div></div>
+            `;
+        case 'toggle':
+            return `
+                <div class="param-row"><label>Status</label><div><span id="${id}-current">--</span></div></div>
+                <div class="param-row"><label>Enabled</label><div>${switchHTML('enabled')}</div></div>
+            `;
+        case 'readOnly':
+        default:
+            return `
+                <div class="param-row"><label>Value</label><div><span id="${id}-current">--</span> ${p.units}</div></div>
+            `;
+    }
+}
+
+function setupDragAndDrop(board) {
+    let dragItem = null;
+    board.addEventListener('dragstart', (e) => {
+        const card = e.target.closest('.param-card');
+        if (!card) return;
+        dragItem = card;
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    });
+    board.addEventListener('dragend', (e) => {
+        const card = e.target.closest('.param-card');
+        if (card) card.classList.remove('dragging');
+        dragItem = null;
+        saveOrder(board);
+    });
+    board.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const afterElement = getDragAfterElement(board, e.clientY);
+        if (afterElement == null) {
+            board.appendChild(dragItem);
+        } else {
+            board.insertBefore(dragItem, afterElement);
+        }
+    });
+}
+
+function getDragAfterElement(container, y) {
+    const draggableElements = [...container.querySelectorAll('.param-card:not(.dragging)')];
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+            return { offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function saveOrder(board) {
+    const ids = [...board.querySelectorAll('.param-card')].map(c => c.dataset.paramId);
+    localStorage.setItem(CONTROL_LS_KEYS.order, JSON.stringify(ids));
+}
+
+function loadOrder() {
+    try { return JSON.parse(localStorage.getItem(CONTROL_LS_KEYS.order)) || []; } catch { return []; }
+}
+
+function loadVisibility() {
+    try { return JSON.parse(localStorage.getItem(CONTROL_LS_KEYS.visibility)) || {}; } catch { return {}; }
+}
+
+function saveVisibility(map) {
+    localStorage.setItem(CONTROL_LS_KEYS.visibility, JSON.stringify(map));
+}
+
+function setupCustomizeUI() {
+    const btn = document.getElementById('customizeControlBtn');
+    const modal = document.getElementById('controlCustomizeModal');
+    const closeBtn = document.getElementById('closeCustomize');
+    const saveBtn = document.getElementById('saveCustomize');
+    const selectAllBtn = document.getElementById('selectAllParams');
+    const clearAllBtn = document.getElementById('clearAllParams');
+    const resetLayoutBtn = document.getElementById('resetLayout');
+    const list = document.getElementById('paramVisibilityList');
+    if (!btn || !modal || !list) return;
+
+    const open = () => {
+        list.innerHTML = '';
+        const vis = loadVisibility();
+        PARAM_REGISTRY.forEach(p => {
+            const row = document.createElement('div');
+            row.className = 'param-toggle';
+            row.innerHTML = `
+                <input type="checkbox" id="vis-${p.id}" ${vis[p.id] !== false ? 'checked' : ''}/>
+                <label class="name" for="vis-${p.id}">${p.name}</label>
+                <span class="desc">${p.kind}</span>
+            `;
+            list.appendChild(row);
+        });
+        modal.classList.add('active');
+    };
+    const close = () => modal.classList.remove('active');
+
+    btn.addEventListener('click', open);
+    closeBtn.addEventListener('click', close);
+    saveBtn.addEventListener('click', () => {
+        const newVis = {};
+        PARAM_REGISTRY.forEach(p => {
+            const cb = document.getElementById(`vis-${p.id}`);
+            newVis[p.id] = cb ? cb.checked : true;
+        });
+        saveVisibility(newVis);
+        rerenderControlBoard();
+        close();
+    });
+    selectAllBtn.addEventListener('click', () => {
+        list.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+    });
+    clearAllBtn.addEventListener('click', () => {
+        list.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+    });
+    resetLayoutBtn.addEventListener('click', () => {
+        localStorage.removeItem(CONTROL_LS_KEYS.order);
+        rerenderControlBoard();
+    });
+}
+
+function setupFilterUI() {
+    const input = document.getElementById('controlSearch');
+    const board = document.getElementById('controlBoard');
+    if (!input || !board) return;
+    input.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        board.querySelectorAll('.param-card').forEach(card => {
+            const name = card.querySelector('.param-card-title')?.textContent?.toLowerCase() || '';
+            card.style.display = name.includes(q) ? '' : 'none';
+        });
+    });
+}
+
+function rerenderControlBoard() {
+    const board = document.getElementById('controlBoard');
+    if (!board) return;
+    board.innerHTML = '';
+    controlBoardInitialized = false;
+    initControlBoard();
+}
+
+async function saveParam(p, card) {
+    // Gather values from card
+    const getNum = (name) => {
+        const el = card.querySelector(`#${p.id}-${name}`);
+        return el && el.value !== '' ? Number(el.value) : undefined;
+    };
+    const getBool = (name) => {
+        const el = card.querySelector(`#${p.id}-${name}`);
+        return el ? el.checked : undefined;
+    };
+
+    let payload = {};
+    if (['pid', 'doser', 'setpoint'].includes(p.kind)) payload.setpoint = getNum('setpoint');
+    if (p.kind === 'pid') {
+        payload.kp = getNum('kp');
+        payload.ki = getNum('ki');
+        payload.kd = getNum('kd');
+    }
+    if (p.kind === 'doser') {
+        payload.period = getNum('period');
+        payload.maxDose = getNum('maxDose');
+    }
+    if (p.kind !== 'readOnly') payload.enabled = getBool('enabled');
+
+    const toast = showToast('info', 'Saving...', `Updating ${p.name}`, 5000);
+    try {
+        // Demo behavior: if backend isn't available, simulate with timeout
+        const res = await fetch(p.write.url, { method: p.write.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+        showToast('success', 'Saved', `${p.name} updated`);
+    } catch (e) {
+        console.warn('Demo endpoint likely missing, simulating success:', e.message);
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+        showToast('success', 'Saved (Demo)', `${p.name} updated locally`);
+        // Update current display optimistically
+        const curEl = card.querySelector(`#${p.id}-current`);
+        if (curEl && payload.setpoint != null) curEl.textContent = payload.setpoint;
+    }
+}
+
+function startControlPolling() {
+    // Clear existing
+    if (controlPollTimer) clearInterval(controlPollTimer);
+    const poll = async () => {
+        const board = document.getElementById('controlBoard');
+        if (!board || !document.getElementById('control').classList.contains('active')) return;
+        for (const p of PARAM_REGISTRY) {
+            const curEl = board.querySelector(`#${p.id}-current`);
+            if (!curEl || !p.read) continue;
+            try {
+                const res = await fetch(p.read.url);
+                if (!res.ok) throw new Error('not ok');
+                const data = await res.json().catch(() => ({}));
+                const value = data.value != null ? data.value : data.current != null ? data.current : undefined;
+                if (value != null) curEl.textContent = typeof value === 'number' ? value.toString() : value;
+            } catch {
+                // demo fallback: do nothing
+            }
+        }
+    };
+    poll();
+    controlPollTimer = setInterval(poll, 4000);
+}

@@ -11,12 +11,29 @@
     --text-color: #f5f5f5;
     --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
+/* Light theme override: add class 'theme-light' to <body> */
+.theme-light {
+    --bg-color: #f7f8fa;
+    --card-bg: #ffffff;
+    --primary-color: #e9ecef;
+    --accent-color: #58b487;
+    --text-color: #222;
+}
 body {
     font-family: var(--font-family);
     background-color: var(--bg-color);
     color: var(--text-color);
     margin: 0;
     padding: 20px;
+}
+.btn {
+    background-color: var(--accent-color);
+    color: #fff;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 1rem;
 }
 .container { max-width: 1200px; margin: 0 auto; }
 header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary-color); padding-bottom: 10px; }
@@ -31,7 +48,7 @@ h1 { color: var(--accent-color); }
     font-size: 1em;
     transition: background-color 0.3s;
 }
-.tab-link:hover, .tab-link.active { background-color: var(--accent-color); }
+.tab-link:hover, .tab-link.active { background-color: var(--accent-color); color: #fff; }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
 .dashboard-grid {
@@ -204,7 +221,7 @@ input:checked + .slider:before { transform: translateX(26px); }
 
 .control-btn {
     background-color: var(--accent-color);
-    color: var(--text-color);
+    color: #fff;
     border: none;
     padding: 10px;
     border-radius: 4px;
@@ -246,6 +263,147 @@ input:checked + .slider:before { transform: translateX(26px); }
 /* Status section styles */
 .control-btn:hover {
     background-color: #57b87a;
+}
+
+/* New modular control board */
+.control-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0 16px;
+}
+.control-toolbar .left,
+.control-toolbar .right { display: flex; align-items: center; gap: 8px; }
+.control-toolbar input[type="text"] {
+    background: #fff;
+    color: #222;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-width: 220px;
+}
+
+.control-board {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.param-card {
+    background-color: #fff;
+    color: #222;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    padding: 14px;
+    position: relative;
+    border: 2px solid transparent;
+}
+.param-card.dragging { opacity: 0.8; }
+.param-card.drag-over { border-color: #a3d9c5; background: #f7fffb; }
+.param-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.param-card-title { font-weight: 600; color: #333; }
+.param-card-actions { display: flex; gap: 6px; align-items: center; }
+.icon-btn {
+    background: #f2f2f2;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 8px;
+    cursor: grab;
+}
+.icon-btn:active { cursor: grabbing; }
+.param-card-body { display: grid; gap: 8px; }
+.param-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.param-row label { color: #555; font-size: 0.9em; }
+.param-row input[type="number"], .param-row input[type="text"], .param-row select {
+    background: #fff;
+    color: #222;
+    border: 1px solid #ddd;
+    padding: 8px;
+    border-radius: 6px;
+}
+.param-row > div { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.param-row input, .param-row select { max-width: 100%; }
+.param-footer { display: flex; justify-content: flex-end; margin-top: 8px; }
+.btn-tiny { padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; background: var(--accent-color); color: #fff; }
+
+/* Customize modal */
+.control-customize-modal {
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    padding: 20px;
+    width: 95%;
+    max-width: 720px;
+}
+.control-customize-modal h3 { margin-top: 0; color: #333; }
+.control-customize-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin: 8px 0 12px;
+}
+.control-customize-actions .btn { width: 100%; }
+.btn.btn-secondary { background: #e0e0e0; color: #222; }
+.btn.btn-secondary:hover { background: #d5d5d5; }
+.param-visibility-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    max-height: 360px;
+    overflow: auto;
+    padding: 6px 2px;
+}
+.param-toggle {
+    display: grid;
+    grid-template-columns: 20px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    background: #f7f7f7;
+    border: 1px solid #e6e6e6;
+    border-radius: 8px;
+    padding: 10px;
+}
+.param-toggle input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
+.param-toggle .name { color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.param-toggle .desc { font-size: 0.82em; color: #777; }
+/* Align modal buttons consistently */
+.control-customize-modal .modal-buttons { display: flex; justify-content: flex-end; gap: 12px; margin-top: 12px; }
+
+/* Keep control card content contained and responsive */
+.param-card .form-group {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+.param-card .form-group label {
+    width: auto;
+    margin-right: 0;
+    color: #555;
+}
+.param-card .form-group input[type="number"],
+.param-card .form-group input[type="text"],
+.param-card .form-group select {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+.param-card .pid-params {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 10px;
+    width: 100%;
 }
 
 .settings-section {
@@ -334,7 +492,7 @@ input:checked + .slider:before { transform: translateX(26px); }
 
 .btn {
     background-color: var(--accent-color);
-    color: var(--text-color);
+    color: #fff;
     padding: 10px 20px;
     border: none;
     border-radius: 4px;
@@ -347,6 +505,36 @@ input:checked + .slider:before { transform: translateX(26px); }
 
 .btn:hover {
     background-color: #57b87a;
+}
+
+/* Only settings forms need wide/indented primary buttons */
+.settings-section .btn {
+    margin-left: 150px;
+    min-width: 250px;
+    max-width: 250px;
+}
+
+/* In control toolbar and customize modal, keep buttons natural width without left offset */
+.control-toolbar .btn,
+.control-customize-modal .btn {
+    margin-left: 0;
+    min-width: auto;
+    max-width: none;
+}
+
+/* Only settings forms need wide/indented primary buttons */
+.settings-section .btn {
+    margin-left: 150px;
+    min-width: 250px;
+    max-width: 250px;
+}
+
+/* In control toolbar and customize modal, keep buttons natural width without left offset */
+.control-toolbar .btn,
+.control-customize-modal .btn {
+    margin-left: 0;
+    min-width: auto;
+    max-width: none;
 }
 
 .hidden {
@@ -890,7 +1078,7 @@ input:checked + .slider:before { transform: translateX(26px); }
 
 .download-btn {
     background-color: var(--accent-color);
-    color: var(--text-color);
+    color: #fff;
     border: none;
     padding: 5px 10px;
     text-align: center;

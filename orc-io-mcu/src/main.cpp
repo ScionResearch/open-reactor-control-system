@@ -1,50 +1,83 @@
+
 #include "sys_init.h"
 #include <FlashStorage_SAMD.h>
+#include <limits.h>
+#include "../lib/IPCprotocol/IPCProtocol.h"
+#include "../lib/IPCprotocol/IPCDataStructs.h"
 
 // Most of this is debug code!!!! Very much a work in progress
 
 void printStuff(void) {
+  char msg[128];
+  
   if (output_task) {
-    Serial.printf("Output task µs last: %d, min: %d, max: %d, avg: %0.2f\n", output_task->getLastExecTime(), output_task->getMinExecTime(), output_task->getMaxExecTime(), output_task->getAverageExecTime());
+    sprintf(msg, "Output task µs last: %lu, min: %lu, max: %lu, avg: %0.2f\n", output_task->getLastExecTime(), output_task->getMinExecTime(), output_task->getMaxExecTime(), output_task->getAverageExecTime());
+    Serial.print(msg);
   } else Serial.println("Output task not created.");
 
   if (gpio_task) {
-    Serial.printf("GPIO task µs last: %d, min: %d, max: %d, avg: %0.2f\n", gpio_task->getLastExecTime(), gpio_task->getMinExecTime(), gpio_task->getMaxExecTime(), gpio_task->getAverageExecTime());
+    sprintf(msg, "GPIO task µs last: %lu, min: %lu, max: %lu, avg: %0.2f\n", gpio_task->getLastExecTime(), gpio_task->getMinExecTime(), gpio_task->getMaxExecTime(), gpio_task->getAverageExecTime());
+    Serial.print(msg);
   } else Serial.println("GPIO task not created.");
 
   if (modbus_task) {
-    Serial.printf("Modbus task µs last: %d, min: %d, max: %d, avg: %0.2f\n", modbus_task->getLastExecTime(), modbus_task->getMinExecTime(), modbus_task->getMaxExecTime(), modbus_task->getAverageExecTime());
+    sprintf(msg, "Modbus task µs last: %lu, min: %lu, max: %lu, avg: %0.2f\n", modbus_task->getLastExecTime(), modbus_task->getMinExecTime(), modbus_task->getMaxExecTime(), modbus_task->getAverageExecTime());
+    Serial.print(msg);
   } else Serial.println("Modbus task not created.");
 
   if (phProbe_task) {
-    Serial.printf("PH probe task µs last: %d, min: %d, max: %d, avg: %0.2f\n", phProbe_task->getLastExecTime(), phProbe_task->getMinExecTime(), phProbe_task->getMaxExecTime(), phProbe_task->getAverageExecTime());
+    sprintf(msg, "PH probe task µs last: %lu, min: %lu, max: %lu, avg: %0.2f\n", phProbe_task->getLastExecTime(), phProbe_task->getMinExecTime(), phProbe_task->getMaxExecTime(), phProbe_task->getAverageExecTime());
+    Serial.print(msg);
   } else Serial.println("PH probe task not created.");
 
   if (levelProbe_task) {
-    Serial.printf("Level probe task µs last: %d, min: %d, max: %d, avg: %0.2f\n", levelProbe_task->getLastExecTime(), levelProbe_task->getMinExecTime(), levelProbe_task->getMaxExecTime(), levelProbe_task->getAverageExecTime());
+    sprintf(msg, "Level probe task µs last: %lu, min: %lu, max: %lu, avg: %0.2f\n", levelProbe_task->getLastExecTime(), levelProbe_task->getMinExecTime(), levelProbe_task->getMaxExecTime(), levelProbe_task->getAverageExecTime());
+    Serial.print(msg);
   } else Serial.println("Level probe task not created.");
   
   if (PARsensor_task) {
-    Serial.printf("PAR sensor task µs last: %d, min: %d, max: %d, avg: %0.2f\n", PARsensor_task->getLastExecTime(), PARsensor_task->getMinExecTime(), PARsensor_task->getMaxExecTime(), PARsensor_task->getAverageExecTime());
+    sprintf(msg, "PAR sensor task µs last: %lu, min: %lu, max: %lu, avg: %0.2f\n", PARsensor_task->getLastExecTime(), PARsensor_task->getMinExecTime(), PARsensor_task->getMaxExecTime(), PARsensor_task->getAverageExecTime());
+    Serial.print(msg);
   } else Serial.println("PAR sensor task not created.");
 
   if (RTDsensor_task) {
-    Serial.printf("RTD task µs last: %d, min: %d, max: %d, avg: %0.2f\n", RTDsensor_task->getLastExecTime(), RTDsensor_task->getMinExecTime(), RTDsensor_task->getMaxExecTime(), RTDsensor_task->getAverageExecTime());
+    sprintf(msg, "RTD task µs last: %lu, min: %lu, max: %lu, avg: %0.2f\n", RTDsensor_task->getLastExecTime(), RTDsensor_task->getMinExecTime(), RTDsensor_task->getMaxExecTime(), RTDsensor_task->getAverageExecTime());
+    Serial.print(msg);
   } else Serial.println("RTD task not created.");
 
   if (printStuff_task) {
-    Serial.printf("Print stuff task µs last: %d, min: %d, max: %d, avg: %0.2f\n", printStuff_task->getLastExecTime(), printStuff_task->getMinExecTime(), printStuff_task->getMaxExecTime(), printStuff_task->getAverageExecTime());
+    sprintf(msg, "Print stuff task µs last: %lu, min: %lu, max: %lu, avg: %0.2f\n", printStuff_task->getLastExecTime(), printStuff_task->getMinExecTime(), printStuff_task->getMaxExecTime(), printStuff_task->getAverageExecTime());
+    Serial.print(msg);
   }
+}
+
+
+// Instantiate IPCProtocol for Serial1
+IPCProtocol ipc(Serial1);
+
+void sendPhSensorToSysMCU(float pH, bool online) {
+    Message msg;
+    msg.msgId = MSG_PH_SENSOR;
+    msg.objId = 0; // Use 0 for single sensor, or index if multiple
+    msg.dataLength = sizeof(PHSensor);
+    PHSensor sensor = {pH, online};
+    memcpy(msg.data, &sensor, sizeof(sensor));
+    msg.crc = ipc.calculateCRC(msg);
+    ipc.sendMessage(msg);
 }
 
 void phProbeHandler(bool valid, uint16_t *data) {
   if (!valid) {
     Serial.println("Invalid ph probe data.");
+    sendPhSensorToSysMCU(-1.0f, false);
     return;
   }
   float temperature = static_cast<int>(data[0]) / 100.0f;
   float pH = static_cast<int>(data[1]) / 100.0f;
-  Serial.printf("PH probe data: Temperature: %0.2f °C, pH: %0.2f\n", temperature, pH);
+  char msg[64];
+  sprintf(msg, "PH probe data: Temperature: %0.2f °C, pH: %0.2f\n", temperature, pH);
+  Serial.print(msg);
+  sendPhSensorToSysMCU(pH, true);
 }
 
 void phProbeRequest(void) {
@@ -55,19 +88,39 @@ void phProbeRequest(void) {
   static uint16_t data[2];
   if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 2, phProbeHandler)) {
     Serial.println("ERROR - queue full");
-  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+  } else {
+    char msg[48];
+    sprintf(msg, "Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+    Serial.print(msg);
+  }
+}
+
+
+void sendLevelSensorToSysMCU(float level, bool online) {
+    Message msg;
+    msg.msgId = MSG_LEVEL_SENSOR;
+    msg.objId = 0;
+    msg.dataLength = sizeof(LevelSensor);
+    LevelSensor sensor = {level, online};
+    memcpy(msg.data, &sensor, sizeof(sensor));
+    msg.crc = ipc.calculateCRC(msg);
+    ipc.sendMessage(msg);
 }
 
 void levelProbeHandler(bool valid, uint16_t *data) {
   if (!valid) {
     Serial.println("Invalid level probe data.");
+    sendLevelSensorToSysMCU(-1.0f, false);
     return;
   }
   int value = static_cast<int>(data[4]);
   float level = value / pow(10, data[3]);
   const char *unit[7] = {"", "cm", "mm", "Mpa", "Pa", "kPa", "MA"};
   int baud[8] = {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200};
-  Serial.printf("Level probe data: Level: %0.2f %s, ID: %d, Baud: %d, Zero pt: %d\n", level, unit[data[2]], data[0], baud[data[1]], data[5]);
+  char msg[128];
+  sprintf(msg, "Level probe data: Level: %0.2f %s, ID: %d, Baud: %d, Zero pt: %d\n", level, unit[data[2]], data[0], baud[data[1]], data[5]);
+  Serial.print(msg);
+  sendLevelSensorToSysMCU(level, true);
 }
 
 void levelProbeRequest(void) {
@@ -78,15 +131,35 @@ void levelProbeRequest(void) {
   static uint16_t data[6];
   if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 6, levelProbeHandler)) {
     Serial.println("ERROR - queue full");
-  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+  } else {
+    char msg[64];
+    sprintf(msg, "Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+    Serial.print(msg);
+  }
+}
+
+
+void sendPARSensorToSysMCU(float par, bool online) {
+    Message msg;
+    msg.msgId = MSG_PAR_SENSOR;
+    msg.objId = 0;
+    msg.dataLength = sizeof(PARSensor);
+    PARSensor sensor = {par, online};
+    memcpy(msg.data, &sensor, sizeof(sensor));
+    msg.crc = ipc.calculateCRC(msg);
+    ipc.sendMessage(msg);
 }
 
 void PARsensorHandler(bool valid, uint16_t *data) {
   if (!valid) {
     Serial.println("Invalid PAR sensor data.");
+    sendPARSensorToSysMCU(-1.0f, false);
     return;
   }
-  Serial.printf("PAR sensor data: %d µmol/m²/s\n", data[0]);
+  char msg[64];
+  sprintf(msg, "PAR sensor data: %d µmol/m²/s\n", data[0]);
+  Serial.print(msg);
+  sendPARSensorToSysMCU((float)data[0], true);
 }
 
 void PARsensorRequest(void) {
@@ -97,7 +170,23 @@ void PARsensorRequest(void) {
   static uint16_t data[1];
   if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 1, PARsensorHandler)) {
     Serial.println("ERROR - queue full");
-  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+  } else {
+    char msg[64];
+    sprintf(msg, "Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
+    Serial.print(msg);
+  }
+}
+
+
+void sendTemperatureSensorToSysMCU(int idx, float celcius, bool online) {
+    Message msg;
+    msg.msgId = MSG_TEMPERATURE_SENSOR;
+    msg.objId = idx;
+    msg.dataLength = sizeof(TemperatureSensor);
+    TemperatureSensor sensor = {celcius, online};
+    memcpy(msg.data, &sensor, sizeof(sensor));
+    msg.crc = ipc.calculateCRC(msg);
+    ipc.sendMessage(msg);
 }
 
 void RTD_manage(void) {
@@ -105,8 +194,12 @@ void RTD_manage(void) {
   for (int i = 0; i < 3; i++) {
     if (rtd_interface[i].temperatureObj->fault) {
       Serial.println(rtd_interface[i].temperatureObj->message);
+      sendTemperatureSensorToSysMCU(i, -242.02f, false);
     } else {
-      Serial.printf("RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
+      char msg[64];
+      sprintf(msg, "RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
+      Serial.print(msg);
+      sendTemperatureSensorToSysMCU(i, rtd_interface[i].temperatureObj->temperature, true);
     }
   }
 }
@@ -141,6 +234,7 @@ void setupRtdInterface(void) {
 }
 
 void setup() {
+  ipc.begin(19200); // Match baudrate to sys MCU
   asm(".global _printf_float");
   // Init serial port:
   Serial.begin(115200);
@@ -155,7 +249,9 @@ void setup() {
 
   Serial.println("Initialising ADC interface");
   ADC_init();
-  Serial.printf("Result: %s\n", adcDriver.message);
+  char msg[128];
+  sprintf(msg, "Result: %s\n", adcDriver.message);
+  Serial.print(msg);
 
   // PT100 setup testing
   Serial.println("Initialising RTD interface");
@@ -165,7 +261,9 @@ void setup() {
   Serial.println("Initialising DAC interface");
   if (!DAC_init()) {
     Serial.println("Failed to initialise DAC driver.");
-    Serial.printf("Result: %s, Result Ch1: %s, Result Ch2: %s\n", dacDriver.message, dacDriver.outputObj[0]->message, dacDriver.outputObj[1]->message);
+    char msg[256];
+    sprintf(msg, "Result: %s, Result Ch1: %s, Result Ch2: %s\n", dacDriver.message, dacDriver.outputObj[0]->message, dacDriver.outputObj[1]->message);
+    Serial.print(msg);
   } else {
     Serial.println("DAC driver initialised.");
   }
@@ -194,7 +292,6 @@ void setup() {
   stepperDevice.maxRPM = 800;
   stepperDevice.stepsPerRev = 200;
   stepperDevice.inverted = false;
-  stepperDevice.direction = 0;
   stepperDevice.acceleration = 100;
   stepperDevice.holdCurrent = 150;
   stepperDevice.runCurrent = 300;
@@ -267,7 +364,7 @@ void setup() {
   // --- Initialize Shared Modbus Master for RS485-1 ---
   Serial.println("Initialising Shared Modbus Master (RS485-1 on Serial1)");
   // Using Serial1 (Pins 31=TX, 32=RX), Baud 19200, No RTS Pin (-1)
-  if (!modbus_init(&Serial1, 19200, -1)) {
+  if (!modbus_init()) {
       Serial.println("Failed to initialize shared Modbus master!");
       // Handle error appropriately - perhaps halt or set a system fault flag
   } else {
@@ -275,21 +372,23 @@ void setup() {
 
       // --- Initialize DO Sensor Driver ---
       Serial.println("Initialising DO Sensor Driver");
-      if (!do_sensor_init(modbusMaster1, &Serial1, 19200, -1, 1000)) { // Pass shared master
-          Serial.println("Failed to initialize DO sensor driver!");
-          if (doSensorDriver.newMessage) Serial.println(doSensorDriver.message);
-      } else {
-          Serial.println("DO Sensor driver initialized.");
-      }
+      // TODO: Implement do_sensor_init function
+      // if (!do_sensor_init()) {
+      //     Serial.println("Failed to initialize DO sensor driver!");
+      //     if (doSensorDriver.newMessage) Serial.println(doSensorDriver.message);
+      // } else {
+      //     Serial.println("DO Sensor driver initialized.");
+      // }
 
       // --- Initialize pH Sensor Driver ---
       Serial.println("Initialising pH Sensor Driver");
-      if (!ph_sensor_init(modbusMaster1, &Serial1, 19200, -1, 1000)) { // Pass shared master
-          Serial.println("Failed to initialize pH sensor driver!");
-          if (phSensorDriver.newMessage) Serial.println(phSensorDriver.message);
-      } else {
-          Serial.println("pH Sensor driver initialized.");
-      }
+      // TODO: Implement ph_sensor_init function
+      // if (!ph_sensor_init()) {
+      //     Serial.println("Failed to initialize pH sensor driver!");
+      //     if (phSensorDriver.newMessage) Serial.println(phSensorDriver.message);
+      // } else {
+      //     Serial.println("pH Sensor driver initialized.");
+      // }
   }
 
   Serial.println("Setup done");

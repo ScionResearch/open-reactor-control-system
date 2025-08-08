@@ -1,12 +1,14 @@
-#include "../utils/timeManager.h" // For globalDateTime
+/**
+ * MQTT Manager
+ *
+ * Responsibilities:
+ *  - Maintain a resilient MQTT connection (with LWT and backoff)
+ *  - Publish local and IPC sensor data using stable topic schema
+ *  - Expose a compact API for event-driven publishing (from IPC)
+ *  - Remain responsive on Core 0 alongside the Web server
+ */
 
-// Helper to format DateTime as ISO8601 string
-String dateTimeToISO8601(const DateTime& dt) {
-    char buf[25];
-    snprintf(buf, sizeof(buf), "%04u-%02u-%02uT%02u:%02u:%02uZ",
-        dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
-    return String(buf);
-}
+#include "../utils/timeManager.h" // getISO8601Timestamp
 #include "../utils/logger.h"
 #include "mqttManager.h"
 #include "MqttTopicRegistry.h"
@@ -15,24 +17,27 @@ String dateTimeToISO8601(const DateTime& dt) {
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
-#include <WiFi.h>
 #include <cstring>   // for strlen
 #include <cstdint>   // for uint8_t
 #include <cstdio>    // for snprintf
 
 // Global MQTT client - using WiFiClient for lwIP w5500
-WiFiClient mqttNetClient;
+// Use Wiznet lwIP TCP client under the hood via lwIPClient compatible type
+WiFiClient mqttNetClient; // Provided by W5500lwIP integration
 PubSubClient mqttClient(mqttNetClient);
 
-unsigned long lastMqttReconnectAttempt = 0;
-unsigned long lastMqttPublishTime = 0;
+static unsigned long lastMqttReconnectAttempt = 0;
+static unsigned long lastMqttPublishTime = 0;
+static bool lwtConfigured = false;
+static char deviceTopicPrefix[64] = {0}; // e.g., "orcs/dev/AA:BB:CC:DD:EE:FF"
 
 // Forward declaration
-void reconnect();
-void mqttPublishAllSensorData();
+static void reconnect();
+static void mqttPublishAllSensorData();
+static void ensureTopicPrefix();
 
 // Reconnect to MQTT broker
-void reconnect() {
+static void reconnect() {
     if (strlen(networkConfig.mqttBroker) == 0) {
         return;
     }
@@ -42,13 +47,23 @@ void reconnect() {
     eth.macAddress(mac);
     snprintf(clientId, sizeof(clientId), "ORCS-%02X%02X%02X", mac[3], mac[4], mac[5]);
     bool connected = false;
+    // Configure client parameters (once)
+    mqttClient.setBufferSize(1024); // Safety for JSON
+    mqttClient.setKeepAlive(30);
+    mqttClient.setSocketTimeout(15);
+    // Standard connect (with or without creds). Re-apply LWT via overload.
+    ensureTopicPrefix();
+    char lwtTopic[128];
+    snprintf(lwtTopic, sizeof(lwtTopic), "%s/status/online", deviceTopicPrefix);
     if (strlen(networkConfig.mqttUsername) > 0) {
-        connected = mqttClient.connect(clientId, networkConfig.mqttUsername, networkConfig.mqttPassword);
+        connected = mqttClient.connect(clientId, networkConfig.mqttUsername, networkConfig.mqttPassword, lwtTopic, 0, false, "false");
     } else {
-        connected = mqttClient.connect(clientId);
+        connected = mqttClient.connect(clientId, lwtTopic, 0, false, "false");
     }
     if (connected) {
         log(LOG_INFO, true, "MQTT connected successfully!\n");
+        // Publish online retained true
+        mqttClient.publish(lwtTopic, "true", true);
         // TODO: Add subscriptions for commands here in the future
         // mqttClient.subscribe("orcs/system/command");
     } else {
@@ -59,9 +74,9 @@ void reconnect() {
 // --- Topic Registry ---
 typedef float (*SensorValueGetter)();
 struct MqttTopicEntry {
-    const char* topic;
-    SensorValueGetter getter;
-    const char* description;
+    const char* topic;        // Topic suffix (relative). Full path will be deviceTopicPrefix + "/" + topic
+    SensorValueGetter getter; // Getter reads from StatusVariables
+    const char* description;  // Human description
 };
 
 
@@ -83,21 +98,21 @@ float getMqttConnected();
 float getMqttBusy();
 
 MqttTopicEntry mqttTopics[] = {
-    {"orcs/system/power/voltage", getVpsu, "Main PSU voltage (V)"},
-    {"orcs/system/power/20v", getV20, "20V rail voltage (V)"},
-    {"orcs/system/power/5v", getV5, "5V rail voltage (V)"},
-    {"orcs/system/status/psu_ok", getPsuOK, "PSU OK status (1=OK, 0=Fault)"},
-    {"orcs/system/status/20v_ok", get20vOK, "20V rail OK status (1=OK, 0=Fault)"},
-    {"orcs/system/status/5v_ok", get5vOK, "5V rail OK status (1=OK, 0=Fault)"},
-    {"orcs/system/status/sdcard_ok", getSdCardOK, "SD card OK status (1=OK, 0=Fault)"},
-    {"orcs/system/status/ipc_ok", getIpcOK, "IPC OK status (1=OK, 0=Fault)"},
-    {"orcs/system/status/rtc_ok", getRtcOK, "RTC OK status (1=OK, 0=Fault)"},
-    {"orcs/system/status/modbus_connected", getModbusConnected, "Modbus connected (1=Connected, 0=Not)"},
-    {"orcs/system/status/modbus_busy", getModbusBusy, "Modbus busy (1=Busy, 0=Idle)"},
-    {"orcs/system/status/webserver_up", getWebserverUp, "Webserver up (1=Up, 0=Down)"},
-    {"orcs/system/status/webserver_busy", getWebserverBusy, "Webserver busy (1=Busy, 0=Idle)"},
-    {"orcs/system/status/mqtt_connected", getMqttConnected, "MQTT connected (1=Connected, 0=Not)"},
-    {"orcs/system/status/mqtt_busy", getMqttBusy, "MQTT busy (1=Busy, 0=Idle)"},
+    {"sensors/power/voltage", getVpsu, "Main PSU voltage (V)"},
+    {"sensors/power/20v", getV20, "20V rail voltage (V)"},
+    {"sensors/power/5v", getV5, "5V rail voltage (V)"},
+    {"status/psu_ok", getPsuOK, "PSU OK status (1=OK, 0=Fault)"},
+    {"status/20v_ok", get20vOK, "20V rail OK status (1=OK, 0=Fault)"},
+    {"status/5v_ok", get5vOK, "5V rail OK status (1=OK, 0=Fault)"},
+    {"status/sdcard_ok", getSdCardOK, "SD card OK status (1=OK, 0=Fault)"},
+    {"status/ipc_ok", getIpcOK, "IPC OK status (1=OK, 0=Fault)"},
+    {"status/rtc_ok", getRtcOK, "RTC OK status (1=OK, 0=Fault)"},
+    {"status/modbus_connected", getModbusConnected, "Modbus connected (1=Connected, 0=Not)"},
+    {"status/modbus_busy", getModbusBusy, "Modbus busy (1=Busy, 0=Idle)"},
+    {"status/webserver_up", getWebserverUp, "Webserver up (1=Up, 0=Down)"},
+    {"status/webserver_busy", getWebserverBusy, "Webserver busy (1=Busy, 0=Idle)"},
+    {"status/mqtt_connected", getMqttConnected, "MQTT connected (1=Connected, 0=Not)"},
+    {"status/mqtt_busy", getMqttBusy, "MQTT busy (1=Busy, 0=Idle)"},
 };
 const size_t mqttTopicCount = sizeof(mqttTopics) / sizeof(mqttTopics[0]);
 
@@ -169,12 +184,13 @@ void manageMqtt() {
                 statusLocked = false;
             }
         }
-        // Process MQTT messages and keep-alives
+    // Process MQTT messages and keep-alives
         log(LOG_DEBUG, false, "[MQTT] calling mqttClient.loop\n");
         mqttClient.loop();
 
-        // Check if it's time to publish data
-        if (millis() - lastMqttPublishTime > MQTT_PUBLISH_INTERVAL) {
+    // Check if it's time to publish data
+    uint32_t publishInterval = (networkConfig.mqttPublishIntervalMs > 0) ? networkConfig.mqttPublishIntervalMs : MQTT_PUBLISH_INTERVAL;
+    if (millis() - lastMqttPublishTime > publishInterval) {
             lastMqttPublishTime = millis();
             log(LOG_DEBUG, false, "[MQTT] publishing all sensor data\n");
             mqttPublishAllSensorData();
@@ -198,32 +214,39 @@ void manageMqtt() {
  *
  * @note The timestamp is an ISO8601 UTC string (e.g., "2025-07-18T14:23:45Z"), generated from the system RTC.
  */
-void mqttPublishAllSensorData() {
+static void ensureTopicPrefix() {
+    if (deviceTopicPrefix[0] != '\0') return;
+    if (strlen(networkConfig.mqttDevicePrefix) > 0) {
+        strlcpy(deviceTopicPrefix, networkConfig.mqttDevicePrefix, sizeof(deviceTopicPrefix));
+        return;
+    }
+    uint8_t mac[6];
+    eth.macAddress(mac);
+    snprintf(deviceTopicPrefix, sizeof(deviceTopicPrefix), "orcs/dev/%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+static void mqttPublishAllSensorData() {
     if (!mqttClient.connected()) {
         return;
     }
 
     // Get current timestamp
-    DateTime now;
-    if (!dateTimeLocked) {
-        dateTimeLocked = true;
-        memcpy(&now, &globalDateTime, sizeof(DateTime));
-        dateTimeLocked = false;
-    } else {
-        // Fallback: try to get RTC time directly
-        rtc.getDateTime(&now);
+    String isoTimestamp = getISO8601Timestamp(100);
+    if (isoTimestamp.length() == 0) {
+        isoTimestamp = "1970-01-01T00:00:00Z"; // fallback
     }
-
-    String isoTimestamp = dateTimeToISO8601(now);
 
     // Create JSON payload for all sensor data, each with its own ISO8601 timestamp
     DynamicJsonDocument doc(2048);
+    ensureTopicPrefix();
 
     for (size_t i = 0; i < mqttTopicCount; i++) {
         float value = mqttTopics[i].getter();
         
         // Add value and timestamp for consolidated payload
-        JsonObject sensorObj = doc["sensors"].createNestedObject(mqttTopics[i].topic);
+        char fullKey[160];
+        snprintf(fullKey, sizeof(fullKey), "%s/%s", deviceTopicPrefix, mqttTopics[i].topic);
+        JsonObject sensorObj = doc["sensors"].createNestedObject(fullKey);
         sensorObj["value"] = value;
         sensorObj["timestamp"] = isoTimestamp;
 
@@ -235,13 +258,17 @@ void mqttPublishAllSensorData() {
         
         char payload[128];
         serializeJson(individualDoc, payload, sizeof(payload));
-        mqttClient.publish(mqttTopics[i].topic, payload);
+        char topicBuf[160];
+        snprintf(topicBuf, sizeof(topicBuf), "%s/%s", deviceTopicPrefix, mqttTopics[i].topic);
+        mqttClient.publish(topicBuf, payload);
     }
 
     // Publish consolidated sensor data
     String jsonString;
     serializeJson(doc, jsonString);
-    mqttClient.publish("orcs/system/sensors", jsonString.c_str());
+    char consolidatedTopic[96];
+    snprintf(consolidatedTopic, sizeof(consolidatedTopic), "%s/%s", deviceTopicPrefix, "sensors/all");
+    mqttClient.publish(consolidatedTopic, jsonString.c_str());
 
     log(LOG_INFO, false, "Published MQTT sensor data with ISO8601 timestamps\n");
 }
@@ -267,8 +294,9 @@ void mqttPublishAllSensorData() {
         }
     
         // 2. Construct the full topic with object ID
-        char fullTopic[128];
-        snprintf(fullTopic, sizeof(fullTopic), "%s/%d", it->second, msg.objId);
+        ensureTopicPrefix();
+        char fullTopic[192];
+        snprintf(fullTopic, sizeof(fullTopic), "%s/%s/%d", deviceTopicPrefix, it->second, msg.objId);
 
         // 3. Get a timestamp
         String timestamp = getISO8601Timestamp();
@@ -301,6 +329,34 @@ void mqttPublishAllSensorData() {
                 DissolvedOxygenSensor data;
                 memcpy(&data, msg.data, sizeof(data));
                 doc["value"] = data.oxygen;
+                doc["online"] = data.online;
+                break;
+            }
+            case MSG_OD_SENSOR: {
+                OpticalDensitySensor data;
+                memcpy(&data, msg.data, sizeof(data));
+                doc["value"] = data.OD;
+                doc["online"] = data.online;
+                break;
+            }
+            case MSG_GAS_FLOW_SENSOR: {
+                GasFlowSensor data;
+                memcpy(&data, msg.data, sizeof(data));
+                doc["value"] = data.mlPerMinute;
+                doc["online"] = data.online;
+                break;
+            }
+            case MSG_PRESSURE_SENSOR: {
+                PressureSensor data;
+                memcpy(&data, msg.data, sizeof(data));
+                doc["value"] = data.kPa;
+                doc["online"] = data.online;
+                break;
+            }
+            case MSG_STIRRER_SPEED_SENSOR: {
+                StirrerSpeedSensor data;
+                memcpy(&data, msg.data, sizeof(data));
+                doc["value"] = data.rpm;
                 doc["online"] = data.online;
                 break;
             }

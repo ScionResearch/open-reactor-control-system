@@ -4,9 +4,13 @@
 #include "IPCDataStructs.h"
 #include <map>
 
-// A map to associate IPC message IDs with their corresponding MQTT topic strings.
-// The object ID from the IPC message will be appended to the topic.
-// e.g., for MSG_TEMPERATURE_SENSOR with objId 0, the topic will be "orcs/sensors/temperature/0"
+/**
+ * @brief Associates IPC message types with relative MQTT topic paths.
+ *
+ * Full topic becomes: <devicePrefix>/<mappedPath>/<objId>
+ * - devicePrefix defaults to "orcs/dev/<MAC>" unless overridden via config
+ * - mappedPath examples: "orcs/sensors/temperature" (relative path)
+ */
 const std::map<MessageTypes, const char*> MqttTopicRegistry = {
     {MSG_POWER_SENSOR, "orcs/sensors/power"},
     {MSG_TEMPERATURE_SENSOR, "orcs/sensors/temperature"},

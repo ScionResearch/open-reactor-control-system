@@ -4,7 +4,7 @@
     "cpu": "cortex-m4",
     "f_cpu": "48000000L",
     "mcu": "samd51p20a",
-    "variant": "adafruit_feather_m4"
+  "variant": "scion_orc_m4"
   },
   "frameworks": ["arduino"],
   "name": "Scion ORC M4",
