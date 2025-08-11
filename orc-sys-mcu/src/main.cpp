@@ -11,6 +11,7 @@ unsigned long lastIpcManagerTime = 0;
 
 void setup() // Eth interface (keep hardware-specific initialization on core 0)
 {
+  log(LOG_DEBUG, false, "[Core0] setup() start\n");
   init_core0(); // All core 0 initialisation in this function
 
   log(LOG_INFO, false, "Core 0 setup complete\n");
@@ -33,10 +34,14 @@ void setup1()
 // Core 0 - network and coordination
 void loop()
 {
+  log(LOG_DEBUG, false, "[Core0] loop start\n");
   manage_core0();
+  log(LOG_DEBUG, false, "[Core0] loop end\n");
 }
 
 // Core 1 - all other subsystems
 void loop1() {
+  log(LOG_DEBUG, false, "[Core1] loop start\n");
   manage_core1();
+  log(LOG_DEBUG, false, "[Core1] loop end\n");
 }

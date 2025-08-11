@@ -1,7 +1,16 @@
+
 #include "network.h"
+#include "mqttManager.h"
+#include "../utils/statusManager.h"
+#include "../utils/timeManager.h"
+#include "../storage/sdManager.h"
+#include "../controls/controlManager.h"
+
+#include <ArduinoJson.h>
 
 // Global variables
 NetworkConfig networkConfig;
+
 
 Wiznet5500lwIP eth(PIN_ETH_CS, SPI, PIN_ETH_IRQ);
 WebServer server(80);
@@ -19,16 +28,18 @@ unsigned long lastNetworkCheckTime = 0;
 
 // Network component initialisation functions ------------------------------>
 void init_network() {
-    setupEthernet();
-    setupWebServer();
-    setupNetworkAPI();
-    setupMqttAPI();
-    setupTimeAPI();
+  log(LOG_DEBUG, false, "[Core0] init_network() start\n");
+  setupEthernet();
+  setupWebServer();
 }
 
 void manageNetwork(void) {
-    manageEthernet();
-    if (networkConfig.ntpEnabled) handleNTPUpdates(false);
+  log(LOG_DEBUG, false, "[NET] manageEthernet\n");
+  manageEthernet();
+  if (networkConfig.ntpEnabled) {
+    log(LOG_DEBUG, false, "[NET] handleNTPUpdates\n");
+    handleNTPUpdates(false);
+  }
 }
 
 void setupEthernet()
@@ -45,7 +56,7 @@ void setupEthernet()
     networkConfig.gateway = IPAddress(192, 168, 1, 1);
     networkConfig.dns = IPAddress(8, 8, 8, 8);
     strcpy(networkConfig.timezone, "+13:00");
-    strcpy(networkConfig.hostname, "open-reactor");
+    strcpy(networkConfig.hostname, "open-reactor-tasman");
     strcpy(networkConfig.ntpServer, "pool.ntp.org");
     networkConfig.dstEnabled = false;
     saveNetworkConfig();
@@ -152,7 +163,7 @@ bool loadNetworkConfig()
   if (dns.fromString(doc["dns"] | "8.8.8.8")) networkConfig.dns = dns;
   
   // Parse strings
-  strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor", sizeof(networkConfig.hostname));
+  strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor-tasman", sizeof(networkConfig.hostname));
   strlcpy(networkConfig.ntpServer, doc["ntp_server"] | "pool.ntp.org", sizeof(networkConfig.ntpServer));
   strlcpy(networkConfig.timezone, doc["timezone"] | "+13:00", sizeof(networkConfig.timezone));
   
@@ -165,6 +176,9 @@ bool loadNetworkConfig()
   networkConfig.mqttPort = doc["mqtt_port"] | 1883;
   strlcpy(networkConfig.mqttUsername, doc["mqtt_username"] | "", sizeof(networkConfig.mqttUsername));
   strlcpy(networkConfig.mqttPassword, doc["mqtt_password"] | "", sizeof(networkConfig.mqttPassword));
+  // Optional fields
+  strlcpy(networkConfig.mqttDevicePrefix, doc["mqtt_device_prefix"] | "", sizeof(networkConfig.mqttDevicePrefix));
+  networkConfig.mqttPublishIntervalMs = doc["mqtt_publish_interval_ms"] | 10000;
 
   LittleFS.end();
   //debugPrintNetConfig(networkConfig);
@@ -211,6 +225,9 @@ void saveNetworkConfig()
   doc["mqtt_port"] = networkConfig.mqttPort;
   doc["mqtt_username"] = networkConfig.mqttUsername;
   doc["mqtt_password"] = networkConfig.mqttPassword;
+  // Optional fields
+  doc["mqtt_device_prefix"] = networkConfig.mqttDevicePrefix;
+  doc["mqtt_publish_interval_ms"] = networkConfig.mqttPublishIntervalMs;
   
   // Open file for writing
   File configFile = LittleFS.open(CONFIG_FILENAME, "w");
@@ -339,7 +356,7 @@ void setupNetworkAPI()
               }
 
               // Update hostname
-              strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor", sizeof(networkConfig.hostname));
+              strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor-tasman", sizeof(networkConfig.hostname));
 
               // Update NTP server
               strlcpy(networkConfig.ntpServer, doc["ntp"] | "pool.ntp.org", sizeof(networkConfig.ntpServer));
@@ -361,6 +378,191 @@ void setupNetworkAPI()
             });
 }
 
+// --- New API Handlers for UI Dashboard ---
+
+void handleGetAllStatus() {
+  log(LOG_DEBUG, false, "[API] handleGetAllStatus called\n");
+  if (statusLocked) {
+    log(LOG_DEBUG, false, "[API] statusLocked, returning 503\n");
+    server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
+    return;
+  }
+  statusLocked = true;
+
+  StaticJsonDocument<2048> doc; // Increased size for all data
+
+  // System info
+  doc["hostname"] = networkConfig.hostname;
+  doc["mac"] = deviceMacAddress;
+
+  // Internal Status
+  JsonObject internal = doc.createNestedObject("internal");
+  internal["psuOK"] = status.psuOK;
+  internal["v20OK"] = status.V20OK;
+  internal["v5OK"] = status.V5OK;
+  internal["sdCardOK"] = status.sdCardOK;
+  internal["ipcOK"] = status.ipcOK;
+  internal["rtcOK"] = status.rtcOK;
+  internal["mqttConnected"] = status.mqttConnected;
+
+  // Sensor Readings
+  JsonObject sensors = doc.createNestedObject("sensors");
+  sensors["temperature"] = status.temperatureSensor.celcius;
+  sensors["ph"] = status.phSensor.pH;
+  sensors["do"] = status.doSensor.oxygen;
+  // ... add other sensor values as needed ...
+
+  // Control Setpoints
+  JsonObject controls = doc.createNestedObject("controls");
+  JsonObject tempControl = controls.createNestedObject("temperature");
+  tempControl["setpoint"] = status.temperatureControl.sp_celcius;
+  tempControl["enabled"] = status.temperatureControl.enabled;
+
+  JsonObject phControl = controls.createNestedObject("ph");
+  phControl["setpoint"] = status.phControl.sp_pH;
+  phControl["enabled"] = status.phControl.enabled;
+  // ... add other control values as needed ...
+
+  statusLocked = false;
+
+  String response;
+  serializeJson(doc, response);
+  log(LOG_DEBUG, false, "[API] handleGetAllStatus sending response\n");
+  server.send(200, "application/json", response);
+}
+
+void handleUpdateControl() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+
+  const char* type = doc["type"];
+  JsonObject config = doc["config"];
+
+  if (!type || config.isNull()) {
+    server.send(400, "application/json", "{\"error\":\"Invalid payload structure\"}");
+    return;
+  }
+
+  bool success = false;
+  if (strcmp(type, "temperature") == 0) {
+    success = updateTemperatureControl(config);
+  } else if (strcmp(type, "ph") == 0) {
+    success = updatePhControl(config);
+  }
+  // ... add else-if for other control types as needed ...
+
+  if (success) {
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"success\":false, \"error\":\"Failed to apply control update\"}");
+  }
+}
+
+// --- Add this handler for /api/system/status ---
+void handleSystemStatus() {
+  log(LOG_DEBUG, false, "[API] handleSystemStatus called\n");
+  if (statusLocked || sdLocked) {
+    log(LOG_DEBUG, false, "[API] statusLocked or sdLocked, returning 503\n");
+    server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
+    return;
+  }
+  statusLocked = true;
+  sdLocked = true;
+
+  StaticJsonDocument<1024> doc;
+
+  // Power info
+  JsonObject power = doc.createNestedObject("power");
+  power["mainVoltage"] = status.Vpsu;
+  power["mainVoltageOK"] = status.psuOK;
+  power["v20Voltage"] = status.V20;
+  power["v20VoltageOK"] = status.V20OK;
+  power["v5Voltage"] = status.V5;
+  power["v5VoltageOK"] = status.V5OK;
+
+  // RTC info
+  JsonObject rtc = doc.createNestedObject("rtc");
+  rtc["ok"] = status.rtcOK;
+  rtc["time"] = getISO8601Timestamp(100);
+
+  // Subsystem status
+  doc["ipc"] = status.ipcOK;
+  doc["mqtt"] = status.mqttConnected;
+  doc["modbus"] = status.modbusConnected;
+
+  // SD card info
+  JsonObject sd = doc.createNestedObject("sd");
+  sd["inserted"] = sdInfo.inserted;
+  sd["ready"] = sdInfo.ready;
+  sd["capacityGB"] = sdInfo.cardSizeBytes * 0.000000001;
+  sd["freeSpaceGB"] = sdInfo.cardFreeBytes * 0.000000001;
+  sd["logFileSizeKB"] = sdInfo.logSizeBytes * 0.001;
+  sd["sensorFileSizeKB"] = sdInfo.sensorSizeBytes * 0.001;
+
+  statusLocked = false;
+  sdLocked = false;
+
+  String response;
+  serializeJson(doc, response);
+  log(LOG_DEBUG, false, "[API] handleSystemStatus sending response\n");
+  server.send(200, "application/json", response);
+}
+
+// --- Sensors API Handler for Control Tab ---
+void handleGetSensors() {
+  log(LOG_DEBUG, false, "[API] handleGetSensors called\n");
+  if (statusLocked) {
+    log(LOG_DEBUG, false, "[API] statusLocked, returning 503\n");
+    server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
+    return;
+  }
+  statusLocked = true;
+
+  StaticJsonDocument<1024> doc;
+
+  // Current sensor readings from status struct
+  doc["temp"] = status.temperatureSensor.celcius;
+  doc["ph"] = status.phSensor.pH;
+  doc["do"] = status.doSensor.oxygen;
+  doc["stirrer"] = status.stirrerSpeedSensor.rpm;
+  doc["pressure"] = status.pressureSensor.kPa;
+  doc["gasFlow"] = status.gasFlowSensor.mlPerMinute;
+  doc["weight"] = status.weightSensor.grams;
+  doc["opticalDensity"] = status.odSensor.OD;
+  
+  // Power sensor readings
+  doc["powerVolts"] = status.powerSensor.volts;
+  doc["powerAmps"] = status.powerSensor.amps;
+  doc["powerWatts"] = status.powerSensor.watts;
+  
+  // Online status for each sensor
+  doc["tempOnline"] = status.temperatureSensor.online;
+  doc["phOnline"] = status.phSensor.online;
+  doc["doOnline"] = status.doSensor.online;
+  doc["stirrerOnline"] = status.stirrerSpeedSensor.online;
+  doc["pressureOnline"] = status.pressureSensor.online;
+  doc["gasFlowOnline"] = status.gasFlowSensor.online;
+  doc["weightOnline"] = status.weightSensor.online;
+  doc["odOnline"] = status.odSensor.online;
+  doc["powerOnline"] = status.powerSensor.online;
+
+  statusLocked = false;
+
+  String response;
+  serializeJson(doc, response);
+  log(LOG_DEBUG, false, "[API] handleGetSensors sending response\n");
+  server.send(200, "application/json", response);
+}
+
 void setupWebServer()
 {
   // Initialize LittleFS for serving web files
@@ -370,95 +572,25 @@ void setupWebServer()
     return;
   }
 
-  // Route handlers
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/filemanager", HTTP_GET, handleFileManager);
-  
-  // API endpoints for file manager
+
+  // ...existing code...
+
+  // NEW: Comprehensive status endpoint for the UI
+  server.on("/api/status/all", HTTP_GET, handleGetAllStatus);
+
+  // NEW: Scalable control endpoint
+  server.on("/api/controls", HTTP_POST, handleUpdateControl);
+
+  // NEW: System status endpoint for the UI
+  server.on("/api/system/status", HTTP_GET, handleSystemStatus);
+
+  // NEW: Sensors endpoint for the control tab
+  server.on("/api/sensors", HTTP_GET, handleGetSensors);
+
+  // SD Card File Manager API endpoint
   server.on("/api/sd/list", HTTP_GET, handleSDListDirectory);
-  server.on("/api/sd/download", HTTP_GET, handleSDDownloadFile);
-  server.on("/api/sd/view", HTTP_GET, handleSDViewFile);
-  
-  server.on("/api/sensors", HTTP_GET, []()
-            {
-        DateTime dt;
-        if (!getGlobalDateTime(dt)) {
-            server.send(500, "application/json", "{\"error\":\"Failed to get time\"}");
-            return;
-        }
 
-        char json[128];
-        snprintf(json, sizeof(json),
-                "{\"temp\":25.5,\"ph\":7.2,\"do\":6.8,\"timestamp\":\"%04d-%02d-%02dT%02d:%02d:%02d\"}",
-                dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
-        server.send(200, "application/json", json); });
-
-  // Comprehensive system status endpoint
-  server.on("/api/system/status", HTTP_GET, []() {
-    StaticJsonDocument<768> doc;
-    
-    if (!statusLocked) {
-      statusLocked = true;
-      
-      // Power supplies
-      JsonObject power = doc.createNestedObject("power");
-      power["mainVoltage"] = status.Vpsu;
-      power["v20Voltage"] = status.V20;
-      power["v5Voltage"] = status.V5;
-      power["mainVoltageOK"] = status.psuOK;
-      power["v20VoltageOK"] = status.V20OK;
-      power["v5VoltageOK"] = status.V5OK;
-      
-      // RTC status
-      JsonObject rtc = doc.createNestedObject("rtc");
-      rtc["ok"] = status.rtcOK;
-      
-      // Get current time
-      DateTime now;
-      if (getGlobalDateTime(now, 10)) {
-        char timeStr[32];
-        snprintf(timeStr, sizeof(timeStr), "%04d-%02d-%02d %02d:%02d:%02d", 
-                 now.year, now.month, now.day,
-                 now.hour, now.minute, now.second);
-        rtc["time"] = timeStr;
-      } else {
-        rtc["time"] = "Unknown";
-      }
-      
-      // IPC status
-      doc["ipc"] = status.ipcOK;
-      
-      // SD card info
-      JsonObject sd = doc.createNestedObject("sd");
-      if (!sdLocked) {
-        sdLocked = true;
-        sd["inserted"] = sdInfo.inserted;
-        sd["ready"] = sdInfo.ready;
-        
-        // Only include these if SD card is ready
-        if (sdInfo.ready) {
-          sd["capacityGB"] = sdInfo.cardSizeBytes / 1000000000.0;
-          sd["freeSpaceGB"] = sdInfo.cardFreeBytes / 1000000000.0;
-          sd["logFileSizeKB"] = sdInfo.logSizeBytes / 1000.0;
-          sd["sensorFileSizeKB"] = sdInfo.sensorSizeBytes / 1000.0;
-        }
-        sdLocked = false;
-      }
-      
-      // Network connections
-      doc["mqtt"] = status.mqttConnected;
-      doc["modbus"] = status.modbusConnected;
-      
-      statusLocked = false;
-      
-      String response;
-      serializeJson(doc, response);
-      server.send(200, "application/json", response);
-    }
-    else {
-      server.send(500, "application/json", "{\"error\":\"Status locked\"}");
-    }
-  });
+  // ...existing code...
 
   // System reboot endpoint
   server.on("/api/system/reboot", HTTP_POST, []() {
@@ -476,6 +608,11 @@ void setupWebServer()
     // Perform system reboot
     rp2040.reboot();
   });
+
+  // Setup API endpoints
+  setupNetworkAPI();
+  setupMqttAPI();
+  setupTimeAPI();
 
   // Handle static files
   server.onNotFound([]()
@@ -498,51 +635,60 @@ void setupMqttAPI()
 {
     server.on("/api/mqtt", HTTP_GET, []() {
         StaticJsonDocument<512> doc;
-        
         doc["mqttBroker"] = networkConfig.mqttBroker;
         doc["mqttPort"] = networkConfig.mqttPort;
         doc["mqttUsername"] = networkConfig.mqttUsername;
-        // Don't send the password back for security
-        doc["mqttPassword"] = "";
-        
+  doc["mqttPassword"] = ""; // never return stored password
+  doc["mqttPublishIntervalMs"] = networkConfig.mqttPublishIntervalMs;
+  doc["mqttDevicePrefix"] = networkConfig.mqttDevicePrefix;
         String response;
         serializeJson(doc, response);
         server.send(200, "application/json", response);
     });
-
     server.on("/api/mqtt", HTTP_POST, []() {
         if (!server.hasArg("plain")) {
             server.send(400, "application/json", "{\"error\":\"No data received\"}");
             return;
         }
-
         StaticJsonDocument<512> doc;
         DeserializationError error = deserializeJson(doc, server.arg("plain"));
-
         if (error) {
             server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
             return;
         }
-
-        // Update MQTT configuration
         strlcpy(networkConfig.mqttBroker, doc["mqttBroker"] | "", sizeof(networkConfig.mqttBroker));
         networkConfig.mqttPort = doc["mqttPort"] | 1883;
         strlcpy(networkConfig.mqttUsername, doc["mqttUsername"] | "", sizeof(networkConfig.mqttUsername));
-        
-        // Only update password if one is provided
         const char* newPassword = doc["mqttPassword"] | "";
         if (strlen(newPassword) > 0) {
             strlcpy(networkConfig.mqttPassword, newPassword, sizeof(networkConfig.mqttPassword));
         }
-
-        // Save configuration to storage
-        saveNetworkConfig();
-
-        // Send success response
-        server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"MQTT configuration saved\"}");
-        
-        // TODO: Trigger MQTT reconnect here if needed
+    // Optional fields
+    if (doc.containsKey("mqttPublishIntervalMs")) {
+      networkConfig.mqttPublishIntervalMs = doc["mqttPublishIntervalMs"];
+    }
+    if (doc.containsKey("mqttDevicePrefix")) {
+      strlcpy(networkConfig.mqttDevicePrefix, doc["mqttDevicePrefix"], sizeof(networkConfig.mqttDevicePrefix));
+    }
+  saveNetworkConfig();
+  // Apply MQTT config immediately and attempt reconnect
+  mqttApplyConfigAndReconnect();
+  server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"MQTT configuration applied\"}");
     });
+    
+  // MQTT topics API endpoints not needed at this stage
+  // Diagnostics endpoint
+  server.on("/api/mqtt/diag", HTTP_GET, []() {
+    StaticJsonDocument<256> doc;
+    doc["broker"] = networkConfig.mqttBroker;
+    doc["port"] = networkConfig.mqttPort;
+    doc["connected"] = mqttIsConnected();
+    doc["state"] = mqttGetState();
+    doc["prefix"] = mqttGetDeviceTopicPrefix();
+    String response;
+    serializeJson(doc, response);
+    server.send(200, "application/json", response);
+  });
 }
 
 void setupTimeAPI()
@@ -794,7 +940,9 @@ void handleFile(const char *path)
     statusLocked = false;
   }
   String contentType;
-  if (strstr(path, ".html"))
+  if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0)
+    contentType = "text/html";
+  else if (strstr(path, ".html"))
     contentType = "text/html";
   else if (strstr(path, ".css"))
     contentType = "text/css";

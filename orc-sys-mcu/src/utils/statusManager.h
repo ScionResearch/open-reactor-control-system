@@ -50,6 +50,9 @@
 void init_statusManager(void);
 void manageStatus(void);
 
+/**
+ * @brief Holds the global status of the system, including sensors and controls.
+ */
 struct StatusVariables
 {
     bool updated;
@@ -79,6 +82,27 @@ struct StatusVariables
     float Vpsu;
     float V20;
     float V5;
+
+    /** Sensor readings (from I/O Controller) */
+    PowerSensor powerSensor;
+    TemperatureSensor temperatureSensor;
+    PHSensor phSensor;
+    DissolvedOxygenSensor doSensor;
+    OpticalDensitySensor odSensor;
+    GasFlowSensor gasFlowSensor;
+    PressureSensor pressureSensor;
+    StirrerSpeedSensor stirrerSpeedSensor;
+    WeightSensor weightSensor;
+
+    /** Control setpoints */
+    TemperatureControl temperatureControl;
+    PHControl phControl;
+    DissolvedOxygenControl doControl;
+    GasFlowControl gasFlowControl;
+    StirrerSpeedControl stirrerSpeedControl;
+    PumpSpeedControl pumpSpeedControl;
+    FeedControl feedControl;
+    WasteControl wasteControl;
 };
 
 // Object definition
