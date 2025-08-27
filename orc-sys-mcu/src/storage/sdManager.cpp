@@ -1,3 +1,4 @@
+#include "utils/statusManager.h"
 #include "sdManager.h"
 
 SdFs sd;
@@ -19,12 +20,15 @@ void init_sdManager(void) {
 }
 
 void manageSD(void) {
+    log(LOG_DEBUG, false, "[SD] manageSD start\n");
     if (millis() - sdTS < SD_MANAGE_INTERVAL) return;
     sdTS = millis();
     
     if (!sdInfo.ready && !digitalRead(PIN_SD_CD)) {
+        log(LOG_DEBUG, false, "[SD] mountSD called\n");
         mountSD();
     } else {
+        log(LOG_DEBUG, false, "[SD] maintainSD called\n");
         maintainSD();
     }
     
@@ -34,12 +38,14 @@ void manageSD(void) {
         sdInfoTS = millis();
         printSDInfo();
     }
+    log(LOG_DEBUG, false, "[SD] manageSD end\n");
 }
 
 void mountSD(void) {
     // Check if SD card is inserted
     if (digitalRead(PIN_SD_CD)) {
         log(LOG_WARNING, false,"SD card not inserted\n");
+        log(LOG_DEBUG, false, "[SD] mountSD: card not inserted, aborting\n");
         if (sdLocked) return;
         sdLocked = true;
         sdInfo.inserted = false;
@@ -56,7 +62,10 @@ void mountSD(void) {
     // Mount SD card
     bool sdSPIinitialised = false;
     bool sdSDIOinitialised = false;
-    if (sdLocked) return;
+    if (sdLocked) {
+        log(LOG_DEBUG, false, "[SD] mountSD: sdLocked, aborting\n");
+        return;
+    }
     sdLocked = true;
     sdInfo.inserted = true;
     log(LOG_INFO, false, "SD card inserted, mounting FS\n");
@@ -69,11 +78,19 @@ void mountSD(void) {
                 if (sd.card()->errorCode()) {
                     log(LOG_ERROR, false, "SD card initialisation failed with error code %d\n", sd.card()->errorCode());
                 }
-            } else sdSPIinitialised = true;
+                log(LOG_DEBUG, false, "[SD] mountSD: all init attempts failed\n");
+            } else {
+                log(LOG_DEBUG, false, "[SD] mountSD: SPI init succeeded\n");
+                sdSPIinitialised = true;
+            }
         }
-    } else sdSDIOinitialised = true;
+    } else {
+        log(LOG_DEBUG, false, "[SD] mountSD: SDIO init succeeded\n");
+        sdSDIOinitialised = true;
+    }
     if (sdSPIinitialised || sdSDIOinitialised) {
         log(LOG_INFO, false, "SD card initialisation successful, using %s\n", sdSPIinitialised ? "SPI" : "SDIO");
+        log(LOG_DEBUG, false, "[SD] mountSD: init success, checking folders\n");
         // Check for correct folder structure and create if missing
         log(LOG_INFO, false, "Checking for correct folder structure\n");
         if (!sd.exists("/sensors")) sd.mkdir("/sensors");
@@ -89,7 +106,10 @@ void mountSD(void) {
         }
         sdInfo.ready = true;
     }
-    if (sdInfo.ready) log(LOG_INFO, false, "SD card mounted OK\n");
+    if (sdInfo.ready) {
+        log(LOG_INFO, false, "SD card mounted OK\n");
+        log(LOG_DEBUG, false, "[SD] mountSD: mount complete\n");
+    }
     if (!statusLocked) {
         statusLocked = true;
         status.sdCardOK = true;
@@ -102,10 +122,14 @@ void mountSD(void) {
 
 void maintainSD(void) {
     // Just check if the SD card is still inserted
-    if (sdLocked) return;
+    if (sdLocked) {
+        log(LOG_DEBUG, false, "[SD] maintainSD: sdLocked, aborting\n");
+        return;
+    }
     sdLocked = true;
     if (digitalRead(PIN_SD_CD) && sdInfo.inserted) {
         log(LOG_WARNING, false, "SD card removed\n");
+        log(LOG_DEBUG, false, "[SD] maintainSD: card removed\n");
         sdInfo.inserted = false;
         sdInfo.ready = false;
         if (!statusLocked) {
