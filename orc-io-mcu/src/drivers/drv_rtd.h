@@ -2,7 +2,7 @@
 
 #include "sys_init.h"
 
-#include <Adafruit_MAX31865.h>
+#include <MAX31865.h>
 
 #define NUM_MAX31865_INTERFACES 3
 
@@ -18,7 +18,8 @@ struct RTDDriver_t {
     TemperatureSensor_t *temperatureObj;
     Calibrate_t *cal;
     int cs_pin;
-    Adafruit_MAX31865 *sensor;
+    int drdy_pin;
+    MAX31865 *sensor;
     max31865_numwires_t wires;
     RtdSensorType sensorType;
 };
@@ -32,3 +33,5 @@ bool readRtdSensors(void);                                // Loop function for p
 bool readRtdSensor(RTDDriver_t *sensorObj);               // Loop function for periodic sensor reading (individual sensor)
 bool setRtdSensorType(RTDDriver_t *sensorObj, RtdSensorType sensorType);  // PT100 or PT1000
 bool setRtdWires(RTDDriver_t *sensorObj, max31865_numwires_t wires);      // MAX31865_2WIRE, MAX31865_3WIRE or MAX31865_4WIRE
+
+void RTD_manage(void);

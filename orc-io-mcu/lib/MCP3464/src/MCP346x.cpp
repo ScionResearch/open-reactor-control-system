@@ -126,12 +126,12 @@ bool MCP346x::start_continuous_adc(uint16_t channels)
 		if(err) return false;
 	}
 	
-	uint8_t tx_data[1] =	{	MCP346X_CONV_MODE_CONTINUOUS_bm | 
-								descriptor.config.data_format |
-								descriptor.config.crc_format |
-								descriptor.config.crc_en |
-								descriptor.config.offset_cal_en |
-								descriptor.config.gain_cal_en};
+	uint8_t tx_data[1] =	{(uint8_t)(MCP346X_CONV_MODE_CONTINUOUS_bm | 
+							descriptor.config.data_format |
+							descriptor.config.crc_format |
+							descriptor.config.crc_en |
+							descriptor.config.offset_cal_en |
+							descriptor.config.gain_cal_en)};
 
 	write(tx_data, 1, MCP346X_CONFIG3_bm);
 	
@@ -158,12 +158,12 @@ bool MCP346x::start_single_adc(uint16_t channels)
 		if(err) return false;
 	}
 	
-	uint8_t tx_data[1] =	{	MCP346X_CONV_MODE_1SHOT_STBY_bm |
-								descriptor.config.data_format |
-								descriptor.config.crc_format |
-								descriptor.config.crc_en |
-								descriptor.config.offset_cal_en |
-								descriptor.config.gain_cal_en};
+	uint8_t tx_data[1] =	{(uint8_t)(MCP346X_CONV_MODE_1SHOT_STBY_bm |
+							descriptor.config.data_format |
+							descriptor.config.crc_format |
+							descriptor.config.crc_en |
+							descriptor.config.offset_cal_en |
+							descriptor.config.gain_cal_en)};
 	
 	write(tx_data, 1, MCP346X_CONFIG3_bm);
 	

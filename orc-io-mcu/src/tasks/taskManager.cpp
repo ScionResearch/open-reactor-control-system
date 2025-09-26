@@ -10,3 +10,4 @@ ScheduledTask *levelProbe_task;
 ScheduledTask *PARsensor_task;
 ScheduledTask *printStuff_task;
 ScheduledTask *RTDsensor_task;
+ScheduledTask *SchedulerAlive_task;

@@ -3,7 +3,21 @@
 
 // Most of this is debug code!!!! Very much a work in progress
 
+
+uint32_t heartbeatMillis;
+void serialHeatbeat(void) {
+  static uint32_t loopCount = 0;
+  Serial.printf("Alive - loop %d\n", loopCount++);
+}
+
+void schedulerHeatbeat(void) {
+  static uint32_t loopCount = 0;
+  Serial.printf("Scheduler alive - loop %d\n", loopCount++);
+}
+
 void printStuff(void) {
+  for (int i = 0; i < 3; i++) Serial.printf("RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
+  
   if (output_task) {
     Serial.printf("Output task µs last: %d, min: %d, max: %d, avg: %0.2f\n", output_task->getLastExecTime(), output_task->getMinExecTime(), output_task->getMaxExecTime(), output_task->getAverageExecTime());
   } else Serial.println("Output task not created.");
@@ -15,18 +29,6 @@ void printStuff(void) {
   if (modbus_task) {
     Serial.printf("Modbus task µs last: %d, min: %d, max: %d, avg: %0.2f\n", modbus_task->getLastExecTime(), modbus_task->getMinExecTime(), modbus_task->getMaxExecTime(), modbus_task->getAverageExecTime());
   } else Serial.println("Modbus task not created.");
-
-  if (phProbe_task) {
-    Serial.printf("PH probe task µs last: %d, min: %d, max: %d, avg: %0.2f\n", phProbe_task->getLastExecTime(), phProbe_task->getMinExecTime(), phProbe_task->getMaxExecTime(), phProbe_task->getAverageExecTime());
-  } else Serial.println("PH probe task not created.");
-
-  if (levelProbe_task) {
-    Serial.printf("Level probe task µs last: %d, min: %d, max: %d, avg: %0.2f\n", levelProbe_task->getLastExecTime(), levelProbe_task->getMinExecTime(), levelProbe_task->getMaxExecTime(), levelProbe_task->getAverageExecTime());
-  } else Serial.println("Level probe task not created.");
-  
-  if (PARsensor_task) {
-    Serial.printf("PAR sensor task µs last: %d, min: %d, max: %d, avg: %0.2f\n", PARsensor_task->getLastExecTime(), PARsensor_task->getMinExecTime(), PARsensor_task->getMaxExecTime(), PARsensor_task->getAverageExecTime());
-  } else Serial.println("PAR sensor task not created.");
 
   if (RTDsensor_task) {
     Serial.printf("RTD task µs last: %d, min: %d, max: %d, avg: %0.2f\n", RTDsensor_task->getLastExecTime(), RTDsensor_task->getMinExecTime(), RTDsensor_task->getMaxExecTime(), RTDsensor_task->getAverageExecTime());
@@ -58,59 +60,6 @@ void phProbeRequest(void) {
   } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
 }
 
-void levelProbeHandler(bool valid, uint16_t *data) {
-  if (!valid) {
-    Serial.println("Invalid level probe data.");
-    return;
-  }
-  int value = static_cast<int>(data[4]);
-  float level = value / pow(10, data[3]);
-  const char *unit[7] = {"", "cm", "mm", "Mpa", "Pa", "kPa", "MA"};
-  int baud[8] = {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200};
-  Serial.printf("Level probe data: Level: %0.2f %s, ID: %d, Baud: %d, Zero pt: %d\n", level, unit[data[2]], data[0], baud[data[1]], data[5]);
-}
-
-void levelProbeRequest(void) {
-  Serial.println("Queuing level probe modbus request");
-  uint8_t slaveID = 26;
-  uint8_t functionCode = 3;
-  uint16_t address = 0;
-  static uint16_t data[6];
-  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 6, levelProbeHandler)) {
-    Serial.println("ERROR - queue full");
-  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
-}
-
-void PARsensorHandler(bool valid, uint16_t *data) {
-  if (!valid) {
-    Serial.println("Invalid PAR sensor data.");
-    return;
-  }
-  Serial.printf("PAR sensor data: %d µmol/m²/s\n", data[0]);
-}
-
-void PARsensorRequest(void) {
-  Serial.println("Queuing PAR sensor modbus request");
-  uint8_t slaveID = 34;
-  uint8_t functionCode = 3;
-  uint16_t address = 0;
-  static uint16_t data[1];
-  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 1, PARsensorHandler)) {
-    Serial.println("ERROR - queue full");
-  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
-}
-
-void RTD_manage(void) {
-  readRtdSensors();
-  for (int i = 0; i < 3; i++) {
-    if (rtd_interface[i].temperatureObj->fault) {
-      Serial.println(rtd_interface[i].temperatureObj->message);
-    } else {
-      Serial.printf("RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
-    }
-  }
-}
-
 void setupCSpins(void) {
   pinMode(PIN_ADC_CS, OUTPUT);
   pinMode(PIN_DAC_CS, OUTPUT);
@@ -132,12 +81,15 @@ void setupRtdInterface(void) {
     Serial.println("RTD driver initialised.");
   }
 
+  setRtdSensorType(&rtd_interface[0], PT100);
+  setRtdWires(&rtd_interface[0], MAX31865_4WIRE);
+  Serial.println("Changed sensor 1 to PT100, 4 wire.");
   setRtdSensorType(&rtd_interface[1], PT1000);
-  setRtdWires(&rtd_interface[1], MAX31865_2WIRE);
-  Serial.println("Changed sensor 2 to PT1000, 2 wire.");
+  setRtdWires(&rtd_interface[1], MAX31865_3WIRE);
+  Serial.println("Changed sensor 2 to PT1000, 3 wire.");
   setRtdSensorType(&rtd_interface[2], PT100);
-  setRtdWires(&rtd_interface[2], MAX31865_4WIRE);
-  Serial.println("Changed sensor 2 to PT100, 4 wire.");
+  setRtdWires(&rtd_interface[2], MAX31865_2WIRE);
+  Serial.println("Changed sensor 3 to PT100, 2 wire.");
 }
 
 void setup() {
@@ -255,19 +207,26 @@ void setup() {
   modbus_init();
 
   Serial.println("Adding tasks to scheduler");
-  output_task = tasks.addTask(output_update, 100, true, false);
+  /*output_task = tasks.addTask(output_update, 100, true, false);
   gpio_task = tasks.addTask(gpio_update, 100, true, true);
   modbus_task = tasks.addTask(modbus_manage, 10, true, true);
   phProbe_task = tasks.addTask(phProbeRequest, 2000, true, false);
   levelProbe_task = tasks.addTask(levelProbeRequest, 2000, true, false);
-  PARsensor_task = tasks.addTask(PARsensorRequest, 2000, true, false);
+  PARsensor_task = tasks.addTask(PARsensorRequest, 2000, true, false);*/
   printStuff_task = tasks.addTask(printStuff, 2000, true, false);
   RTDsensor_task = tasks.addTask(RTD_manage, 1000, true, false);
+  SchedulerAlive_task = tasks.addTask(schedulerHeatbeat, 1000, true, false);
 
+  //heartbeatMillis = millis();
 
   Serial.println("Setup done");
 }
 
 void loop() {
   tasks.update();
+
+  /*if (millis() - heartbeatMillis >= 1000) {
+    heartbeatMillis = millis();
+    serialHeatbeat();
+  }*/
 }

@@ -12,21 +12,23 @@ RtdRef_t rtdRefs[] = {
     {1000, 4000}
 };
 
-int rtdPins[] = {PIN_PT100_CS_1, PIN_PT100_CS_2, PIN_PT100_CS_3};
+int rtdCSPins[] = {PIN_PT100_CS_1, PIN_PT100_CS_2, PIN_PT100_CS_3};
+int rtdDRDYPins[] = {PIN_PT100_DRDY_1, PIN_PT100_DRDY_2, PIN_PT100_DRDY_3};
 TemperatureSensor_t rtd_sensor[3];
 RTDDriver_t rtd_interface[3];
 
 bool init_rtdDriver(void) {
     // Initialise CS pins for the MAX31865 ICs
     for (int i = 0; i < NUM_MAX31865_INTERFACES; i++) {
-        pinMode(rtdPins[i], OUTPUT);
-        digitalWrite(rtdPins[i], HIGH);
+        pinMode(rtdCSPins[i], OUTPUT);
+        digitalWrite(rtdCSPins[i], HIGH);
     }
 
     // Initialise config
     for (int i = 0; i < NUM_MAX31865_INTERFACES; i++) {
         rtd_interface[i].temperatureObj = &rtd_sensor[i];
-        rtd_interface[i].cs_pin = rtdPins[i];
+        rtd_interface[i].cs_pin = rtdCSPins[i];
+        rtd_interface[i].drdy_pin = rtdDRDYPins[i];
         rtd_interface[i].sensor = NULL;
         rtd_interface[i].wires = MAX31865_3WIRE;
         rtd_interface[i].sensorType = PT100;
@@ -36,6 +38,8 @@ bool init_rtdDriver(void) {
     // Initialise temperature sensors
     for (int i = 0; i < NUM_MAX31865_INTERFACES; i++) {
         if (!initTemperatureSensor(&rtd_interface[i])) return false;
+        rtd_interface[i].sensor->autoConvert(true);
+        //rtd_interface[i].sensor->enable50Hz(true);
     }
     return true;
 }
@@ -47,7 +51,7 @@ bool initTemperatureSensor(RTDDriver_t *sensorObj) {
     sensorObj->temperatureObj->temperature = 0;
     strcpy(sensorObj->temperatureObj->unit, "°C"); // Default units for the temperature
     // Initialise the temperature sensor
-    sensorObj->sensor = new Adafruit_MAX31865(sensorObj->cs_pin);
+    sensorObj->sensor = new MAX31865(sensorObj->cs_pin, &SPI);
     return sensorObj->sensor->begin(sensorObj->wires);
 }
 
@@ -115,4 +119,8 @@ bool setRtdWires(RTDDriver_t *sensorObj, max31865_numwires_t wires) {
     sensorObj->wires = wires;
     sensorObj->sensor->setWires(wires);
     return true;
+}
+
+void RTD_manage(void) {
+    readRtdSensors();
 }

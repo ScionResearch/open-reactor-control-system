@@ -14,3 +14,4 @@ extern ScheduledTask *levelProbe_task;
 extern ScheduledTask *PARsensor_task;
 extern ScheduledTask *printStuff_task;
 extern ScheduledTask *RTDsensor_task;
+extern ScheduledTask *SchedulerAlive_task;
