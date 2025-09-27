@@ -177,6 +177,26 @@ bool MCP346x::start_single_adc(uint16_t channels)
 	return true;
 }
 
+bool MCP346x::read_adc(void)
+{
+	if(adc_completed) {
+		adc_completed = false;
+		uint8_t rx_data[4];
+		read(rx_data, 4, MCP346X_ADCDATA_bm);
+		
+		uint8_t channel = (rx_data[0] >> 4) & 0x0F;
+				
+		descriptor.results[channel] = (uint32_t)rx_data[2] << 8 | (uint32_t)rx_data[3];
+		if(rx_data[1] && 1) descriptor.results[channel] -= 0xFFFF;
+		
+		descriptor.microvolts[channel] = (float)descriptor.results[channel] * MCP346X_uV_PER_LSB;
+		
+		descriptor.new_data |= 1 << channel;
+		return true;
+	}
+	return false;
+}
+
 //----------------------------------Private Functions-------------------------------------//
 
 void MCP346x::get_config_bytes(uint8_t *config_bytes)
@@ -230,7 +250,10 @@ void MCP346x::get_config_bytes(uint8_t *config_bytes)
 
 void MCP346x::adc_read_complete_ISR(void)
 {
-	noInterrupts();
+	adc_completed = true;
+
+	// Read ADC from within ISR - only use if a single IC is on this SPI bus!!!
+	/*noInterrupts();
 		
 	if(!digitalRead(descriptor.irq_pin)) {
 		uint8_t rx_data[4];
@@ -245,5 +268,5 @@ void MCP346x::adc_read_complete_ISR(void)
 		
 		descriptor.new_data |= 1 << channel;
 	}
-	interrupts();	
+	interrupts();*/	
 }

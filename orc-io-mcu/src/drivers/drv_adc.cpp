@@ -41,12 +41,13 @@ bool ADC_init(void) {
     return true;
 }
 
-bool ADC_readInputs(void) {
+void ADC_update(void) {
+    if (adcDriver.adc->read_adc() == false) return;
     if (!adcDriver.adc->descriptor.new_data) {
         adcDriver.ready = false;
         adcDriver.newMessage = true;
         sprintf(adcDriver.message, "ADC not ready");
-        return false;  // No new data available from ADC, so return false and wait for next time
+        return;  // No new data available from ADC, so return false and wait for next time
     }
     adcDriver.adc->descriptor.new_data = 0;
     adcDriver.ready = true;
@@ -65,7 +66,7 @@ bool ADC_readInputs(void) {
         } else {
             adcDriver.inputObj[i]->value = result * ADC_mV_PER_LSB;   // Default to mV
         }
-        Serial.printf("ADC channel %d raw: %i, calculated: %0.3f%s\n", i, adcDriver.adc->descriptor.results[i], adcDriver.inputObj[i]->value, adcDriver.inputObj[i]->unit);
+        //Serial.printf("ADC channel %d raw: %i, calculated: %0.3f%s\n", i, adcDriver.adc->descriptor.results[i], adcDriver.inputObj[i]->value, adcDriver.inputObj[i]->unit);
     }
-    return true;
+    return;
 }

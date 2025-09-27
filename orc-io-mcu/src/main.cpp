@@ -18,6 +18,13 @@ void schedulerHeatbeat(void) {
 void printStuff(void) {
   for (int i = 0; i < 3; i++) Serial.printf("RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
   
+  if (analog_input_task) {
+    Serial.printf("Analog input task µs last: %d, min: %d, max: %d, avg: %0.2f\n", analog_input_task->getLastExecTime(), analog_input_task->getMinExecTime(), analog_input_task->getMaxExecTime(), analog_input_task->getAverageExecTime());
+    for (int i = 0; i < 8; i++) {
+      Serial.printf("A in %d: %0.3f %s\n", i+1, adcDriver.inputObj[i]->value, adcDriver.inputObj[i]->unit);
+    }
+  } else Serial.println("Analog input task not created.");
+
   if (output_task) {
     Serial.printf("Output task µs last: %d, min: %d, max: %d, avg: %0.2f\n", output_task->getLastExecTime(), output_task->getMinExecTime(), output_task->getMaxExecTime(), output_task->getAverageExecTime());
   } else Serial.println("Output task not created.");
@@ -139,7 +146,7 @@ void setup() {
   strcpy(adcInput[6].unit, "xx");
 
   // TMC5130 stepper setup testing
-  Serial.println("Initialising TMC5130 driver");
+  /*Serial.println("Initialising TMC5130 driver");
 
   if (!stepper_init()) {
     Serial.println("Failed to initialise TMC5130 driver.");
@@ -176,7 +183,7 @@ void setup() {
   Serial.println("Initialising INA260 driver");
   if (!pwrSensor_init()) {
     Serial.println("Failed to initialise INA260 driver.");
-  }
+  }*/
 
   // Outputs initialisation
   Serial.println("Initialising outputs");
@@ -207,14 +214,13 @@ void setup() {
   modbus_init();
 
   Serial.println("Adding tasks to scheduler");
-  /*output_task = tasks.addTask(output_update, 100, true, false);
+  analog_input_task = tasks.addTask(ADC_update, 100, true, false);
+  output_task = tasks.addTask(output_update, 100, true, false);
   gpio_task = tasks.addTask(gpio_update, 100, true, true);
   modbus_task = tasks.addTask(modbus_manage, 10, true, true);
-  phProbe_task = tasks.addTask(phProbeRequest, 2000, true, false);
-  levelProbe_task = tasks.addTask(levelProbeRequest, 2000, true, false);
-  PARsensor_task = tasks.addTask(PARsensorRequest, 2000, true, false);*/
-  printStuff_task = tasks.addTask(printStuff, 2000, true, false);
-  RTDsensor_task = tasks.addTask(RTD_manage, 1000, true, false);
+  //phProbe_task = tasks.addTask(phProbeRequest, 2000, true, false);
+  printStuff_task = tasks.addTask(printStuff, 1000, true, false);
+  RTDsensor_task = tasks.addTask(RTD_manage, 100, true, false);
   SchedulerAlive_task = tasks.addTask(schedulerHeatbeat, 1000, true, false);
 
   //heartbeatMillis = millis();

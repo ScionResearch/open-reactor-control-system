@@ -57,7 +57,6 @@ bool initTemperatureSensor(RTDDriver_t *sensorObj) {
 
 bool readRtdSensors(void) {
     if (rtdSensorCount == 0) {
-        Serial.println("No RTD sensors initialised.");
         return false;
     }
     for (int i = 0; i < rtdSensorCount; i++) {
@@ -72,7 +71,6 @@ bool readRtdSensors(void) {
 
 bool readRtdSensor(RTDDriver_t *sensorObj) {
     if (sensorObj == NULL || sensorObj->sensor == NULL || sensorObj->temperatureObj == NULL) {
-        Serial.println("Invalid RTD sensor object.");
         return false;
     }
     uint8_t fault = sensorObj->sensor->readFault();

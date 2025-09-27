@@ -257,6 +257,7 @@ class MCP346x
 		int write_config(void);
 		bool start_continuous_adc(uint16_t channels);
 		bool start_single_adc(uint16_t channels);
+		bool read_adc(void);
 		
 	private:
 		void get_config_bytes(uint8_t *config_bytes);
@@ -265,6 +266,7 @@ class MCP346x
 			anchor->adc_read_complete_ISR();
 		}		
 		static MCP346x* anchor;
+		bool adc_completed = false;
 };
 
 #endif //MCP346x_h

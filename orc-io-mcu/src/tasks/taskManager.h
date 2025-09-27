@@ -6,6 +6,8 @@
 
 extern TaskScheduler tasks;
 
+extern ScheduledTask *analog_input_task;
+extern ScheduledTask *analog_output_task;
 extern ScheduledTask *output_task;
 extern ScheduledTask *gpio_task;
 extern ScheduledTask *modbus_task;
