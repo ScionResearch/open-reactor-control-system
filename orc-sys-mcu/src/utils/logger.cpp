@@ -1,4 +1,5 @@
 #include "logger.h"
+#include "../storage/sdManager.h"
 
 // Critical section for controlling access to Serial
 bool serialBusy = false;

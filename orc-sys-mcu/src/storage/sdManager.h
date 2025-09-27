@@ -2,7 +2,9 @@
 
 #include "../sys_init.h"
 
+#ifndef DISABLE_FS_H_WARNING
 #define DISABLE_FS_H_WARNING
+#endif
 #include <SdFat.h>
 
 #define SD_FAT_TYPE 3

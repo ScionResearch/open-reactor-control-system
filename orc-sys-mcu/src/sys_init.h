@@ -19,6 +19,7 @@
 #include "hardware/pins.h"
 
 #include "network/network.h"
+#include "network/mqttManager.h"
 
 #include "utils/logger.h"
 #include "utils/statusManager.h"
@@ -27,12 +28,18 @@
 #include "utils/terminalManager.h"
 #include "utils/ipcManager.h"
 
+
 #include "storage/sdManager.h"
+#include "controls/controlManager.h"
+
 
 void init_core0(void);
 void init_core1(void);
 void manage_core0(void);
 void manage_core1(void);
+
+// Control manager prototype
+void init_controlManager(void);
 
 // Task handler prototypes
 void handleSDManager(void);

@@ -40,6 +40,12 @@ void handleFile(const char *path);
 void handleNTPUpdates(bool forceUpdate);
 void ntpUpdate(void);
 
+// API handlers for dashboard
+void handleGetAllStatus();
+void handleUpdateControl();
+void handleSystemStatus();
+void handleGetSensors();
+
 // File manager API functions
 void handleFileManager(void);
 void handleSDListDirectory(void);
@@ -65,6 +71,10 @@ struct NetworkConfig
     uint16_t mqttPort;
     char mqttUsername[32];
     char mqttPassword[32];
+    // Optional: device topic prefix override and publish interval (ms)
+    // If empty, defaults to "orcs/dev/<MAC>"; if set, used as-is
+    char mqttDevicePrefix[64];
+    uint32_t mqttPublishIntervalMs;
 };
 
 void printNetConfig(NetworkConfig config);

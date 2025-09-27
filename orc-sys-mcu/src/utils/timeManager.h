@@ -9,6 +9,8 @@ void manageTime(void);
 bool updateGlobalDateTime(const DateTime &dt);
 bool getGlobalDateTime(DateTime &dt, uint32_t timeout = 1000);
 
+String getISO8601Timestamp(uint32_t timeout = 100); // <-- ADDED FOR MQTT SENSOR PUBLISHING
+
 extern MCP79410 rtc;
 
 // Global DateTime protection
