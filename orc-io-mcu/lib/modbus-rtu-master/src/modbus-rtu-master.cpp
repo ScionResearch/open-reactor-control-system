@@ -79,7 +79,7 @@ void ModbusRTUMaster::manage() {
     while (_serial->available() > 0) {
         if (_bufferLength < MODBUS_MAX_BUFFER) {
             _buffer[_bufferLength++] = _serial->read();
-            _lastActivity = micros();
+            _lastActivity = millis();
         } else {
             // Buffer overflow, discard the byte
             _serial->read();
@@ -96,7 +96,7 @@ void ModbusRTUMaster::manage() {
                     _bufferLength = 0; // Clear the buffer before sending
                     if (_sendRequest(request)) {
                         _state = WAITING_FOR_REPLY;
-                        _lastActivity = micros();
+                        _lastActivity = millis();
                     }
                 }
             }
@@ -229,6 +229,9 @@ void ModbusRTUMaster::manage() {
                             _queue[_currentRequest].active = false;
                             _queueCount--;
                             
+                            // Ensure inter-frame delay before allowing next request
+                            delayMicroseconds(_interframeDelay);
+                            
                             // Reset the state
                             _state = IDLE;
                             _bufferLength = 0;
@@ -238,7 +241,7 @@ void ModbusRTUMaster::manage() {
             }
             
             // Check for timeout
-            if (_state == WAITING_FOR_REPLY && (millis() - (_lastActivity / 1000)) > _timeout) {
+            if (_state == WAITING_FOR_REPLY && (millis() - _lastActivity) > _timeout) {
                 // Timeout occurred, call the callback with invalid result
                 if (_queue[_currentRequest].callback) {
                     _queue[_currentRequest].callback(false, _queue[_currentRequest].data);
@@ -247,6 +250,9 @@ void ModbusRTUMaster::manage() {
                 // Mark the request as processed
                 _queue[_currentRequest].active = false;
                 _queueCount--;
+                
+                // Ensure inter-frame delay before allowing next request
+                delayMicroseconds(_interframeDelay);
                 
                 // Reset the state
                 _state = IDLE;
