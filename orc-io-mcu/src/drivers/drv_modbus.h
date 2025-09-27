@@ -7,10 +7,11 @@ struct ModbusDriver_t {
     ModbusRTUMaster modbus;
     HardwareSerial *serial;
     uint32_t baud;
-    uint8_t stopBits;
-    float parity;
+    float stopBits;
+    uint8_t parity;
     uint8_t dataBits;
     uint8_t dePin;
+    bool configChanged = false;
     bool newMessage;
     char message[100];
 };

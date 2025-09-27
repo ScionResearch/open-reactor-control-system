@@ -30,6 +30,10 @@ bool modbus_init(void) {
 
 void modbus_manage(void) {
     for (int i = 0; i < 4; i++) {
+        if (modbusDriver[i].configChanged) {
+            modbusDriver[i].modbus.setSerialConfig(modbusDriver[i].baud, modbus_getSerialConfig(modbusDriver[i].stopBits, modbusDriver[i].parity, modbusDriver[i].dataBits));
+            modbusDriver[i].configChanged = false;
+        }
         modbusDriver[i].modbus.manage();
     }
 }

@@ -46,26 +46,26 @@ void printStuff(void) {
   }
 }
 
-void phProbeHandler(bool valid, uint16_t *data) {
+/*void phProbeHandler(bool valid, uint16_t *data) {
   if (!valid) {
     Serial.println("Invalid ph probe data.");
     return;
   }
-  float temperature = static_cast<int>(data[0]) / 100.0f;
-  float pH = static_cast<int>(data[1]) / 100.0f;
-  Serial.printf("PH probe data: Temperature: %0.2f °C, pH: %0.2f\n", temperature, pH);
+  float pH;
+  memcpy(&pH, &data[2], sizeof(float));
+  Serial.printf("PH probe data: pH: %0.2f\n", pH);
 }
 
 void phProbeRequest(void) {
   Serial.println("Queuing pH probe modbus request");
-  uint8_t slaveID = 12;
-  uint8_t functionCode = 4;
-  uint16_t address = 0;
-  static uint16_t data[2];
-  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 2, phProbeHandler)) {
+  uint8_t slaveID = 3;
+  uint8_t functionCode = 3;
+  uint16_t address = 2089;
+  static uint16_t data[10];
+  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 10, phProbeHandler)) {
     Serial.println("ERROR - queue full");
   } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
-}
+}*/
 
 void setupCSpins(void) {
   pinMode(PIN_ADC_CS, OUTPUT);
@@ -212,13 +212,21 @@ void setup() {
 
   Serial.println("Starting Modbus interface");
   modbus_init();
+  modbusDriver[2].baud = 19200;   // Change Modbus 3 (pH probe) to 19200 baud
+  modbusDriver[2].stopBits = 2;
+  modbusDriver[2].parity = 0;
+  modbusDriver[2].configChanged = true;
+
+  // Initialise Hamilton pH probe interface
+  Serial.println("Initialising Hamilton pH probe interface");
+  init_modbusHamiltonPHDriver(&modbusDriver[2], 3);
 
   Serial.println("Adding tasks to scheduler");
   analog_input_task = tasks.addTask(ADC_update, 100, true, false);
   output_task = tasks.addTask(output_update, 100, true, false);
   gpio_task = tasks.addTask(gpio_update, 100, true, true);
   modbus_task = tasks.addTask(modbus_manage, 10, true, true);
-  //phProbe_task = tasks.addTask(phProbeRequest, 2000, true, false);
+  phProbe_task = tasks.addTask(modbusHamiltonPH_manage, 2000, true, false);
   printStuff_task = tasks.addTask(printStuff, 1000, true, false);
   RTDsensor_task = tasks.addTask(RTD_manage, 100, true, false);
   SchedulerAlive_task = tasks.addTask(schedulerHeatbeat, 1000, true, false);

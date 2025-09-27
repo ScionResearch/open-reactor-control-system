@@ -2,12 +2,17 @@
 
 #include "sys_init.h"
 
+// Forward declarations to avoid circular includes
+struct ModbusDriver_t;
+
 struct ModbusHamiltonPH_t {
-    ModbusDriver_t modbus;
+    ModbusDriver_t *modbusDriver;
     uint8_t slaveID;
     PhSensor_t phSensor;
     TemperatureSensor_t temperatureSensor;
 };
 
-bool init_modbusHamiltonPHDriver(ModbusHamiltonPH_t probe);
-void modbusHamiltonPH_manage(ModbusHamiltonPH_t probe);
+extern ModbusHamiltonPH_t modbusHamiltonPHprobe;
+
+void init_modbusHamiltonPHDriver(ModbusDriver_t *modbusDriver, uint8_t slaveID);
+void modbusHamiltonPH_manage();
