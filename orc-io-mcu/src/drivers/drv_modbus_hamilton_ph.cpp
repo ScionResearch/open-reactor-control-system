@@ -9,7 +9,9 @@ void init_modbusHamiltonPHDriver(ModbusDriver_t *modbusDriver, uint8_t slaveID) 
 
 void phResponseHandler(bool valid, uint16_t *data) {
   if (!valid) {
-    //Serial.println("Invalid ph probe data.");
+    modbusHamiltonPHprobe.phSensor.fault = true;
+    snprintf(modbusHamiltonPHprobe.phSensor.message, sizeof(modbusHamiltonPHprobe.phSensor.message), "Invalid pH data from pH probe.");
+    modbusHamiltonPHprobe.phSensor.newMessage = true;
     return;
   }
   float pH;
@@ -20,7 +22,9 @@ void phResponseHandler(bool valid, uint16_t *data) {
 
 void temperatureResponseHandler(bool valid, uint16_t *data) {
   if (!valid) {
-    //Serial.println("Invalid ph probe temperature data.");
+    modbusHamiltonPHprobe.temperatureSensor.fault = true;
+    snprintf(modbusHamiltonPHprobe.temperatureSensor.message, sizeof(modbusHamiltonPHprobe.temperatureSensor.message), "Invalid temperature data from pH probe.");
+    modbusHamiltonPHprobe.temperatureSensor.newMessage = true;
     return;
   }
   float temperature;
