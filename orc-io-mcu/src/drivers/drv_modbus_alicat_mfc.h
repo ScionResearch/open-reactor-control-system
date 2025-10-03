@@ -11,6 +11,9 @@ struct ModbusAlicatMFC_t {
     FlowSensor_t flowSensor;
     PressureSensor_t pressureSensor;
     float setpoint;
+    bool fault;
+    bool newMessage;
+    char message[100];
 };
 
 extern ModbusAlicatMFC_t modbusAlicatMFCprobe;

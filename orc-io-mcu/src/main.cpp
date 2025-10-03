@@ -70,6 +70,14 @@ void printStuff(void) {
                   modbusAlicatMFCprobe.flowSensor.flow, modbusAlicatMFCprobe.flowSensor.unit,
                   modbusAlicatMFCprobe.pressureSensor.pressure, modbusAlicatMFCprobe.pressureSensor.unit,
                   modbusAlicatMFCprobe.setpoint, modbusAlicatMFCprobe.flowSensor.unit);
+    if (modbusAlicatMFCprobe.fault) {
+      Serial.printf("MFC FAULT: %s\n", modbusAlicatMFCprobe.message);
+      modbusAlicatMFCprobe.fault = false;  // Clear fault after printing
+      modbusAlicatMFCprobe.newMessage = false;
+    } else if (modbusAlicatMFCprobe.newMessage) {
+      Serial.printf("MFC Message: %s\n", modbusAlicatMFCprobe.message);
+      modbusAlicatMFCprobe.newMessage = false;
+    }
   } else {
     Serial.println("MFC task not created.");
   }
