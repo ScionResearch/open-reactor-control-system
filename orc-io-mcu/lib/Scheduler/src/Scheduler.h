@@ -42,11 +42,13 @@ public:
     unsigned long getMinExecTime() const;
     unsigned long getMaxExecTime() const;
     float getAverageExecTime() const;
+    float getCpuUsagePercent() const;
 
     void resetStats();
 
 private:
     void _updateStats(unsigned long duration);
+    void _updateCpuUsage(unsigned long duration);
 
     TaskCallback _callback;
     unsigned long _interval;
@@ -60,6 +62,11 @@ private:
     unsigned long _maxExecTime = 0;
     unsigned long _totalExecTime = 0;
     unsigned long _execCount = 0;
+    
+    // CPU usage tracking over a rolling window
+    static const unsigned long CPU_USAGE_WINDOW_MS = 10000; // 10 second window
+    unsigned long _cpuUsageWindowStart = 0;
+    unsigned long _cpuUsageInWindow = 0;
 };
 
 class TaskScheduler {
@@ -69,6 +76,10 @@ public:
     ScheduledTask* addTask(TaskCallback callback, unsigned long interval, bool repeat = true, bool highPriority = false);
     void removeTask(ScheduledTask* task);
     void update();
+    
+    // CPU usage monitoring
+    float getTotalCpuUsagePercent() const;
+    void printCpuUsageReport() const;
 
 private:
     std::vector<ScheduledTask*> _tasks;

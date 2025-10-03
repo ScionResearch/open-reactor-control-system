@@ -24,6 +24,7 @@
 #include "drivers/drv_pwr_sensor.h"
 #include "drivers/drv_modbus.h"
 #include "drivers/drv_modbus_hamilton_ph.h"
+#include "drivers/drv_modbus_alicat_mfc.h"
 
 // Utility
 #include "utility/calibrate.h"

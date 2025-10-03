@@ -8,6 +8,9 @@ ScheduledTask *output_task;
 ScheduledTask *gpio_task;
 ScheduledTask *modbus_task;
 ScheduledTask *phProbe_task;
+ScheduledTask *mfc_task;
 ScheduledTask *printStuff_task;
 ScheduledTask *RTDsensor_task;
 ScheduledTask *SchedulerAlive_task;
+
+ScheduledTask *TEST_TASK;

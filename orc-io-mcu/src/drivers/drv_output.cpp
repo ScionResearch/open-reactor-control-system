@@ -57,17 +57,27 @@ void output_init(void) {
 void output_update(void) {
     // Update open-drain outputs
     for (int i = 0; i < 4; i++) {
-        if (outputDriver.outputObj[i]->pwmEnabled) {
+        // Local copy of output states so we don't waste time on long analogWrite calls
+        static uint8_t pwmDuty[4] = {0, 0, 0, 0};
+        static bool state[4] = {false, false, false, false};
+
+        if (outputDriver.outputObj[i]->pwmEnabled && pwmDuty[i] != outputDriver.outputObj[i]->pwmDuty) {
             if (outputDriver.outputObj[i]->pwmDuty > 100) outputDriver.outputObj[i]->pwmDuty = 100;
             else if (outputDriver.outputObj[i]->pwmDuty < 0) outputDriver.outputObj[i]->pwmDuty = 0;
+            pwmDuty[i] = outputDriver.outputObj[i]->pwmDuty;
+            uint32_t ts = micros();
             analogWrite(outputDriver.pin[i], static_cast<uint8_t>(outputDriver.outputObj[i]->pwmDuty * 2.55));
-        } else {
+            uint32_t te = micros();
+            Serial.printf("Output %d: Analog write took %d us\n", i, te - ts);
+        } else if (state[i] != outputDriver.outputObj[i]->state) {
             digitalWrite(outputDriver.pin[i], outputDriver.outputObj[i]->state);
+            state[i] = outputDriver.outputObj[i]->state;
         }
     }
 
     // Update heater output - 1Hz PWM only, custom implementation
     static bool heaterEnabled = false;
+    static uint8_t pwmDuty = 0;
     if (heaterOutput[0].pwmEnabled) {
         if (!heaterEnabled) {
             // Enable heater output
@@ -75,14 +85,17 @@ void output_update(void) {
             while (TCC0->SYNCBUSY.bit.ENABLE);
             heaterEnabled = true;
         }
-        if (heaterOutput[0].pwmDuty > 100) heaterOutput[0].pwmDuty = 100;
-        else if (heaterOutput[0].pwmDuty < 0) heaterOutput[0].pwmDuty = 0;
-        static uint32_t prev_duty = 0;
-        uint32_t duty = heaterOutput[0].pwmDuty * HEATER_PWM_PERIOD / 100;
-        if (duty != prev_duty) {
-            TCC0->CC[4].reg = duty;
-            while (TCC0->SYNCBUSY.bit.CC4);
-            prev_duty = duty;
+        if (pwmDuty != heaterOutput[0].pwmDuty) {
+            if (heaterOutput[0].pwmDuty > 100) heaterOutput[0].pwmDuty = 100;
+            else if (heaterOutput[0].pwmDuty < 0) heaterOutput[0].pwmDuty = 0;
+            static uint32_t prev_duty = 0;
+            uint32_t duty = heaterOutput[0].pwmDuty * HEATER_PWM_PERIOD / 100;
+            if (duty != prev_duty) {
+                TCC0->CC[4].reg = duty;
+                while (TCC0->SYNCBUSY.bit.CC4);
+                prev_duty = duty;
+            }
+            pwmDuty = heaterOutput[0].pwmDuty;
         }
     } else if (heaterEnabled) {
         // Disable heater output

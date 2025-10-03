@@ -241,6 +241,21 @@ public:
      */
     void clearQueue();
 
+    /**
+     * @brief Convert an array of two swapped uint16_t to a float32
+     * @param value Pointer to array of two uint16_t
+     * @return Converted float32 value
+     */
+
+    float swappedUint16toFloat32(uint16_t *value);
+
+    /**
+     * @brief Convert a float32 to an array of two swapped uint16_t
+     * @param value Float32 value to convert
+     * @param result Reference to array of two uint16_t to store result
+     */
+    void float32ToSwappedUint16(float value, uint16_t *result);
+
 private:
     HardwareSerial* _serial;           ///< Serial port for communication
     ModbusRequest _queue[MODBUS_QUEUE_SIZE]; ///< Request queue

@@ -3,69 +3,94 @@
 
 // Most of this is debug code!!!! Very much a work in progress
 
-
-uint32_t heartbeatMillis;
-void serialHeatbeat(void) {
-  static uint32_t loopCount = 0;
-  Serial.printf("Alive - loop %d\n", loopCount++);
-}
-
 void schedulerHeatbeat(void) {
   static uint32_t loopCount = 0;
   Serial.printf("Scheduler alive - loop %d\n", loopCount++);
 }
 
-void printStuff(void) {
-  for (int i = 0; i < 3; i++) Serial.printf("RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
+void printStuff(void) {  
+  // Print CPU usage summary
+  Serial.println("\n=== CPU Usage Report ===");
+  Serial.printf("Total CPU Usage: %0.2f%%\n", tasks.getTotalCpuUsagePercent());
+  Serial.println("Task information ↓↓↓\n");
   
   if (analog_input_task) {
-    Serial.printf("Analog input task µs last: %d, min: %d, max: %d, avg: %0.2f\n", analog_input_task->getLastExecTime(), analog_input_task->getMinExecTime(), analog_input_task->getMaxExecTime(), analog_input_task->getAverageExecTime());
-    for (int i = 0; i < 8; i++) {
-      Serial.printf("A in %d: %0.3f %s\n", i+1, adcDriver.inputObj[i]->value, adcDriver.inputObj[i]->unit);
-    }
+    Serial.printf("Analog input task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
+                  analog_input_task->getLastExecTime(), analog_input_task->getMinExecTime(), 
+                  analog_input_task->getMaxExecTime(), analog_input_task->getAverageExecTime(),
+                  analog_input_task->getCpuUsagePercent());
+    for (int i = 0; i < 8; i++) Serial.printf("A in %d: %0.3f %s\n", i+1, adcDriver.inputObj[i]->value, adcDriver.inputObj[i]->unit);
   } else Serial.println("Analog input task not created.");
 
   if (output_task) {
-    Serial.printf("Output task µs last: %d, min: %d, max: %d, avg: %0.2f\n", output_task->getLastExecTime(), output_task->getMinExecTime(), output_task->getMaxExecTime(), output_task->getAverageExecTime());
+    Serial.printf("Output task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
+                  output_task->getLastExecTime(), output_task->getMinExecTime(), 
+                  output_task->getMaxExecTime(), output_task->getAverageExecTime(),
+                  output_task->getCpuUsagePercent());
   } else Serial.println("Output task not created.");
 
   if (gpio_task) {
-    Serial.printf("GPIO task µs last: %d, min: %d, max: %d, avg: %0.2f\n", gpio_task->getLastExecTime(), gpio_task->getMinExecTime(), gpio_task->getMaxExecTime(), gpio_task->getAverageExecTime());
+    Serial.printf("GPIO task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
+                  gpio_task->getLastExecTime(), gpio_task->getMinExecTime(), 
+                  gpio_task->getMaxExecTime(), gpio_task->getAverageExecTime(),
+                  gpio_task->getCpuUsagePercent());
   } else Serial.println("GPIO task not created.");
 
   if (modbus_task) {
-    Serial.printf("Modbus task µs last: %d, min: %d, max: %d, avg: %0.2f\n", modbus_task->getLastExecTime(), modbus_task->getMinExecTime(), modbus_task->getMaxExecTime(), modbus_task->getAverageExecTime());
+    Serial.printf("Modbus task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
+                  modbus_task->getLastExecTime(), modbus_task->getMinExecTime(), 
+                  modbus_task->getMaxExecTime(), modbus_task->getAverageExecTime(),
+                  modbus_task->getCpuUsagePercent());
   } else Serial.println("Modbus task not created.");
 
   if (RTDsensor_task) {
-    Serial.printf("RTD task µs last: %d, min: %d, max: %d, avg: %0.2f\n", RTDsensor_task->getLastExecTime(), RTDsensor_task->getMinExecTime(), RTDsensor_task->getMaxExecTime(), RTDsensor_task->getAverageExecTime());
+    Serial.printf("RTD task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
+                  RTDsensor_task->getLastExecTime(), RTDsensor_task->getMinExecTime(), 
+                  RTDsensor_task->getMaxExecTime(), RTDsensor_task->getAverageExecTime(),
+                  RTDsensor_task->getCpuUsagePercent());
+  for (int i = 0; i < 3; i++) Serial.printf("RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
   } else Serial.println("RTD task not created.");
 
+  if (phProbe_task) {
+    Serial.printf("pH probe task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
+                  phProbe_task->getLastExecTime(), phProbe_task->getMinExecTime(), 
+                  phProbe_task->getMaxExecTime(), phProbe_task->getAverageExecTime(),
+                  phProbe_task->getCpuUsagePercent());
+    Serial.printf("pH: %0.2f, Temperature: %0.2f °C\n", modbusHamiltonPHprobe.phSensor.ph, modbusHamiltonPHprobe.temperatureSensor.temperature);
+  } else {
+    Serial.println("pH probe task not created.");
+  }
+
+  if(mfc_task) {
+    Serial.printf("MFC task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
+                  mfc_task->getLastExecTime(), mfc_task->getMinExecTime(), 
+                  mfc_task->getMaxExecTime(), mfc_task->getAverageExecTime(),
+                  mfc_task->getCpuUsagePercent());
+    Serial.printf("Alicat MFC Flow: %0.3f %s, Pressure: %0.3f %s, Setpoint: %0.3f %s\n", 
+                  modbusAlicatMFCprobe.flowSensor.flow, modbusAlicatMFCprobe.flowSensor.unit,
+                  modbusAlicatMFCprobe.pressureSensor.pressure, modbusAlicatMFCprobe.pressureSensor.unit,
+                  modbusAlicatMFCprobe.setpoint, modbusAlicatMFCprobe.flowSensor.unit);
+  } else {
+    Serial.println("MFC task not created.");
+  }
+
   if (printStuff_task) {
-    Serial.printf("Print stuff task µs last: %d, min: %d, max: %d, avg: %0.2f\n", printStuff_task->getLastExecTime(), printStuff_task->getMinExecTime(), printStuff_task->getMaxExecTime(), printStuff_task->getAverageExecTime());
-  }
+    Serial.printf("Print stuff task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
+                  printStuff_task->getLastExecTime(), printStuff_task->getMinExecTime(), 
+                  printStuff_task->getMaxExecTime(), printStuff_task->getAverageExecTime(),
+                  printStuff_task->getCpuUsagePercent());
+  }  
+  Serial.println("\n========================");
 }
 
-/*void phProbeHandler(bool valid, uint16_t *data) {
-  if (!valid) {
-    Serial.println("Invalid ph probe data.");
-    return;
-  }
-  float pH;
-  memcpy(&pH, &data[2], sizeof(float));
-  Serial.printf("PH probe data: pH: %0.2f\n", pH);
-}
 
-void phProbeRequest(void) {
-  Serial.println("Queuing pH probe modbus request");
-  uint8_t slaveID = 3;
-  uint8_t functionCode = 3;
-  uint16_t address = 2089;
-  static uint16_t data[10];
-  if (!modbusDriver[2].modbus.pushRequest(slaveID, functionCode, address, data, 10, phProbeHandler)) {
-    Serial.println("ERROR - queue full");
-  } else Serial.printf("Current queue size: %d\n", modbusDriver[2].modbus.getQueueCount());
-}*/
+void testTaskFunction(void) {
+  static float setpoint = 0.0;
+  setpoint += 0.1;
+  if (setpoint > 1.2) setpoint = 0.0;
+  Serial.printf("Sending a new setpoint to Alicat MFC: %0.4f\n", setpoint);
+  modbusAlicatMFC_writeSP(setpoint);
+}
 
 void setupCSpins(void) {
   pinMode(PIN_ADC_CS, OUTPUT);
@@ -217,19 +242,30 @@ void setup() {
   modbusDriver[2].parity = 0;
   modbusDriver[2].configChanged = true;
 
+  modbusDriver[3].baud = 19200;   // Change Modbus 4 (Alicat MFC) to 19200 baud
+  modbusDriver[3].stopBits = 1;
+  modbusDriver[3].parity = 0;
+  modbusDriver[3].configChanged = true;
+
   // Initialise Hamilton pH probe interface
   Serial.println("Initialising Hamilton pH probe interface");
   init_modbusHamiltonPHDriver(&modbusDriver[2], 3);
 
+  // Initialise Alicat MFC interface
+  Serial.println("Initialising Alicat MFC interface");
+  init_modbusAlicatMFCDriver(&modbusDriver[3], 1);
+
   Serial.println("Adding tasks to scheduler");
-  analog_input_task = tasks.addTask(ADC_update, 100, true, false);
+  analog_input_task = tasks.addTask(ADC_update, 10, true, false);
   output_task = tasks.addTask(output_update, 100, true, false);
   gpio_task = tasks.addTask(gpio_update, 100, true, true);
   modbus_task = tasks.addTask(modbus_manage, 10, true, true);
   phProbe_task = tasks.addTask(modbusHamiltonPH_manage, 2000, true, false);
+  mfc_task = tasks.addTask(modbusAlicatMFC_manage, 2000, true, false);
   printStuff_task = tasks.addTask(printStuff, 1000, true, false);
-  RTDsensor_task = tasks.addTask(RTD_manage, 100, true, false);
+  RTDsensor_task = tasks.addTask(RTD_manage, 200, true, false);
   SchedulerAlive_task = tasks.addTask(schedulerHeatbeat, 1000, true, false);
+  TEST_TASK = tasks.addTask(testTaskFunction, 5000, true, false);
 
   //heartbeatMillis = millis();
 
@@ -238,9 +274,4 @@ void setup() {
 
 void loop() {
   tasks.update();
-
-  /*if (millis() - heartbeatMillis >= 1000) {
-    heartbeatMillis = millis();
-    serialHeatbeat();
-  }*/
 }

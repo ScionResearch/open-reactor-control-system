@@ -215,6 +215,7 @@ struct DissolvedOxygenControl_t {
 };
 
 struct gasFlowControl_t {
+    FlowSensor_t sensor;
     float setpoint;
     bool enabled;
     float kp;

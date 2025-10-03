@@ -407,6 +407,31 @@ uint16_t ModbusRTUMaster::_calculateCRC(uint8_t* buffer, uint16_t length) {
     return crc;
 }
 
+// Data transform utilities
+
+/**
+ * @brief Convert an array of uint16_t to a float (swapped order)
+ * 
+ */
+float ModbusRTUMaster::swappedUint16toFloat32(uint16_t *value) {
+    uint32_t temp = ((uint32_t)value[0] << 16) | (uint32_t)value[1];
+    float result;
+    memcpy(&result, &temp, sizeof(float));
+    return result;
+}
+
+
+/**
+ * @brief Convert a float to a uint16_t array (swapped order)
+ */
+void ModbusRTUMaster::float32ToSwappedUint16(float value, uint16_t *result) {
+
+    uint32_t temp;
+    memcpy(&temp, &value, sizeof(float));
+    result[0] = (temp >> 16) & 0xFFFF;
+    result[1] = temp & 0xFFFF;
+}
+
 /**
  * @brief Send a request
  */
