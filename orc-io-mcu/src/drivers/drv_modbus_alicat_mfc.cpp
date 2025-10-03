@@ -12,7 +12,9 @@ void init_modbusAlicatMFCDriver(ModbusDriver_t *modbusDriver, uint8_t slaveID) {
 
 void mfcResponseHandler(bool valid, uint16_t *data) {
     if (!valid) {
-        //Serial.println("Invalid flow sensor data.");
+        modbusAlicatMFCprobe.fault = true;
+        snprintf(modbusAlicatMFCprobe.message, sizeof(modbusAlicatMFCprobe.message), "Invalid data from Alicat MFC.");
+        modbusAlicatMFCprobe.newMessage = true;
         return;
     }
     /************************************** 
@@ -62,16 +64,12 @@ void mfcWriteResponseHandler(bool valid, uint16_t *data) {
 }
 
 void modbusAlicatMFC_manage() {
-    //Serial.println("Queuing Alicat MFC modbus requests");
     uint8_t functionCode = 3;
     uint16_t address = 1349;    // Address of setpoint register
     static uint16_t data[16];
     if (!modbusAlicatMFCprobe.modbusDriver->modbus.pushRequest(modbusAlicatMFCprobe.slaveID, functionCode, address, data, 16, mfcResponseHandler)) {
-        //Serial.println("ERROR - queue full");
         return;
     }
-
-    //Serial.printf("Current queue size: %d\n", modbusAlicatMFCprobe.modbusDriver->modbus.getQueueCount());
 }
 
 void modbusAlicatMFC_writeSP(float setpoint) {
@@ -82,9 +80,6 @@ void modbusAlicatMFC_writeSP(float setpoint) {
     modbusAlicatMFCprobe.modbusDriver->modbus.float32ToSwappedUint16(setpoint, data);
 
     if (!modbusAlicatMFCprobe.modbusDriver->modbus.pushRequest(modbusAlicatMFCprobe.slaveID, functionCode, address, data, 2, mfcWriteResponseHandler)) {
-        //Serial.println("ERROR - queue full");
         return;
     }
-
-    //Serial.printf("Current queue size: %d\n", modbusAlicatMFCprobe.modbusDriver->modbus.getQueueCount());
 }
