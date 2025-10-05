@@ -82,7 +82,7 @@ void printStuff(void) {
     Serial.printf("Alicat MFC Flow: %0.3f %s, Pressure: %0.3f %s, Setpoint: %0.3f %s\n", 
                   alicatMFC->getFlowSensor().flow, alicatMFC->getFlowSensor().unit,
                   alicatMFC->getPressureSensor().pressure, alicatMFC->getPressureSensor().unit,
-                  alicatMFC->getSetpoint(), alicatMFC->getFlowSensor().unit);
+                  alicatMFC->getSetpoint(), alicatMFC->getSetpointUnit());
     if (alicatMFC->hasFault()) {
       Serial.printf("MFC FAULT: %s\n", alicatMFC->getMessage());
       alicatMFC->clearMessage();

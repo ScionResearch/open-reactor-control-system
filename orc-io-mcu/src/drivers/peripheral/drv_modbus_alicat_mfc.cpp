@@ -7,20 +7,24 @@ AlicatMFC* AlicatMFC::_currentInstance = nullptr;
 AlicatMFC::AlicatMFC(ModbusDriver_t *modbusDriver, uint8_t slaveID)
     : _modbusDriver(modbusDriver), _slaveID(slaveID), _setpoint(0.0),
       _fault(false), _newMessage(false), _newSetpoint(false),
-      _pendingSetpoint(0.0), _writeAttempts(0) {
+      _pendingSetpoint(0.0), _writeAttempts(0), 
+      _setpointUnitCode(0), _flowUnitCode(0), _pressureUnitCode(0) {
     // Initialize flow sensor
     _flowSensor.flow = 0.0;
     _flowSensor.fault = false;
     _flowSensor.newMessage = false;
-    strcpy(_flowSensor.unit, "SCCM");  // Default unit, will be updated from device
+    strcpy(_flowSensor.unit, "--");  // Default unit, will be updated from device
     _flowSensor.message[0] = '\0';
-    
+
     // Initialize pressure sensor
     _pressureSensor.pressure = 0.0;
     _pressureSensor.fault = false;
     _pressureSensor.newMessage = false;
-    strcpy(_pressureSensor.unit, "PSIA");  // Default unit, will be updated from device
+    strcpy(_pressureSensor.unit, "--");  // Default unit, will be updated from device
     _pressureSensor.message[0] = '\0';
+    
+    // Initialize setpoint unit
+    strcpy(_setpointUnit, "--");  // Default unit, will be updated from device
     
     // Initialize message
     _message[0] = '\0';
@@ -36,6 +40,24 @@ void AlicatMFC::update() {
     
     // Request MFC data (16 registers starting at 1349)
     if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, address, _dataBuffer, 16, mfcResponseHandler)) {
+        return;  // Queue full, try again next time
+    }
+    
+    // Request setpoint unit (1649, 1 register - uint16)
+    const uint16_t setpointUnitAddress = 1649;
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, setpointUnitAddress, &_unitBuffer[0], 1, unitsResponseHandler)) {
+        return;  // Queue full, try again next time
+    }
+    
+    // Request pressure unit (1673, 1 register - uint16)
+    const uint16_t pressureUnitAddress = 1673;
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, pressureUnitAddress, &_unitBuffer[1], 1, unitsResponseHandler)) {
+        return;  // Queue full, try again next time
+    }
+    
+    // Request flow unit (1721, 1 register - uint16)
+    const uint16_t flowUnitAddress = 1721;
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, flowUnitAddress, &_unitBuffer[2], 1, unitsResponseHandler)) {
         return;  // Queue full, try again next time
     }
 }
@@ -146,4 +168,51 @@ void AlicatMFC::handleWriteResponse(bool valid, uint16_t *data) {
     // Write was successful, flag for validation on next read
     _newSetpoint = true;
     _writeAttempts = 0;
+}
+
+// Static callback for units response
+void AlicatMFC::unitsResponseHandler(bool valid, uint16_t *data) {
+    if (_currentInstance) {
+        _currentInstance->handleUnitsResponse(valid, data);
+    }
+}
+
+// Instance method to handle units response
+void AlicatMFC::handleUnitsResponse(bool valid, uint16_t *data) {
+    if (!valid) {
+        // Don't set fault for unit read failures, just skip update
+        return;
+    }
+    
+    // Buffer layout:
+    // _unitBuffer[0]: Setpoint unit (uint16_t)
+    // _unitBuffer[1]: Pressure unit (uint16_t)
+    // _unitBuffer[2]: Flow unit (uint16_t)
+    
+    // Extract setpoint unit code (uint16_t from buffer[0])
+    uint16_t setpointUnit = _unitBuffer[0];
+    if (setpointUnit != _setpointUnitCode && setpointUnit < 64) {
+        _setpointUnitCode = setpointUnit;
+        const char* unitStr = getAlicatFlowUnit(_setpointUnitCode);
+        strncpy(_setpointUnit, unitStr, sizeof(_setpointUnit) - 1);
+        _setpointUnit[sizeof(_setpointUnit) - 1] = '\0';  // Ensure null termination
+    }
+    
+    // Extract pressure unit code (uint16_t from buffer[1])
+    uint16_t pressureUnit = _unitBuffer[1];
+    if (pressureUnit != _pressureUnitCode && pressureUnit < 64) {
+        _pressureUnitCode = pressureUnit;
+        const char* unitStr = getAlicatPressureUnit(_pressureUnitCode);
+        strncpy(_pressureSensor.unit, unitStr, sizeof(_pressureSensor.unit) - 1);
+        _pressureSensor.unit[sizeof(_pressureSensor.unit) - 1] = '\0';  // Ensure null termination
+    }
+    
+    // Extract flow unit code (uint16_t from buffer[2])
+    uint16_t flowUnit = _unitBuffer[2];
+    if (flowUnit != _flowUnitCode && flowUnit < 64) {
+        _flowUnitCode = flowUnit;
+        const char* unitStr = getAlicatFlowUnit(_flowUnitCode);
+        strncpy(_flowSensor.unit, unitStr, sizeof(_flowSensor.unit) - 1);
+        _flowSensor.unit[sizeof(_flowSensor.unit) - 1] = '\0';  // Ensure null termination
+    }
 }

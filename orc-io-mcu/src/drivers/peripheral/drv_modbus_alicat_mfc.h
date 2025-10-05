@@ -20,7 +20,68 @@ struct ModbusDriver_t;
  * - 1359: Temperature (float)
  * - 1361: Volumetric Flow (float)
  * - 1363: Mass Flow (float)
+ * 
+ * Units register addresses - all uint32 type (two registers each)
+ * - 1649: Setpoint unit
+ * - 1673: Pressure unit
+ * - 1709: Temperature unit
+ * - 1721: Volumetric Flow unit
+ * - 1733: Mass Flow unit
  */
+
+// Alicat units array - static to avoid multiple definition
+static const char* alicatFlowUnits[64] = {
+    "", "---", "SµL/m", "SmL/s", "SmL/m", "SmL/h", "SL/s", "SLPM",
+    "SL/h", "SCCS", "", "", "SCCM", "Scm³/h", "Sm³/m", "Sm³/h",
+    "Sm³/d", "Sin³/m", "SCFM", "SCFH", "kSCFM", "SCFD", "", "",
+    "", "", "", "", "", "", "", "",
+    "NµL/m", "NmL/s", "NmL/m", "NmL/h", "NL/s", "NLPM", "NL/h", "",
+    "", "NCCS", "NCCM", "Ncm³/h", "Nm³/m", "Nm³/h", "Nm³/d", "",
+    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "Count", "%"
+};
+
+static const char* alicatPressureUnits[64] = {
+    "", "---", "Pa", "hPa", "kPa", "MPa", "mbar", "bar",
+    "g/cm²", "kg/cm²", "PSI", "PSF", "mTorr", "torr", "mmHg", "inHg",
+    "mmH₂0", "mmH₂0", "cmH₂0", "cmH₂0", "inH₂0", "inH₂0", "atm", "",
+    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "V", "Count", "%"
+};
+
+static const char* alicatTempUnits[6] __attribute__((unused)) = {
+    "", "---", "°C", "°F", "°K", "°Ra"
+};
+
+/**
+ * @brief Get Alicat flow unit string from unit code
+ * 
+ * @param unitCode Unit code (index into alicatFlowUnits array, 0-63)
+ * @return const char* Pointer to unit string, or "?" if invalid
+ */
+inline const char* getAlicatFlowUnit(uint16_t unitCode) {
+    if (unitCode < 64) {
+        return alicatFlowUnits[unitCode];
+    }
+    return "?";  // Default if code is out of range
+}
+
+/**
+ * @brief Get Alicat pressure unit string from unit code
+ * 
+ * @param unitCode Unit code (index into alicatPressureUnits array, 0-63)
+ * @return const char* Pointer to unit string, or "?" if invalid
+ */
+inline const char* getAlicatPressureUnit(uint16_t unitCode) {
+    if (unitCode < 64) {
+        return alicatPressureUnits[unitCode];
+    }
+    return "?";  // Default if code is out of range
+}
+
 class AlicatMFC {
 public:
     /**
@@ -66,6 +127,12 @@ public:
     float getSetpoint() const { return _setpoint; }
     
     /**
+     * @brief Get the setpoint unit string
+     * @return Pointer to setpoint unit string
+     */
+    const char* getSetpointUnit() const { return _setpointUnit; }
+    
+    /**
      * @brief Get the Modbus slave ID
      * @return Slave ID of this MFC
      */
@@ -100,6 +167,7 @@ private:
     FlowSensor_t _flowSensor;                ///< Flow sensor data
     PressureSensor_t _pressureSensor;        ///< Pressure sensor data
     float _setpoint;                         ///< Current setpoint
+    char _setpointUnit[10];                  ///< Setpoint unit string
     bool _fault;                             ///< Fault flag
     bool _newMessage;                        ///< New message flag
     char _message[100];                      ///< Message buffer
@@ -112,14 +180,22 @@ private:
     float _pendingSetpoint;                  ///< Pending setpoint value for validation
     int _writeAttempts;                      ///< Number of write attempts (for retry logic)
     
+    // Unit tracking for each instance
+    uint16_t _setpointUnitCode;              ///< Setpoint unit code (for change detection)
+    uint16_t _flowUnitCode;                  ///< Flow unit code (for change detection)
+    uint16_t _pressureUnitCode;              ///< Pressure unit code (for change detection)
+    uint16_t _unitBuffer[3];                 ///< Buffer for unit read requests (3 units x 1 reg each)
+    
     // Static callback context pointer (updated before each request)
     static AlicatMFC* _currentInstance;
     
     // Static callback functions for Modbus responses
     static void mfcResponseHandler(bool valid, uint16_t *data);
     static void mfcWriteResponseHandler(bool valid, uint16_t *data);
+    static void unitsResponseHandler(bool valid, uint16_t *data);
     
     // Instance methods called by static callbacks
     void handleMfcResponse(bool valid, uint16_t *data);
     void handleWriteResponse(bool valid, uint16_t *data);
+    void handleUnitsResponse(bool valid, uint16_t *data);
 };
