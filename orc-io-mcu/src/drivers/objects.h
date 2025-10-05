@@ -72,7 +72,7 @@ struct Calibrate_t {
 // Sensor objects
 struct AnalogInput_t {
     float value;
-    char unit[5];
+    char unit[8];
     bool enabled;
     bool fault;
     bool newMessage;
@@ -87,7 +87,7 @@ struct DigitalIO_t {
 };
 struct TemperatureSensor_t {
     float temperature;
-    char unit[5];
+    char unit[8];
     bool fault;
     bool newMessage;
     char message[100];
@@ -95,7 +95,7 @@ struct TemperatureSensor_t {
 
 struct PhSensor_t {
     float ph;
-    char unit[5];
+    char unit[8];
     bool fault;
     bool newMessage;
     char message[100];
@@ -103,7 +103,7 @@ struct PhSensor_t {
 
 struct DissolvedOxygenSensor_t {
     float dissolvedOxygen;
-    char unit[5];
+    char unit[8];
     bool fault;
     bool newMessage;
     char message[100];
@@ -111,7 +111,7 @@ struct DissolvedOxygenSensor_t {
 
 struct OpticalDensitySensor_t {
     float opticalDensity;
-    char unit[5];
+    char unit[8];
     bool fault;
     bool newMessage;
     char message[100];
@@ -119,7 +119,7 @@ struct OpticalDensitySensor_t {
 
 struct FlowSensor_t {
     float flow;
-    char unit[5];
+    char unit[8];
     bool fault;
     bool newMessage;
     char message[100];
@@ -127,7 +127,7 @@ struct FlowSensor_t {
 
 struct PressureSensor_t {
     float pressure;
-    char unit[5];
+    char unit[8];
     bool fault;
     bool newMessage;
     char message[100];
@@ -137,7 +137,7 @@ struct PowerSensor_t {
     float voltage;
     float current;
     float power;
-    char unit[5];
+    char unit[8];
     bool fault;
     bool newMessage;
     char message[100];
@@ -146,7 +146,7 @@ struct PowerSensor_t {
 // Output objects
 struct AnalogOutput_t {
     float value;
-    char unit[5];
+    char unit[8];
     bool enabled;
     bool fault;
     bool newMessage;

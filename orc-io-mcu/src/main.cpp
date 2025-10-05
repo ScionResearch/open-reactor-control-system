@@ -3,6 +3,10 @@
 
 // Most of this is debug code!!!! Very much a work in progress
 
+// Peripheral device instances (class-based drivers)
+HamiltonPHProbe* phProbe = nullptr;
+AlicatMFC* alicatMFC = nullptr;
+
 void schedulerHeatbeat(void) {
   static uint32_t loopCount = 0;
   Serial.printf("Scheduler alive - loop %d\n", loopCount++);
@@ -51,32 +55,40 @@ void printStuff(void) {
   for (int i = 0; i < 3; i++) Serial.printf("RTD %d: %0.2f °C\n", i+1, rtd_interface[i].temperatureObj->temperature);
   } else Serial.println("RTD task not created.");
 
-  if (phProbe_task) {
+  if (phProbe_task && phProbe) {
     Serial.printf("pH probe task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
                   phProbe_task->getLastExecTime(), phProbe_task->getMinExecTime(), 
                   phProbe_task->getMaxExecTime(), phProbe_task->getAverageExecTime(),
                   phProbe_task->getCpuUsagePercent());
-    Serial.printf("pH: %0.2f, Temperature: %0.2f °C\n", modbusHamiltonPHprobe.phSensor.ph, modbusHamiltonPHprobe.temperatureSensor.temperature);
+    Serial.printf("pH: %0.2f %s, Temperature: %0.2f %s\n", 
+                  phProbe->getPhSensor().ph, phProbe->getPhSensor().unit,
+                  phProbe->getTemperatureSensor().temperature, phProbe->getTemperatureSensor().unit);
+    if (phProbe->hasFault()) {
+      Serial.printf("pH probe FAULT: %s\n", phProbe->getMessage());
+      phProbe->clearMessages();
+    } else if (phProbe->hasNewMessage()) {
+      Serial.printf("pH probe Message: %s\n", phProbe->getMessage());
+      phProbe->clearMessages();
+    }
   } else {
     Serial.println("pH probe task not created.");
   }
 
-  if(mfc_task) {
+  if(mfc_task && alicatMFC) {
     Serial.printf("MFC task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
                   mfc_task->getLastExecTime(), mfc_task->getMinExecTime(), 
                   mfc_task->getMaxExecTime(), mfc_task->getAverageExecTime(),
                   mfc_task->getCpuUsagePercent());
     Serial.printf("Alicat MFC Flow: %0.3f %s, Pressure: %0.3f %s, Setpoint: %0.3f %s\n", 
-                  modbusAlicatMFCprobe.flowSensor.flow, modbusAlicatMFCprobe.flowSensor.unit,
-                  modbusAlicatMFCprobe.pressureSensor.pressure, modbusAlicatMFCprobe.pressureSensor.unit,
-                  modbusAlicatMFCprobe.setpoint, modbusAlicatMFCprobe.flowSensor.unit);
-    if (modbusAlicatMFCprobe.fault) {
-      Serial.printf("MFC FAULT: %s\n", modbusAlicatMFCprobe.message);
-      modbusAlicatMFCprobe.fault = false;  // Clear fault after printing
-      modbusAlicatMFCprobe.newMessage = false;
-    } else if (modbusAlicatMFCprobe.newMessage) {
-      Serial.printf("MFC Message: %s\n", modbusAlicatMFCprobe.message);
-      modbusAlicatMFCprobe.newMessage = false;
+                  alicatMFC->getFlowSensor().flow, alicatMFC->getFlowSensor().unit,
+                  alicatMFC->getPressureSensor().pressure, alicatMFC->getPressureSensor().unit,
+                  alicatMFC->getSetpoint(), alicatMFC->getFlowSensor().unit);
+    if (alicatMFC->hasFault()) {
+      Serial.printf("MFC FAULT: %s\n", alicatMFC->getMessage());
+      alicatMFC->clearMessage();
+    } else if (alicatMFC->hasNewMessage()) {
+      Serial.printf("MFC Message: %s\n", alicatMFC->getMessage());
+      alicatMFC->clearMessage();
     }
   } else {
     Serial.println("MFC task not created.");
@@ -93,11 +105,12 @@ void printStuff(void) {
 
 
 void testTaskFunction(void) {
+  if (!alicatMFC) return;  // Safety check
   static float setpoint = 0.0;
   setpoint += 0.1;
   if (setpoint > 1.2) setpoint = 0.0;
   Serial.printf("Sending a new setpoint to Alicat MFC: %0.4f\n", setpoint);
-  modbusAlicatMFC_writeSP(setpoint);
+  alicatMFC->writeSetpoint(setpoint);
 }
 
 void setupCSpins(void) {
@@ -255,21 +268,27 @@ void setup() {
   modbusDriver[3].parity = 0;
   modbusDriver[3].configChanged = true;
 
-  // Initialise Hamilton pH probe interface
+  // Initialise Hamilton pH probe interface (class-based)
   Serial.println("Initialising Hamilton pH probe interface");
-  init_modbusHamiltonPHDriver(&modbusDriver[2], 3);
+  phProbe = new HamiltonPHProbe(&modbusDriver[2], 3);  // Port 2 (RS485), Slave ID 3
 
-  // Initialise Alicat MFC interface
+  // Initialise Alicat MFC interface (class-based)
   Serial.println("Initialising Alicat MFC interface");
-  init_modbusAlicatMFCDriver(&modbusDriver[3], 1);
+  alicatMFC = new AlicatMFC(&modbusDriver[3], 1);  // Port 3 (RS485), Slave ID 1
 
   Serial.println("Adding tasks to scheduler");
   analog_input_task = tasks.addTask(ADC_update, 10, true, false);
   output_task = tasks.addTask(output_update, 100, true, false);
   gpio_task = tasks.addTask(gpio_update, 100, true, true);
   modbus_task = tasks.addTask(modbus_manage, 10, true, true);
-  phProbe_task = tasks.addTask(modbusHamiltonPH_manage, 2000, true, false);
-  mfc_task = tasks.addTask(modbusAlicatMFC_manage, 2000, true, false);
+  
+  // Add peripheral device tasks using lambda functions
+  if (phProbe) {
+    phProbe_task = tasks.addTask([]() { phProbe->update(); }, 2000, true, false);
+  }
+  if (alicatMFC) {
+    mfc_task = tasks.addTask([]() { alicatMFC->update(); }, 2000, true, false);
+  }
   printStuff_task = tasks.addTask(printStuff, 1000, true, false);
   RTDsensor_task = tasks.addTask(RTD_manage, 200, true, false);
   SchedulerAlive_task = tasks.addTask(schedulerHeatbeat, 1000, true, false);
