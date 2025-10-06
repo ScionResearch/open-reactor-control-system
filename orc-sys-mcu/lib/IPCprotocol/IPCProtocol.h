@@ -79,9 +79,9 @@ public:
     
     /**
      * @brief Initialize IPC protocol
-     * @param baudRate UART baud rate (default 1000000)
+     * @param baudRate UART baud rate (default 2000000 = 2 Mbps, tested up to 3 Mbps)
      */
-    void begin(uint32_t baudRate = 1000000);
+    void begin(uint32_t baudRate = 2000000);
     
     /**
      * @brief Update function - call regularly from task

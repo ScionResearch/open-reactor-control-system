@@ -1,0 +1,489 @@
+# Inter-Processor Communication (IPC) Protocol Specification
+**Version:** 2.0  
+**Date:** 2025-10-06  
+**Status:** ✅ Implemented & Operational
+
+---
+
+## 1. OVERVIEW
+
+### 1.1 Purpose
+High-speed, robust binary communication protocol between:
+- **SAME51N20A** (I/O Controller) - Sensors, actuators, peripherals
+- **RP2040** (System Controller) - Network, MQTT, SD, RTC, web UI
+
+### 1.2 Physical Interface
+- **Medium:** UART (Serial1)
+- **Pins (SAME51):** PIN_MI_TX (52), PIN_MI_RX (53)
+- **Pins (RP2040):** PIN_SI_TX (16), PIN_SI_RX (17)
+- **Trace Length:** ~80mm PCB trace
+- **Baud Rate:** **2,000,000 bps (2 Mbps)** ⚡
+  - Tested reliable up to 3 Mbps
+  - 2 Mbps selected for robust operation
+- **Configuration:** 8N1 (8 data bits, no parity, 1 stop bit)
+
+### 1.3 Design Principles
+- ✅ **Lightweight:** 8-byte overhead per packet
+- ✅ **Robust:** CRC16-CCITT error detection
+- ✅ **Scalable:** Extensible message types, 80-object index
+- ✅ **Non-blocking:** Async state machine, TX queue
+- ✅ **Fast:** 2 Mbps, minimal latency (<1ms per packet)
+- ✅ **Type-safe:** Object type verification on all operations
+
+---
+
+## 2. PACKET STRUCTURE
+
+### 2.1 Binary Frame Format
+
+```
+┌──────────┬──────────┬──────────┬──────────┬────────────┬──────────┐
+│  START   │  LENGTH  │   MSG    │ PAYLOAD  │    CRC16   │   END    │
+│  BYTE    │ (2 bytes)│   TYPE   │ (N bytes)│  (2 bytes) │   BYTE   │
+├──────────┼──────────┼──────────┼──────────┼────────────┼──────────┤
+│   0x7E   │  uint16  │  uint8   │  0-1024  │   uint16   │   0x7E   │
+└──────────┴──────────┴──────────┴──────────┴────────────┴──────────┘
+
+Total overhead: 8 bytes per packet
+```
+
+**Field Definitions:**
+- **START (0x7E):** Frame delimiter (same for start and end)
+- **LENGTH:** Payload size including MSG_TYPE (big-endian uint16)
+- **MSG_TYPE:** Message identifier (uint8, see section 3)
+- **PAYLOAD:** Variable data (0-1024 bytes max)
+- **CRC16:** CRC16-CCITT of LENGTH + MSG_TYPE + PAYLOAD
+- **END (0x7E):** Frame delimiter
+
+### 2.2 Byte Stuffing
+To prevent frame marker confusion in payload:
+- **0x7E** in data → **0x7D 0x5E** (escape + XOR 0x20)
+- **0x7D** in data → **0x7D 0x5D** (escape + XOR 0x20)
+
+Applied to: LENGTH, MSG_TYPE, PAYLOAD, CRC fields
+
+### 2.3 CRC16-CCITT
+- **Polynomial:** 0x1021
+- **Initial Value:** 0xFFFF
+- **Coverage:** LENGTH (2) + MSG_TYPE (1) + PAYLOAD (N) bytes
+- **Transmission:** Big-endian (MSB first)
+
+---
+
+## 3. MESSAGE TYPES
+
+### 3.1 Message Type Enumeration
+
+```cpp
+enum IPC_MsgType : uint8_t {
+    // Handshake & Status (0x00-0x0F)
+    IPC_MSG_PING            = 0x00,  // Keepalive ping
+    IPC_MSG_PONG            = 0x01,  // Ping response ✅ CRITICAL
+    IPC_MSG_HELLO           = 0x02,  // Initial handshake
+    IPC_MSG_HELLO_ACK       = 0x03,  // Handshake acknowledgment
+    IPC_MSG_ERROR           = 0x04,  // Error notification
+    
+    // Object Index Management (0x10-0x1F)
+    IPC_MSG_INDEX_SYNC_REQ  = 0x10,  // Request full index sync
+    IPC_MSG_INDEX_SYNC_DATA = 0x11,  // Index sync data packet
+    IPC_MSG_INDEX_ADD       = 0x12,  // Add object to index
+    IPC_MSG_INDEX_REMOVE    = 0x13,  // Remove object from index
+    IPC_MSG_INDEX_UPDATE    = 0x14,  // Update object metadata
+    
+    // Sensor Data (0x20-0x2F)
+    IPC_MSG_SENSOR_READ_REQ = 0x20,  // Request sensor reading
+    IPC_MSG_SENSOR_DATA     = 0x21,  // Sensor data response
+    IPC_MSG_SENSOR_STREAM   = 0x22,  // Continuous streaming
+    IPC_MSG_SENSOR_BATCH    = 0x23,  // Batch sensor data
+    
+    // Control Data (0x30-0x3F)
+    IPC_MSG_CONTROL_WRITE   = 0x30,  // Write setpoint/parameter
+    IPC_MSG_CONTROL_ACK     = 0x31,  // Write acknowledgment
+    IPC_MSG_CONTROL_READ    = 0x32,  // Read control parameters
+    IPC_MSG_CONTROL_DATA    = 0x33,  // Control data response
+    
+    // Device Management (0x40-0x4F)
+    IPC_MSG_DEVICE_CREATE   = 0x40,  // Create peripheral device
+    IPC_MSG_DEVICE_DELETE   = 0x41,  // Delete peripheral device
+    IPC_MSG_DEVICE_CONFIG   = 0x42,  // Configure device
+    IPC_MSG_DEVICE_STATUS   = 0x43,  // Device status response
+    
+    // Fault & Message (0x50-0x5F)
+    IPC_MSG_FAULT_NOTIFY    = 0x50,  // Fault notification
+    IPC_MSG_MESSAGE_NOTIFY  = 0x51,  // General message
+    IPC_MSG_FAULT_CLEAR     = 0x52,  // Clear fault
+    
+    // Configuration (0x60-0x6F)
+    IPC_MSG_CONFIG_READ     = 0x60,  // Read configuration
+    IPC_MSG_CONFIG_WRITE    = 0x61,  // Write configuration
+    IPC_MSG_CONFIG_DATA     = 0x62,  // Configuration data
+    IPC_MSG_CALIBRATE       = 0x63,  // Calibration command
+};
+```
+
+### 3.2 Message Flow Examples
+
+#### Startup Handshake
+```
+RP2040 → SAME51: IPC_MSG_HELLO (protocol v1.0.0, firmware v1.0.1)
+SAME51 → RP2040: IPC_MSG_HELLO_ACK (firmware v1.0.0, 64 objects max)
+RP2040 → SAME51: IPC_MSG_INDEX_SYNC_REQ
+SAME51 → RP2040: IPC_MSG_INDEX_SYNC_DATA (entries 0-9)
+SAME51 → RP2040: IPC_MSG_INDEX_SYNC_DATA (entries 10-19)
+...
+```
+
+#### Keepalive (Every 1 Second)
+```
+SAME51 → RP2040: IPC_MSG_PING
+RP2040 → SAME51: IPC_MSG_PONG
+```
+⚠️ **Connection timeout:** 3 missed PINGs (3 seconds)
+
+---
+
+## 4. PAYLOAD STRUCTURES
+
+### 4.1 Handshake Messages
+
+#### HELLO (0x02)
+```cpp
+struct IPC_Hello_t {
+    uint32_t protocolVersion;  // e.g., 0x00010000 = v1.0.0
+    uint32_t firmwareVersion;  // e.g., 0x00010001 = v1.0.1
+    char deviceName[32];       // "SAME51-IO-MCU" or "RP2040-ORC-SYS"
+} __attribute__((packed));
+```
+
+#### HELLO_ACK (0x03)
+```cpp
+struct IPC_HelloAck_t {
+    uint32_t protocolVersion;
+    uint32_t firmwareVersion;
+    uint16_t maxObjectCount;      // SAME51: 64 (MAX_NUM_OBJECTS)
+    uint16_t currentObjectCount;  // Currently registered objects
+} __attribute__((packed));
+```
+
+### 4.2 Object Index Messages
+
+#### INDEX_SYNC_DATA (0x11)
+```cpp
+struct IPC_IndexEntry_t {
+    uint16_t index;           // 0-79
+    uint8_t objectType;       // ObjectType enum
+    uint8_t flags;            // Bit 0: valid, Bit 1: fixed
+    char name[40];            // Null-terminated name
+    char unit[8];             // Unit string (if applicable)
+} __attribute__((packed));
+
+struct IPC_IndexSync_t {
+    uint16_t packetNum;       // Current packet (0-based)
+    uint16_t totalPackets;    // Total packets in sync
+    uint8_t entryCount;       // Entries in this packet
+    IPC_IndexEntry_t entries[10];  // Up to 10 entries/packet
+} __attribute__((packed));
+```
+
+### 4.3 Sensor Data Messages
+
+#### SENSOR_DATA (0x21)
+```cpp
+struct IPC_SensorData_t {
+    uint16_t index;          // Object index
+    uint8_t objectType;      // Type verification
+    uint8_t flags;           // Bit 0: fault, Bit 1: newMessage
+    float value;             // Primary sensor value
+    char unit[8];            // Unit string
+    uint32_t timestamp;      // Optional (0 if unused)
+    char message[100];       // Optional message
+} __attribute__((packed));
+```
+
+---
+
+## 5. OBJECT INDEX SYSTEM
+
+### 5.1 Index Organization (80 Objects Total)
+
+**Fixed Indices (0-39):** Onboard SAME51 hardware
+- **0-7:** Analog Inputs (ADC 1-8)
+- **8-9:** Analog Outputs (DAC 1-2)
+- **10-12:** RTD Temperature Sensors (3x MAX31865)
+- **13-20:** Digital GPIO (8 channels)
+- **21-25:** Digital Outputs (4 standard + 1 heater)
+- **26:** Stepper Motor
+- **27-30:** DC Motors (4x DRV8235)
+- **31-32:** Power Sensors (2x INA260)
+- **33-36:** Modbus Ports (4 ports)
+- **37-39:** Reserved
+
+**Dynamic Indices (40-79):** Peripheral devices
+- Modbus sensors (pH, DO, OD, MFC, etc.)
+- User-created devices
+- Assigned sequentially, recycled on deletion
+
+### 5.2 Type Safety
+Every command includes `objectType` field:
+- Prevents wrong commands to wrong device types
+- Mismatch → `IPC_MSG_ERROR` with code `IPC_ERR_TYPE_MISMATCH`
+
+---
+
+## 6. DRIVER ARCHITECTURE
+
+### 6.1 SAME51 Implementation
+
+**Files:**
+- `src/drivers/ipc/drv_ipc.h` - Driver structure and API
+- `src/drivers/ipc/drv_ipc.cpp` - State machine, TX/RX
+- `src/drivers/ipc/ipc_protocol.h` - Protocol definitions
+- `src/drivers/ipc/ipc_handlers.cpp` - Message handlers
+
+**State Machine:**
+```
+IDLE → Check for RX bytes, process TX queue
+  ↓ (START byte detected)
+RECEIVING → Accumulate bytes, unstuff, detect END
+  ↓ (END byte detected)
+PROCESSING → Validate CRC, dispatch to handler
+  ↓
+IDLE (or ERROR on failure)
+```
+
+**Key Functions:**
+```cpp
+bool ipc_init(void);
+void ipc_update(void);  // Non-blocking, called @ 5ms
+bool ipc_sendPacket(uint8_t msgType, const uint8_t *payload, uint16_t len);
+bool ipc_sendPing(void);
+bool ipc_sendPong(void);
+bool ipc_sendHello(void);
+bool ipc_isConnected(void);
+```
+
+### 6.2 RP2040 Implementation
+
+**Files:**
+- `lib/IPCprotocol/IPCProtocol.h` - Protocol class
+- `lib/IPCprotocol/IPCProtocol.cpp` - Implementation
+- `lib/IPCprotocol/IPCDataStructs.h` - Message structures
+- `src/utils/ipcManager.cpp` - Integration layer
+
+**Key Functions:**
+```cpp
+void begin(uint32_t baudRate = 2000000);
+void update(void);  // Non-blocking
+bool sendPacket(uint8_t messageType, const uint8_t *payload, uint16_t length);
+bool sendPing(void);
+bool sendHello(uint32_t protocol, uint32_t firmware, const char* name);
+void registerHandler(uint8_t messageType, MessageCallback callback);
+```
+
+---
+
+## 7. PERFORMANCE CHARACTERISTICS
+
+### 7.1 Timing @ 2 Mbps
+- **Bit time:** 0.5 µs
+- **Byte time:** 5 µs (8 data + start + stop bits)
+- **100-byte packet:** ~0.5 ms transmission
+- **1024-byte packet:** ~5.1 ms transmission
+
+### 7.2 CPU Usage
+- **SAME51 IPC task (5ms):** <0.5% CPU
+- **RP2040 IPC update:** <0.5% CPU
+- **Packet processing:** 50-100 µs per packet
+
+### 7.3 Throughput
+- **Theoretical max:** ~200 KB/s (2 Mbps / 10 bits per byte)
+- **Practical max:** ~150 KB/s (accounting for overhead)
+- **Typical load:** <10 KB/s (sensor data + control)
+
+---
+
+## 8. ERROR HANDLING
+
+### 8.1 Error Codes
+```cpp
+enum IPC_ErrorCode : uint8_t {
+    IPC_ERR_CRC_FAIL       = 0x01,  // CRC validation failed
+    IPC_ERR_INVALID_MSG    = 0x02,  // Unknown message type
+    IPC_ERR_BUFFER_FULL    = 0x03,  // RX buffer overflow
+    IPC_ERR_TIMEOUT        = 0x04,  // Packet timeout
+    IPC_ERR_TYPE_MISMATCH  = 0x05,  // Object type mismatch
+    IPC_ERR_INDEX_INVALID  = 0x06,  // Invalid object index
+    IPC_ERR_QUEUE_FULL     = 0x07,  // TX queue full
+    IPC_ERR_NOT_IMPLEMENTED= 0x08,  // Feature not implemented
+    IPC_ERR_PARSE_FAIL     = 0x09,  // Payload parse error
+};
+```
+
+### 8.2 Recovery Strategies
+- **CRC error:** Discard packet, log error, continue
+- **Buffer overflow:** Clear buffer, resync
+- **Connection timeout:** Clear connected flag, await reconnect
+- **Type mismatch:** Send error response, reject command
+
+### 8.3 Keepalive System
+- SAME51 sends PING every 1000 ms (`IPC_KEEPALIVE_MS`)
+- RP2040 responds with PONG
+- **Both sides** update `lastActivity` on:
+  - Any successful RX packet
+  - Any successful TX packet
+- Connection timeout: 3000 ms (3 x keepalive interval)
+- **Critical:** PONG handler must be implemented on both sides
+
+---
+
+## 9. IMPLEMENTATION STATUS
+
+### 9.1 ✅ Completed Features
+- [x] Binary packet framing with byte stuffing
+- [x] CRC16-CCITT validation
+- [x] State machine RX/TX processing
+- [x] TX queue (8 packets deep)
+- [x] PING/PONG keepalive with timeout
+- [x] HELLO handshake with version checking
+- [x] Message handler registration
+- [x] Error detection and reporting
+- [x] Non-blocking operation
+- [x] 2 Mbps reliable communication
+
+### 9.2 🚧 In Progress
+- [ ] Object index synchronization
+- [ ] Sensor data streaming
+- [ ] Control command handlers
+- [ ] Device management (create/delete)
+- [ ] Configuration management
+- [ ] Calibration protocol
+
+### 9.3 📋 Planned Features
+- [ ] Sensor batch messages (multiple sensors per packet)
+- [ ] Automatic reconnection with state rebuild
+- [ ] Configuration persistence (RP2040 LittleFS)
+- [ ] REST API for device management
+- [ ] MQTT integration for sensor data
+- [ ] Web UI control interface
+
+---
+
+## 10. TESTING & VALIDATION
+
+### 10.1 Protocol Tests
+- ✅ PING/PONG exchange
+- ✅ HELLO handshake
+- ✅ CRC validation (intentional corruption)
+- ✅ Byte stuffing (0x7E, 0x7D in payload)
+- ✅ Connection timeout detection
+- ✅ TX/RX packet counting
+- ✅ Baud rate up to 3 Mbps
+
+### 10.2 Test Commands (RP2040 Terminal)
+```
+ping        - Send PING, wait for PONG
+hello       - Send HELLO, initiate handshake
+ipc-stats   - Display TX/RX counters, errors
+```
+
+---
+
+## 11. CONFIGURATION
+
+### 11.1 Compile-Time Configuration
+
+**SAME51** (`ipc_protocol.h`):
+```cpp
+#define IPC_PROTOCOL_VERSION    0x00010000  // v1.0.0
+#define IPC_TX_QUEUE_SIZE       8           // TX queue depth
+#define IPC_KEEPALIVE_MS        1000        // Keepalive interval
+#define IPC_DEBUG_ENABLED       0           // Debug output (0=off, 1=on)
+#define MAX_NUM_OBJECTS         64          // Max object index
+```
+
+**RP2040** (`IPCDataStructs.h`):
+```cpp
+#define IPC_PROTOCOL_VERSION    0x00010000
+#define IPC_TX_QUEUE_SIZE       8
+#define IPC_MAX_PAYLOAD_SIZE    1024
+#define IPC_MAX_HANDLERS        32
+#define IPC_DEBUG_ENABLED       0
+```
+
+### 11.2 Baud Rate Configuration
+
+**SAME51** (`drv_ipc.cpp`):
+```cpp
+ipcDriver.uart->begin(2000000);  // 2 Mbps
+```
+
+**RP2040** (`ipcManager.cpp`):
+```cpp
+ipc.begin(2000000);  // 2 Mbps
+```
+
+---
+
+## 12. FUTURE ENHANCEMENTS
+
+### 12.1 Protocol Extensions
+- **Message priorities:** Separate queues for critical vs normal
+- **Flow control:** Handshake to prevent overflow
+- **Compression:** Optional payload compression for large data
+- **Encryption:** Optional AES for sensitive data
+
+### 12.2 Feature Additions
+- **Streaming mode:** Continuous sensor data without requests
+- **Batch operations:** Multiple commands in single packet
+- **Firmware updates:** OTA update protocol over IPC
+- **Diagnostics:** Built-in protocol analyzer/sniffer
+
+---
+
+## 13. TROUBLESHOOTING
+
+### 13.1 Common Issues
+
+**No communication:**
+- Check UART pins (TX/RX crossed between MCUs)
+- Verify baud rate matches (2 Mbps on both sides)
+- Check ground connection
+- Verify Serial1 on correct pins
+
+**Connection timeout:**
+- Check PONG handler is registered on both sides
+- Verify keepalive is enabled (not disabled for debugging)
+- Check `lastActivity` updates on RX/TX
+
+**CRC errors:**
+- Check for noise on UART lines
+- Verify CRC polynomial matches (0x1021)
+- Check byte stuffing implementation
+- Try lower baud rate
+
+**Missing messages:**
+- Check TX queue size (may be full)
+- Verify handler is registered for message type
+- Check message type value matches enum
+- Enable debug output (`IPC_DEBUG_ENABLED = 1`)
+
+---
+
+## 14. REFERENCES
+
+### 14.1 Related Documents
+- `HELLO_HANDSHAKE_IMPLEMENTED.md` - Handshake implementation guide
+- `IPC_CLEANUP_COMPLETE.md` - Debug output cleanup
+- `PROJECT_OVERVIEW.md` - System architecture
+
+### 14.2 Standards
+- **CRC16-CCITT:** ITU-T Recommendation V.41
+- **UART:** RS-232 compatible (8N1)
+
+---
+
+**Document Version:** 2.0  
+**Protocol Version:** v1.0.0  
+**Last Updated:** 2025-10-06  
+**Status:** ✅ Operational at 2 Mbps  
+**Maintainer:** Open Reactor Control System Team

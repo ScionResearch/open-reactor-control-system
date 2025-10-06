@@ -34,7 +34,7 @@ bool ipc_init(void) {
     
     // Configure UART
     ipcDriver.uart = &Serial1;
-    ipcDriver.uart->begin(1000000);  // 1 Mbps
+    ipcDriver.uart->begin(2000000);  // 2 Mbps
     
     // Set initial state
     ipcDriver.state = IPC_STATE_IDLE;

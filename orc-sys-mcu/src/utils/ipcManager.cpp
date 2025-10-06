@@ -6,7 +6,7 @@
 void init_ipcManager(void) {
   Serial1.setRX(PIN_SI_RX);
   Serial1.setTX(PIN_SI_TX);
-  ipc.begin(1000000); // 1 Mbps as per IPC protocol specification
+  ipc.begin(2000000); // 2 Mbps
   
   // Register message handlers
   registerIpcCallbacks();
