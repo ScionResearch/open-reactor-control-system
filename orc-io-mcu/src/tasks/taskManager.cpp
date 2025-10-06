@@ -7,6 +7,7 @@ ScheduledTask *analog_output_task;
 ScheduledTask *output_task;
 ScheduledTask *gpio_task;
 ScheduledTask *modbus_task;
+ScheduledTask *ipc_task;
 ScheduledTask *phProbe_task;
 ScheduledTask *mfc_task;
 ScheduledTask *printStuff_task;

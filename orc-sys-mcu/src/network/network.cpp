@@ -28,16 +28,13 @@ unsigned long lastNetworkCheckTime = 0;
 
 // Network component initialisation functions ------------------------------>
 void init_network() {
-  log(LOG_DEBUG, false, "[Core0] init_network() start\n");
   setupEthernet();
   setupWebServer();
 }
 
 void manageNetwork(void) {
-  log(LOG_DEBUG, false, "[NET] manageEthernet\n");
   manageEthernet();
   if (networkConfig.ntpEnabled) {
-    log(LOG_DEBUG, false, "[NET] handleNTPUpdates\n");
     handleNTPUpdates(false);
   }
 }
@@ -381,9 +378,7 @@ void setupNetworkAPI()
 // --- New API Handlers for UI Dashboard ---
 
 void handleGetAllStatus() {
-  log(LOG_DEBUG, false, "[API] handleGetAllStatus called\n");
   if (statusLocked) {
-    log(LOG_DEBUG, false, "[API] statusLocked, returning 503\n");
     server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
     return;
   }
@@ -427,7 +422,6 @@ void handleGetAllStatus() {
 
   String response;
   serializeJson(doc, response);
-  log(LOG_DEBUG, false, "[API] handleGetAllStatus sending response\n");
   server.send(200, "application/json", response);
 }
 
@@ -469,9 +463,7 @@ void handleUpdateControl() {
 
 // --- Add this handler for /api/system/status ---
 void handleSystemStatus() {
-  log(LOG_DEBUG, false, "[API] handleSystemStatus called\n");
   if (statusLocked || sdLocked) {
-    log(LOG_DEBUG, false, "[API] statusLocked or sdLocked, returning 503\n");
     server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
     return;
   }
@@ -513,15 +505,12 @@ void handleSystemStatus() {
 
   String response;
   serializeJson(doc, response);
-  log(LOG_DEBUG, false, "[API] handleSystemStatus sending response\n");
   server.send(200, "application/json", response);
 }
 
 // --- Sensors API Handler for Control Tab ---
 void handleGetSensors() {
-  log(LOG_DEBUG, false, "[API] handleGetSensors called\n");
   if (statusLocked) {
-    log(LOG_DEBUG, false, "[API] statusLocked, returning 503\n");
     server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
     return;
   }
@@ -540,9 +529,9 @@ void handleGetSensors() {
   doc["opticalDensity"] = status.odSensor.OD;
   
   // Power sensor readings
-  doc["powerVolts"] = status.powerSensor.volts;
-  doc["powerAmps"] = status.powerSensor.amps;
-  doc["powerWatts"] = status.powerSensor.watts;
+  doc["powerVolts"] = status.powerSensor.voltage;
+  doc["powerAmps"] = status.powerSensor.current;
+  doc["powerWatts"] = status.powerSensor.power;
   
   // Online status for each sensor
   doc["tempOnline"] = status.temperatureSensor.online;
@@ -559,7 +548,6 @@ void handleGetSensors() {
 
   String response;
   serializeJson(doc, response);
-  log(LOG_DEBUG, false, "[API] handleGetSensors sending response\n");
   server.send(200, "application/json", response);
 }
 

@@ -9,12 +9,12 @@ AlicatMFC* alicatMFC = nullptr;
 
 void schedulerHeatbeat(void) {
   static uint32_t loopCount = 0;
-  Serial.printf("Scheduler alive - loop %d\n", loopCount++);
+  //Serial.printf("Scheduler alive - loop %d\n", loopCount++);
 }
 
 void printStuff(void) {  
   // Print CPU usage summary
-  Serial.println("\n=== CPU Usage Report ===");
+  /*Serial.println("\n=== CPU Usage Report ===");
   Serial.printf("Total CPU Usage: %0.2f%%\n", tasks.getTotalCpuUsagePercent());
   Serial.println("Task information ↓↓↓\n");
   
@@ -92,15 +92,26 @@ void printStuff(void) {
     }
   } else {
     Serial.println("MFC task not created.");
-  }
+  }*/
 
-  if (printStuff_task) {
+  if (ipc_task) {
+    Serial.printf("IPC task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
+                  ipc_task->getLastExecTime(), ipc_task->getMinExecTime(), 
+                  ipc_task->getMaxExecTime(), ipc_task->getAverageExecTime(),
+                  ipc_task->getCpuUsagePercent());
+    Serial.printf("IPC Connected: %s, RX: %u, TX: %u, Errors: %u, CRC: %u\n",
+                  ipc_isConnected() ? "YES" : "NO",
+                  ipcDriver.rxPacketCount, ipcDriver.txPacketCount,
+                  ipcDriver.rxErrorCount, ipcDriver.crcErrorCount);
+  } else Serial.println("IPC task not created.");
+
+  /*if (printStuff_task) {
     Serial.printf("Print stuff task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
                   printStuff_task->getLastExecTime(), printStuff_task->getMinExecTime(), 
                   printStuff_task->getMaxExecTime(), printStuff_task->getAverageExecTime(),
                   printStuff_task->getCpuUsagePercent());
-  }  
-  Serial.println("\n========================");
+  }  */
+  //Serial.println("\n========================");
 }
 
 
@@ -109,7 +120,7 @@ void testTaskFunction(void) {
   static float setpoint = 0.0;
   setpoint += 0.1;
   if (setpoint > 1.2) setpoint = 0.0;
-  Serial.printf("Sending a new setpoint to Alicat MFC: %0.4f\n", setpoint);
+  //Serial.printf("Sending a new setpoint to Alicat MFC: %0.4f\n", setpoint);
   alicatMFC->writeSetpoint(setpoint);
 }
 
@@ -268,6 +279,13 @@ void setup() {
   modbusDriver[3].parity = 0;
   modbusDriver[3].configChanged = true;
 
+  Serial.println("Starting IPC interface");
+  if (!ipc_init()) {
+    Serial.println("Failed to initialise IPC driver.");
+  } else {
+    Serial.println("IPC driver initialised at 1 Mbps.");
+  }
+
   // Initialise Hamilton pH probe interface (class-based)
   Serial.println("Initialising Hamilton pH probe interface");
   phProbe = new HamiltonPHProbe(&modbusDriver[2], 3);  // Port 2 (RS485), Slave ID 3
@@ -281,6 +299,7 @@ void setup() {
   output_task = tasks.addTask(output_update, 100, true, false);
   gpio_task = tasks.addTask(gpio_update, 100, true, true);
   modbus_task = tasks.addTask(modbus_manage, 10, true, true);
+  ipc_task = tasks.addTask(ipc_update, 5, true, true);  // 5ms, high priority
   
   // Add peripheral device tasks using lambda functions
   if (phProbe) {

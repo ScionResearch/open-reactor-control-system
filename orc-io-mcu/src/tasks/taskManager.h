@@ -1,7 +1,5 @@
 #pragma once
 
-#include "sys_init.h"
-
 #include "Scheduler.h"
 
 extern TaskScheduler tasks;
@@ -11,6 +9,7 @@ extern ScheduledTask *analog_output_task;
 extern ScheduledTask *output_task;
 extern ScheduledTask *gpio_task;
 extern ScheduledTask *modbus_task;
+extern ScheduledTask *ipc_task;
 extern ScheduledTask *phProbe_task;
 extern ScheduledTask *mfc_task;
 extern ScheduledTask *levelProbe_task;

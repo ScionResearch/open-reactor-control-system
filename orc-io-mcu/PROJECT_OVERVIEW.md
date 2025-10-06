@@ -1,9 +1,10 @@
 # Open Reactor Control System - IO MCU
 ## Project Overview & Architecture Documentation
 
-**Last Updated:** 2025-10-04 14:06
+**Last Updated:** 2025-10-05 16:35
 
 **Recent Changes:**
+- **NEW:** Designed comprehensive IPC (Inter-Processor Communication) protocol for SAME51↔RP2040 communication
 - Reorganized drivers into `onboard/` and `peripheral/` subdirectories
 - Converted peripheral drivers to class-based architecture for multiple instance support
 - Added Hamilton Arc common definitions with unit code lookup table (32 unit types)
@@ -60,12 +61,17 @@ orc-io-mcu/
 │   │   │   ├── drv_stepper.*      # TMC5130 stepper driver
 │   │   │   ├── drv_bdc_motor.*    # DRV8235 motor driver (4x)
 │   │   │   └── drv_pwr_sensor.*   # INA260 power sensors (2x)
-│   │   └── peripheral/        # External device class-based drivers
-│   │       ├── drv_modbus_hamilton_arc_common.h  # Hamilton Arc common definitions
-│   │       ├── drv_modbus_hamilton_ph.*          # Hamilton pH probe (class)
-│   │       ├── drv_modbus_hamilton_arc_do.*      # Hamilton Arc DO sensor (class)
-│   │       ├── drv_modbus_hamilton_arc_od.*      # Hamilton Arc OD sensor (class)
-│   │       └── drv_modbus_alicat_mfc.*           # Alicat MFC (class)
+│   │   ├── peripheral/        # External device class-based drivers
+│   │   │   ├── drv_modbus_hamilton_arc_common.h  # Hamilton Arc common definitions
+│   │   │   ├── drv_modbus_hamilton_ph.*          # Hamilton pH probe (class)
+│   │   │   ├── drv_modbus_hamilton_arc_do.*      # Hamilton Arc DO sensor (class)
+│   │   │   ├── drv_modbus_hamilton_arc_od.*      # Hamilton Arc OD sensor (class)
+│   │   │   └── drv_modbus_alicat_mfc.*           # Alicat MFC (class)
+│   │   └── ipc/               # Inter-processor communication
+│   │       ├── ipc_protocol.h     # Protocol definitions & structs
+│   │       ├── drv_ipc.h          # IPC driver header
+│   │       ├── drv_ipc.cpp        # Core driver implementation
+│   │       └── ipc_handlers.cpp   # Message handler implementations
 │   ├── hardware/
 │   │   └── pins.h             # Pin definitions (77 pins defined)
 │   ├── tasks/
@@ -74,6 +80,7 @@ orc-io-mcu/
 │   │   └── calibrate.*        # Calibration data management
 │   ├── sys_init.h             # System-wide includes
 │   └── main.cpp               # Main program
+├── IPC_PROTOCOL_PLAN.md       # IPC protocol specification
 └── platformio.ini             # Build configuration
 ```
 
@@ -131,6 +138,7 @@ analog_input_task    → ADC_update()              @ 10ms   (high priority)
 output_task          → output_update()           @ 100ms
 gpio_task            → gpio_update()             @ 100ms  (high priority)
 modbus_task          → modbus_manage()           @ 10ms   (high priority)
+ipc_task             → ipc_update()              @ 5ms    (high priority)
 phProbe_task         → modbusHamiltonPH_manage() @ 2000ms
 mfc_task             → modbusAlicatMFC_manage()  @ 2000ms
 RTDsensor_task       → RTD_manage()              @ 200ms
@@ -408,6 +416,81 @@ All SPI devices share the main SPI bus but have individual CS pins:
 - I2C bus: PIN_I2C_PER_SDA, PIN_I2C_PER_SCL
 - Power sensors (INA260) on I2C
 
+### 7.4 Inter-Processor Communication (IPC)
+- **Interface:** Serial1 (UART)
+- **Pins:** PIN_MI_TX (52), PIN_MI_RX (53)
+- **Baud Rate:** 1,000,000 bps (1 Mbps)
+- **Protocol:** Custom binary packet protocol with CRC16
+- **Purpose:** Communication between SAME51 (this MCU) and RP2040 (management interface MCU)
+
+**Key Features:**
+- Binary packet framing with start/end markers (0x7E/0x7D)
+- CRC16-CCITT error checking on all packets
+- Byte stuffing for data transparency
+- Non-blocking operation via task scheduler
+- Message types for sensor data, control commands, device management, index synchronization
+- Object index synchronization for dynamic device management
+- Type-safe object references to prevent mismatches
+
+**Data Flow:**
+- **SAME51 → RP2040:** Sensor readings, fault notifications, device status
+- **RP2040 → SAME51:** Control setpoints, device creation/deletion, configuration
+
+**Documentation:** See `IPC_PROTOCOL_PLAN.md` for complete protocol specification
+
+### 7.5 IPC Driver Architecture
+
+**Driver Location:** `src/drivers/ipc/`
+
+**State Machine Design:**
+- **IDLE:** Waiting for start byte or processing TX queue
+- **RECEIVING:** Collecting packet bytes with escape sequence handling
+- **PROCESSING:** Validating CRC and dispatching to message handlers
+- **ERROR:** Clearing buffers and returning to IDLE
+
+**Key Components:**
+```cpp
+IPC_Driver_t {
+    HardwareSerial *uart;           // Serial1 @ 1 Mbps
+    IPC_State state;                // State machine
+    uint8_t rxBuffer[1280];         // RX packet buffer
+    IPC_TxPacket_t txQueue[8];      // TX queue (8 packets deep)
+    // Statistics: rxPacketCount, txPacketCount, errors, CRC errors
+}
+```
+
+**Packet Structure:**
+- **8 bytes overhead:** START(1) + LENGTH(2) + MSG_TYPE(1) + CRC(2) + END(1)
+- **Byte stuffing:** 0x7E and 0x7D escaped as 0x7D followed by (byte XOR 0x20)
+- **CRC16-CCITT:** Polynomial 0x1021, covers LENGTH + MSG_TYPE + PAYLOAD
+
+**Message Types (20+ defined):**
+- **Handshake:** PING, PONG, HELLO, HELLO_ACK, ERROR
+- **Index Sync:** INDEX_SYNC_REQ, INDEX_SYNC_DATA, INDEX_ADD, INDEX_REMOVE
+- **Sensor Data:** SENSOR_READ_REQ, SENSOR_DATA, SENSOR_BATCH
+- **Control:** CONTROL_WRITE, CONTROL_ACK, CONTROL_READ
+- **Device Mgmt:** DEVICE_CREATE, DEVICE_DELETE, DEVICE_STATUS
+- **Faults:** FAULT_NOTIFY, MESSAGE_NOTIFY, FAULT_CLEAR
+- **Config:** CONFIG_READ, CONFIG_WRITE, CALIBRATE
+
+**Performance:**
+- **Task interval:** 5ms (high priority)
+- **Expected CPU usage:** <0.5%
+- **Throughput:** ~500 packets/second sustained
+- **Latency:** <10ms for request/response
+
+**Object Index Synchronization:**
+- Indices 0-39: Fixed onboard hardware
+- Indices 40-79: Dynamic peripheral devices
+- Type-safe references (type must match in all operations)
+- Nested sensor objects get separate indices (e.g., pH probe + pH sensor + temp sensor)
+
+**RP2040 as Single Source of Truth:**
+- Configuration data managed by RP2040
+- Calibration data sent from RP2040 at startup
+- Timestamps added by RP2040 (has RTC)
+- SAME51 rebuilds state on boot from RP2040 commands
+
 ## 8. INITIALIZATION SEQUENCE
 
 From `main.cpp setup()`:
@@ -423,10 +506,11 @@ From `main.cpp setup()`:
 10. Modbus initialization (4 ports)
 11. Modbus port 2 reconfiguration (19200 baud, 2 stop bits for pH)
 12. Modbus port 3 reconfiguration (19200 baud for MFC)
-13. Hamilton pH probe driver initialization
-14. Alicat MFC driver initialization
-15. Task creation and registration
-16. Enter main loop (tasks.update())
+13. **IPC initialization (Serial1 @ 1 Mbps)**
+14. Hamilton pH probe driver initialization
+15. Alicat MFC driver initialization
+16. Task creation and registration (including IPC task @ 5ms)
+17. Enter main loop (tasks.update())
 
 ## 9. KEY DESIGN PATTERNS
 

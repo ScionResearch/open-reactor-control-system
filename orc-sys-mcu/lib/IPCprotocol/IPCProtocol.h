@@ -1,62 +1,181 @@
+/**
+ * @file IPCProtocol.h
+ * @brief Inter-Processor Communication Protocol Header (RP2040 side)
+ * @author Open Reactor Control System
+ * @date 2024
+ * 
+ * This file defines the IPC protocol interface and data structures for
+ * communication between the RP2040 and SAME51 MCUs over UART.
+ */
+
 #ifndef IPC_PROTOCOL_H
 #define IPC_PROTOCOL_H
 
 #include <Arduino.h>
-#include <stdint.h>
-#include <functional>
+#include "IPCDataStructs.h"
 
-// Define the maximum size of the data payload (adjust as needed)
-#define MAX_PAYLOAD_SIZE 128
+// =============================================================================
+// IPC Driver State Machine
+// =============================================================================
 
-// Define a generic Message struct
-struct Message {
-  uint8_t msgId;
-  uint8_t objId;
-  uint8_t dataLength;
-  uint8_t data[MAX_PAYLOAD_SIZE];
-  uint16_t crc;
-};
+typedef enum {
+    IPC_STATE_IDLE = 0,       // Waiting for start byte
+    IPC_STATE_RECEIVING,      // Receiving packet data
+    IPC_STATE_PROCESSING,     // Processing received packet
+    IPC_STATE_ERROR           // Error state
+} IPC_State_t;
 
-// Define a structure for mapping a message ID to a callback function
-struct MessageCallback {
-  uint8_t msgId;
-  std::function<void(const Message&)> callback;
-};
+// =============================================================================
+// Transmit Queue Entry
+// =============================================================================
+
+typedef struct {
+    uint8_t messageType;                    // Message type
+    uint16_t payloadLength;                 // Payload length
+    uint8_t payload[IPC_MAX_PAYLOAD_SIZE];  // Payload data
+} IPC_TxPacket_t;
+
+// =============================================================================
+// Message Handler Callback
+// =============================================================================
+
+typedef void (*IPC_MessageCallback)(uint8_t messageType, const uint8_t *payload, uint16_t length);
+
+// =============================================================================
+// Message Handler Entry
+// =============================================================================
+
+typedef struct {
+    uint8_t messageType;
+    IPC_MessageCallback callback;
+} IPC_MessageHandler_t;
+
+// =============================================================================
+// Statistics Structure
+// =============================================================================
+
+typedef struct {
+    uint32_t rxPacketCount;   // Received packets
+    uint32_t txPacketCount;   // Transmitted packets
+    uint32_t rxErrorCount;    // Receive errors
+    uint32_t crcErrorCount;   // CRC errors
+    uint32_t lastRxTime;      // Last RX timestamp (ms)
+    uint32_t lastTxTime;      // Last TX timestamp (ms)
+} IPC_Statistics_t;
+
+// =============================================================================
+// IPCProtocol Class
+// =============================================================================
+
+#define IPC_MAX_HANDLERS 32  // Maximum number of message handlers
 
 class IPCProtocol {
 public:
-    // Constructor: takes the Serial port instance.
-    IPCProtocol(HardwareSerial& serialPort);
+    /**
+     * @brief Constructor
+     * @param uart Pointer to HardwareSerial instance
+     */
+    IPCProtocol(HardwareSerial *uart);
     
-    // Initialise the library
-    void begin(long baudrate);
-
-    // Send data
-    bool sendMessage(const Message& msg);
-
-    // Register a callback function for a specific message ID
-    void registerCallback(uint8_t msgId, std::function<void(const Message&)> callback);
-
-    // Poll for and process any incoming messages
+    /**
+     * @brief Initialize IPC protocol
+     * @param baudRate UART baud rate (default 1000000)
+     */
+    void begin(uint32_t baudRate = 1000000);
+    
+    /**
+     * @brief Update function - call regularly from task
+     */
     void update();
     
-    // Calculate the CRC value from the message (without the CRC field).
-    uint16_t calculateCRC(const Message& msg) const;
-
+    /**
+     * @brief Send a packet
+     * @param messageType Message type
+     * @param payload Pointer to payload data (can be nullptr)
+     * @param payloadLength Length of payload in bytes
+     * @return true if packet was queued successfully
+     */
+    bool sendPacket(uint8_t messageType, const uint8_t *payload, uint16_t payloadLength);
+    
+    /**
+     * @brief Register a message handler
+     * @param messageType Message type to handle
+     * @param callback Callback function
+     * @return true if handler was registered successfully
+     */
+    bool registerHandler(uint8_t messageType, IPC_MessageCallback callback);
+    
+    /**
+     * @brief Get statistics
+     * @param stats Pointer to statistics structure
+     */
+    void getStatistics(IPC_Statistics_t *stats);
+    
+    /**
+     * @brief Reset statistics counters
+     */
+    void resetStatistics();
+    
+    // Helper functions for common messages
+    bool sendPing();
+    bool sendPong();
+    bool sendHello(uint32_t protocolVersion, uint32_t firmwareVersion, const char* deviceName);
+    bool sendError(uint8_t errorCode, const char* message);
+    
+    // Sensor data helpers
+    bool sendSensorData(const IPC_SensorData_t* data);
+    bool sendSensorBatch(const IPC_SensorBatch_t* batch);
+    
+    // Index sync helpers
+    bool sendIndexSyncRequest();
+    bool sendIndexAdd(const IPC_IndexAdd_t* entry);
+    bool sendIndexRemove(uint16_t index, uint8_t objectType);
+    
+    // Device management helpers
+    bool sendDeviceCreate(const IPC_DeviceCreate_t* device);
+    bool sendDeviceDelete(uint16_t index, uint8_t objectType);
+    bool sendDeviceStatus(const IPC_DeviceStatus_t* status);
+    
+    // Fault notification helpers
+    bool sendFaultNotify(const IPC_FaultNotify_t* fault);
+    bool sendFaultClear(uint16_t index);
+    
+    // Legacy message support (for backward compatibility)
+    bool sendMessage(const Message& msg);
+    
 private:
-  HardwareSerial& _serial;
-
-  // Array to store registered callbacks
-  MessageCallback _callbacks[10]; // Store 10 message handlers
-  int _numCallbacks = 0; // Track the number of callbacks
+    HardwareSerial *_uart;          // UART instance
+    IPC_State_t _state;             // State machine state
     
-    // Start and end delimiter constants
-    const uint8_t _startByte = 0xAA;
-    const uint8_t _endByte = 0x55;
+    // Receive buffer and state
+    uint8_t _rxBuffer[IPC_MAX_PAYLOAD_SIZE + 5];  // LENGTH(2) + TYPE(1) + PAYLOAD + CRC(2)
+    uint16_t _rxBufferIndex;        // Current position in RX buffer
+    uint16_t _rxPacketLength;       // Expected packet length
+    uint8_t _rxMessageType;         // Received message type
+    bool _rxEscapeNext;             // Escape sequence flag
     
-    // Receive buffer
-    uint8_t _rxBuffer[MAX_PAYLOAD_SIZE + 7];
-    int _rxBufferIndex = 0;
+    // Transmit queue
+    IPC_TxPacket_t _txQueue[IPC_TX_QUEUE_SIZE];
+    uint8_t _txQueueHead;           // Queue head index
+    uint8_t _txQueueTail;           // Queue tail index
+    
+    // Message handlers
+    IPC_MessageHandler_t _handlers[IPC_MAX_HANDLERS];
+    uint8_t _handlerCount;
+    
+    // Statistics
+    uint32_t _rxPacketCount;
+    uint32_t _txPacketCount;
+    uint32_t _rxErrorCount;
+    uint32_t _crcErrorCount;
+    uint32_t _lastRxTime;
+    uint32_t _lastTxTime;
+    
+    // Internal methods
+    void processRxByte(uint8_t byte);
+    void processRxPacket();
+    void sendNextPacket();
+    void dispatchMessage(uint8_t messageType, const uint8_t *payload, uint16_t payloadLength);
 };
 
-#endif /* IPC_PROTOCOL_H */
+#endif // IPC_PROTOCOL_H

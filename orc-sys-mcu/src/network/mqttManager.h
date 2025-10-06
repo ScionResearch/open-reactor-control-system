@@ -29,14 +29,16 @@ void manageMqtt();
 void mqttPublishSensorData();
 
 /**
- * @brief Publishes a single sensor reading received from the I/O controller.
- * @param msg The IPC message containing the sensor data.
- */
-/**
- * @brief Publishes a single sensor reading received from the I/O controller.
+ * @brief Publishes a single sensor reading received from the I/O controller (legacy).
  * @param msg The IPC message containing the sensor data.
  */
 void publishSensorData(const Message& msg);
+
+/**
+ * @brief Publishes sensor data received via new IPC protocol.
+ * @param data Pointer to IPC_SensorData_t structure
+ */
+void publishSensorDataIPC(const IPC_SensorData_t* data);
 
 /**
  * @brief Apply current NetworkConfig MQTT settings to the client and trigger a reconnect attempt.

@@ -54,6 +54,75 @@ void manageTerminal(void)
           statusLocked = false;
         }
       }
+      else if (strcmp(serialString, "ping") == 0) {
+        log(LOG_INFO, true, "Sending PING to SAME51...\n");
+        log(LOG_DEBUG, false, "PING packet format: [0x7E] [LEN_HI][LEN_LO] [TYPE] [CRC_HI][CRC_LO] [0x7E]\n");
+        log(LOG_DEBUG, false, "Expected: [0x7E] [0x00][0x03] [0x00] [CRC] [0x7E] (3 bytes = TYPE only)\n");
+        log(LOG_INFO, false, "PING sent successfully (waiting for PONG)\n");
+        if (!ipc.sendPing()) {
+          log(LOG_ERROR, true, "Failed to send PING (TX queue full)\n");
+        }
+      }
+      else if (strcmp(serialString, "hello") == 0) {
+        log(LOG_INFO, true, "Sending HELLO to SAME51...\n");
+        if (ipc.sendHello(IPC_PROTOCOL_VERSION, 0x00010001, "RP2040-ORC-SYS")) {
+          log(LOG_INFO, false, "HELLO sent successfully (waiting for HELLO_ACK)\n");
+        } else {
+          log(LOG_ERROR, true, "Failed to send HELLO (TX queue full)\n");
+        }
+      }
+      else if (strcmp(serialString, "ping-raw") == 0) {
+        log(LOG_INFO, true, "Sending raw PING bytes to Serial1...\n");
+        // Manually send a PING packet for debugging
+        // Packet: [START=0x7E] [LEN_HI=0x00] [LEN_LO=0x03] [TYPE=0x00] [CRC_HI] [CRC_LO] [END=0x7E]
+        uint8_t pingPacket[] = {0x00, 0x03, 0x00};  // LENGTH + TYPE
+        uint16_t crc = 0xFFFF;
+        for (int i = 0; i < 3; i++) {
+          crc ^= (uint16_t)pingPacket[i] << 8;
+          for (int j = 0; j < 8; j++) {
+            if (crc & 0x8000) {
+              crc = (crc << 1) ^ 0x1021;
+            } else {
+              crc <<= 1;
+            }
+          }
+        }
+        log(LOG_INFO, false, "Raw PING: 7E %02X %02X %02X %02X %02X 7E\n", 
+            pingPacket[0], pingPacket[1], pingPacket[2], 
+            (crc >> 8) & 0xFF, crc & 0xFF);
+        Serial1.write(0x7E);
+        Serial1.write(pingPacket, 3);
+        Serial1.write((crc >> 8) & 0xFF);
+        Serial1.write(crc & 0xFF);
+        Serial1.write(0x7E);
+        log(LOG_INFO, true, "Raw PING sent\n");
+      }
+      else if (strcmp(serialString, "ipc-stats") == 0) {
+        IPC_Statistics_t stats;
+        ipc.getStatistics(&stats);
+        log(LOG_INFO, false, "=== IPC Statistics ===\n");
+        log(LOG_INFO, false, "RX Packets: %lu\n", stats.rxPacketCount);
+        log(LOG_INFO, false, "TX Packets: %lu\n", stats.txPacketCount);
+        log(LOG_INFO, false, "RX Errors: %lu\n", stats.rxErrorCount);
+        log(LOG_INFO, false, "CRC Errors: %lu\n", stats.crcErrorCount);
+        log(LOG_INFO, false, "Last RX: %lu ms ago\n", stats.lastRxTime > 0 ? millis() - stats.lastRxTime : 0);
+        log(LOG_INFO, false, "Last TX: %lu ms ago\n", stats.lastTxTime > 0 ? millis() - stats.lastTxTime : 0);
+      }
+      else if (strcmp(serialString, "ipc-dump") == 0) {
+        log(LOG_INFO, true, "Reading raw bytes from Serial1 for 2 seconds...\n");
+        log(LOG_INFO, false, "Bytes: ");
+        uint32_t start = millis();
+        int count = 0;
+        while (millis() - start < 2000) {
+          if (Serial1.available()) {
+            uint8_t b = Serial1.read();
+            log(LOG_INFO, false, "%02X ", b);
+            count++;
+            if (count % 16 == 0) log(LOG_INFO, false, "\n       ");
+          }
+        }
+        log(LOG_INFO, false, "\nReceived %d bytes\n", count);
+      }
       else {
       // --- NEW TEST COMMAND LOGIC ---
       char command[20], type[20];
@@ -82,7 +151,17 @@ void manageTerminal(void)
       } // --- END OF NEW TEST COMMAND LOGIC ---
       else {
         log(LOG_INFO, false, "Unknown command: %s\n", serialString);
-        log(LOG_INFO, false, "Available commands: ip (print IP address), sd (print SD card info), status, reboot\n");
+        log(LOG_INFO, false, "Available commands:\n");
+        log(LOG_INFO, false, "  ip          - Print IP address\n");
+        log(LOG_INFO, false, "  sd          - Print SD card info\n");
+        log(LOG_INFO, false, "  status      - Print system status\n");
+        log(LOG_INFO, false, "  ping        - Send PING to SAME51\n");
+        log(LOG_INFO, false, "  hello       - Send HELLO to SAME51 (initiate handshake)\n");
+        log(LOG_INFO, false, "  ping-raw    - Send raw PING bytes (debug)\n");
+        log(LOG_INFO, false, "  ipc-stats   - Print IPC statistics\n");
+        log(LOG_INFO, false, "  ipc-dump    - Dump raw bytes from Serial1 for 2s\n");
+        log(LOG_INFO, false, "  ipc-test    - Simulate IPC message (e.g., ipc-test temp 25.5)\n");
+        log(LOG_INFO, false, "  reboot      - Reboot system\n");
       }
       }
     }

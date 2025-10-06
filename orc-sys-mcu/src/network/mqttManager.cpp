@@ -158,7 +158,6 @@ float getMqttBusy() { return status.mqttBusy ? 1.0f : 0.0f; }
 
 
 void init_mqttManager() {
-    log(LOG_DEBUG, false, "[Core0] init_mqttManager() start\n");
     if (strlen(networkConfig.mqttBroker) > 0) {
         mqttClient.setServer(networkConfig.mqttBroker, networkConfig.mqttPort);
         log(LOG_INFO, false, "MQTT Manager initialized for broker %s:%d\n", networkConfig.mqttBroker, networkConfig.mqttPort);
@@ -168,9 +167,7 @@ void init_mqttManager() {
 }
 
 void manageMqtt() {
-    log(LOG_DEBUG, false, "[MQTT] manageMqtt start\n");
     if (!ethernetConnected || strlen(networkConfig.mqttBroker) == 0) {
-        log(LOG_DEBUG, false, "[MQTT] not connected or broker not set\n");
         if (status.mqttConnected) {
             if (!statusLocked) {
                 statusLocked = true;
@@ -183,7 +180,6 @@ void manageMqtt() {
     }
 
     if (!mqttClient.connected()) {
-        log(LOG_DEBUG, false, "[MQTT] not connected, will try reconnect\n");
         if (status.mqttConnected) { // Update status if we just disconnected
             if (!statusLocked) {
                 statusLocked = true;
@@ -207,18 +203,15 @@ void manageMqtt() {
             }
         }
     // Process MQTT messages and keep-alives
-        log(LOG_DEBUG, false, "[MQTT] calling mqttClient.loop\n");
         mqttClient.loop();
 
     // Check if it's time to publish data
     uint32_t publishInterval = (networkConfig.mqttPublishIntervalMs > 0) ? networkConfig.mqttPublishIntervalMs : MQTT_PUBLISH_INTERVAL;
     if (millis() - lastMqttPublishTime > publishInterval) {
             lastMqttPublishTime = millis();
-            log(LOG_DEBUG, false, "[MQTT] publishing all sensor data\n");
             mqttPublishAllSensorData();
         }
     }
-    log(LOG_DEBUG, false, "[MQTT] manageMqtt end\n");
 }
 
 /**
@@ -400,7 +393,100 @@ static void mqttPublishAllSensorData() {
 
         // 5. Publish the message
         if (mqttClient.publish(fullTopic, payload)) {
-            log(LOG_DEBUG, false, "MQTT Published [%s]: %s\n", fullTopic, payload);
+            log(LOG_INFO, false, "MQTT Published [%s]: %s\n", fullTopic, payload);
+        } else {
+            log(LOG_WARNING, true, "MQTT publish failed for topic: %s\n", fullTopic);
+        }
+    }
+
+    /**
+     * @brief Publishes sensor data received via new IPC protocol
+     * 
+     * This function handles IPC_SensorData_t structures from the new IPC protocol.
+     * It constructs a JSON payload and publishes it to the appropriate MQTT topic.
+     * 
+     * @param data Pointer to IPC_SensorData_t structure
+     */
+    void publishSensorDataIPC(const IPC_SensorData_t* data) {
+        if (!mqttClient.connected() || data == nullptr) {
+            return;
+        }
+
+        // Map object type to topic path
+        const char* topicPath = nullptr;
+        switch (data->objectType) {
+            case OBJ_T_TEMPERATURE_SENSOR:
+                topicPath = "sensors/temperature";
+                break;
+            case OBJ_T_PH_SENSOR:
+                topicPath = "sensors/ph";
+                break;
+            case OBJ_T_DISSOLVED_OXYGEN_SENSOR:
+                topicPath = "sensors/do";
+                break;
+            case OBJ_T_OPTICAL_DENSITY_SENSOR:
+                topicPath = "sensors/od";
+                break;
+            case OBJ_T_FLOW_SENSOR:
+                topicPath = "sensors/gasflow";
+                break;
+            case OBJ_T_PRESSURE_SENSOR:
+                topicPath = "sensors/pressure";
+                break;
+            case OBJ_T_POWER_SENSOR:
+                topicPath = "sensors/power";
+                break;
+            case OBJ_T_ANALOG_INPUT:
+                topicPath = "sensors/analog";
+                break;
+            default:
+                log(LOG_WARNING, false, "MQTT: No topic mapping for object type %d\n", data->objectType);
+                return;
+        }
+
+        // Construct the full topic with object index
+        ensureTopicPrefix();
+        char fullTopic[192];
+        snprintf(fullTopic, sizeof(fullTopic), "%s/%s/%d", deviceTopicPrefix, topicPath, data->index);
+
+        // Get timestamp - use IPC timestamp if available, otherwise get current time
+        String timestamp;
+        if (data->timestamp > 0) {
+            // Convert milliseconds timestamp to ISO8601
+            // TODO: Implement proper timestamp conversion from IPC timestamp
+            timestamp = getISO8601Timestamp(); // For now, use current time
+        } else {
+            timestamp = getISO8601Timestamp();
+        }
+
+        if (timestamp.length() == 0) {
+            log(LOG_WARNING, true, "MQTT: Could not get timestamp for publishing.\n");
+            return;
+        }
+
+        // Create JSON payload
+        StaticJsonDocument<256> doc;
+        doc["timestamp"] = timestamp;
+        doc["value"] = data->value;
+        doc["unit"] = data->unit;
+        doc["status"] = data->flags;
+        
+        // Add fault flag if present
+        if (data->flags & IPC_SENSOR_FLAG_FAULT) {
+            doc["fault"] = true;
+        }
+        
+        // Add message if present
+        if ((data->flags & IPC_SENSOR_FLAG_NEW_MSG) && strlen(data->message) > 0) {
+            doc["message"] = data->message;
+        }
+
+        char payload[256];
+        serializeJson(doc, payload, sizeof(payload));
+
+        // Publish the message
+        if (mqttClient.publish(fullTopic, payload)) {
+            log(LOG_INFO, false, "MQTT Published [%s]: %s\n", fullTopic, payload);
         } else {
             log(LOG_WARNING, true, "MQTT publish failed for topic: %s\n", fullTopic);
         }

@@ -1,10 +1,10 @@
-#ifndef IPC_DATA_STRUCTS_H
-#define IPC_DATA_STRUCTS_H
+#pragma once
 
-#include <stdint.h>
+#include <Arduino.h>
+#include "../objects.h"
 
 // ============================================================================
-// IPC PROTOCOL DEFINITIONS - RP2040 Side
+// IPC PROTOCOL DEFINITIONS
 // Inter-Processor Communication between SAME51 and RP2040
 // ============================================================================
 
@@ -16,7 +16,7 @@
 
 // Frame markers
 #define IPC_START_BYTE          0x7E
-#define IPC_END_BYTE            0x7E  // Fixed: was 0x7D (typo causing conflict with ESCAPE_BYTE)
+#define IPC_END_BYTE            0x7E  // Fixed: was 0x7D (typo)
 #define IPC_ESCAPE_BYTE         0x7D
 #define IPC_ESCAPE_XOR          0x20
 
@@ -29,9 +29,6 @@
 // Timing
 #define IPC_TIMEOUT_MS          1000
 #define IPC_KEEPALIVE_MS        1000
-
-// Maximum object count (matches SAME51)
-#define IPC_MAX_OBJECTS         80
 
 // ============================================================================
 // MESSAGE TYPES
@@ -98,28 +95,6 @@ enum IPC_ErrorCode : uint8_t {
     IPC_ERR_DEVICE_FAIL     = 0x08,  // Device creation/operation failed
     IPC_ERR_PARSE_FAIL      = 0x09,  // Payload parsing failed
     IPC_ERR_NOT_IMPLEMENTED = 0x0A,  // Feature not implemented
-};
-
-// ============================================================================
-// OBJECT TYPES (subset from SAME51 objects.h)
-// ============================================================================
-
-enum IPC_ObjectType : uint8_t {
-    OBJ_T_ANALOG_INPUT              = 0,
-    OBJ_T_ANALOG_OUTPUT             = 1,
-    OBJ_T_DIGITAL_OUTPUT            = 2,
-    OBJ_T_GPIO                      = 3,
-    OBJ_T_TEMPERATURE_SENSOR        = 4,
-    OBJ_T_PH_SENSOR                 = 5,
-    OBJ_T_DISSOLVED_OXYGEN_SENSOR   = 6,
-    OBJ_T_OPTICAL_DENSITY_SENSOR    = 7,
-    OBJ_T_FLOW_SENSOR               = 8,
-    OBJ_T_PRESSURE_SENSOR           = 9,
-    OBJ_T_POWER_SENSOR              = 10,
-    OBJ_T_HAMILTON_PH_PROBE         = 20,
-    OBJ_T_HAMILTON_DO_PROBE         = 21,
-    OBJ_T_HAMILTON_OD_PROBE         = 22,
-    OBJ_T_ALICAT_MFC                = 23,
 };
 
 // ============================================================================
@@ -342,6 +317,13 @@ struct IPC_Calibrate_t {
 } __attribute__((packed));
 
 // ============================================================================
+// CRC16 CALCULATION
+// ============================================================================
+
+// CRC16-CCITT (polynomial 0x1021, initial value 0xFFFF)
+uint16_t ipc_calcCRC16(const uint8_t *data, uint16_t length);
+
+// ============================================================================
 // HELPER MACROS
 // ============================================================================
 
@@ -352,126 +334,3 @@ struct IPC_Calibrate_t {
 // Flag bit definitions for IPC_IndexEntry_t
 #define IPC_INDEX_FLAG_VALID        (1 << 0)
 #define IPC_INDEX_FLAG_FIXED        (1 << 1)
-
-// ============================================================================
-// LEGACY MESSAGE TYPES (for backward compatibility with old RP2040 code)
-// ============================================================================
-
-enum MessageTypes : uint8_t {
-    MSG_POWER_SENSOR = 0x80,
-    MSG_TEMPERATURE_SENSOR = 0x81,
-    MSG_PH_SENSOR = 0x82,
-    MSG_DO_SENSOR = 0x83,
-    MSG_OD_SENSOR = 0x84,
-    MSG_GAS_FLOW_SENSOR = 0x85,
-    MSG_PRESSURE_SENSOR = 0x86,
-    MSG_STIRRER_SPEED_SENSOR = 0x87,
-    MSG_WEIGHT_SENSOR = 0x88,
-    MSG_TEMPERATURE_CONTROL = 0x90,
-    MSG_PH_CONTROL = 0x91,
-    MSG_DO_CONTROL = 0x92,
-    MSG_GAS_FLOW_CONTROL = 0x93,
-    MSG_STIRRER_SPEED_CONTROL = 0x94,
-    MSG_PUMP_SPEED_CONTROL = 0x95,
-    MSG_FEED_CONTROL = 0x96,
-    MSG_WASTE_CONTROL = 0x97,
-};
-
-// Legacy sensor data structures (for backward compatibility)
-struct PowerSensor {
-    float voltage;
-    float current;
-    float power;
-    bool online;
-} __attribute__((packed));
-
-struct TemperatureSensor {
-    float celcius;
-    bool online;
-} __attribute__((packed));
-
-struct PHSensor {
-    float pH;
-    bool online;
-} __attribute__((packed));
-
-struct DissolvedOxygenSensor {
-    float oxygen;
-    bool online;
-} __attribute__((packed));
-
-struct OpticalDensitySensor {
-    float OD;
-    bool online;
-} __attribute__((packed));
-
-struct GasFlowSensor {
-    float mlPerMinute;
-    bool online;
-} __attribute__((packed));
-
-struct PressureSensor {
-    float kPa;
-    bool online;
-} __attribute__((packed));
-
-struct StirrerSpeedSensor {
-    float rpm;
-    bool online;
-} __attribute__((packed));
-
-struct WeightSensor {
-    float grams;
-    bool online;
-} __attribute__((packed));
-
-// Legacy control data structures (for backward compatibility)
-struct TemperatureControl {
-    float sp_celcius;
-    bool enabled;
-} __attribute__((packed));
-
-struct PHControl {
-    float sp_pH;
-    bool enabled;
-} __attribute__((packed));
-
-struct DissolvedOxygenControl {
-    float sp_oxygen;
-    bool enabled;
-} __attribute__((packed));
-
-struct GasFlowControl {
-    float sp_mlPerMinute;
-    bool enabled;
-} __attribute__((packed));
-
-struct StirrerSpeedControl {
-    float sp_rpm;
-    bool enabled;
-} __attribute__((packed));
-
-struct PumpSpeedControl {
-    float sp_rpm;
-    bool enabled;
-} __attribute__((packed));
-
-struct FeedControl {
-    float sp_mlPerMinute;
-    bool enabled;
-} __attribute__((packed));
-
-struct WasteControl {
-    float sp_mlPerMinute;
-    bool enabled;
-} __attribute__((packed));
-
-// Legacy message structure (for backward compatibility)
-struct Message {
-    uint8_t msgId;
-    uint8_t objId;
-    uint8_t dataLength;
-    uint8_t data[64];
-} __attribute__((packed));
-
-#endif /* IPC_DATA_STRUCTS_H */
