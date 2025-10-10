@@ -156,14 +156,6 @@ void IPCProtocol::processRxByte(uint8_t byte) {
 }
 
 void IPCProtocol::processRxPacket() {
-    #if IPC_DEBUG_ENABLED
-    Serial.printf("[IPC RX] Processing packet, %u bytes in buffer\n", _rxBufferIndex);
-    Serial.print("[IPC RX] Buffer: ");
-    for (uint16_t i = 0; i < _rxBufferIndex && i < 16; i++) {
-        Serial.printf("%02X ", _rxBuffer[i]);
-    }
-    Serial.println();
-    #endif
     
     // Minimum packet: LENGTH(2) + TYPE(1) + CRC(2) = 5 bytes
     if (_rxBufferIndex < 5) {
@@ -172,16 +164,21 @@ void IPCProtocol::processRxPacket() {
     }
     
     // Extract length (big-endian)
+    // Length = MSG_TYPE (1) + PAYLOAD (N), does NOT include LENGTH field or CRC
     _rxPacketLength = ((uint16_t)_rxBuffer[0] << 8) | _rxBuffer[1];
     
-    // Validate length
-    if (_rxPacketLength < 3 || _rxPacketLength > (IPC_MAX_PAYLOAD_SIZE + 3)) {
+    // Validate length (min = 1 for MSG_TYPE only, max = 1 + max payload)
+    if (_rxPacketLength < 1 || _rxPacketLength > (IPC_MAX_PAYLOAD_SIZE + 1)) {
+        Serial.printf("[IPC] ERROR: Invalid packet length %d\n", _rxPacketLength);
         _rxErrorCount++;
         return;
     }
     
     // Check if we received the expected number of bytes
-    if (_rxBufferIndex != (_rxPacketLength + 2)) {  // +2 for CRC
+    uint16_t expectedBytes = 2 + _rxPacketLength + 2;
+    if (_rxBufferIndex != expectedBytes) {
+        Serial.printf("[IPC] ERROR: Length mismatch (got %d, expected %d)\n",
+                      _rxBufferIndex, expectedBytes);
         _rxErrorCount++;
         return;
     }
@@ -198,18 +195,18 @@ void IPCProtocol::processRxPacket() {
     
     // Verify CRC
     if (receivedCRC != calculatedCRC) {
+        Serial.printf("[IPC] ERROR: CRC mismatch (0x%04X != 0x%04X)\n", 
+                      receivedCRC, calculatedCRC);
         _crcErrorCount++;
         return;
     }
     
     // Packet is valid, dispatch to handler
-    #if IPC_DEBUG_ENABLED
-    Serial.println("[IPC RX] ✓ Packet valid, dispatching");
-    #endif
     _rxPacketCount++;
     
-    // Payload starts at index 3, length is _rxPacketLength - 3
-    uint16_t payloadLength = _rxPacketLength - 3;
+    // Payload starts at index 3 (after LENGTH(2) + MSG_TYPE(1))
+    // Payload length = _rxPacketLength - 1 (subtract MSG_TYPE byte)
+    uint16_t payloadLength = _rxPacketLength - 1;
     uint8_t *payload = (payloadLength > 0) ? &_rxBuffer[3] : nullptr;
     
     dispatchMessage(_rxMessageType, payload, payloadLength);
@@ -254,8 +251,8 @@ void IPCProtocol::sendNextPacket() {
     uint8_t tempBuffer[IPC_MAX_PAYLOAD_SIZE + 5];  // LENGTH(2) + TYPE(1) + PAYLOAD + CRC(2)
     uint16_t tempIndex = 0;
     
-    // LENGTH = TYPE(1) + PAYLOAD length + CRC(2)
-    uint16_t packetLength = 3 + packet->payloadLength;
+    // LENGTH = TYPE(1) + PAYLOAD length (does NOT include LENGTH field or CRC)
+    uint16_t packetLength = 1 + packet->payloadLength;
     tempBuffer[tempIndex++] = (packetLength >> 8) & 0xFF;
     tempBuffer[tempIndex++] = packetLength & 0xFF;
     
@@ -317,13 +314,15 @@ void IPCProtocol::dispatchMessage(uint8_t messageType, const uint8_t *payload, u
         if (_handlers[i].messageType == messageType) {
             if (_handlers[i].callback != nullptr) {
                 _handlers[i].callback(messageType, payload, payloadLength);
+            } else {
+                Serial.printf("[IPC] ERROR: Handler for type 0x%02X has null callback\n", messageType);
             }
             return;
         }
     }
     
-    // No handler found - this is not necessarily an error, just log it
-    // (Could add a default handler here if needed)
+    // No handler found
+    Serial.printf("[IPC] WARNING: No handler for message type 0x%02X\n", messageType);
 }
 
 // =============================================================================

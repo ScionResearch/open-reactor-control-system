@@ -18,6 +18,8 @@ enum ObjectType {
     OBJ_T_OPTICAL_DENSITY_SENSOR,   // x?
     OBJ_T_FLOW_SENSOR,              // x?
     OBJ_T_PRESSURE_SENSOR,          // x?
+    OBJ_T_VOLTAGE_SENSOR,           // x2
+    OBJ_T_CURRENT_SENSOR,           // x2
     OBJ_T_POWER_SENSOR,             // x2
     // Outputs
     OBJ_T_ANALOG_OUTPUT,            // x2
@@ -84,6 +86,9 @@ struct DigitalIO_t {
     bool pullup;
     bool output;
     bool state;
+    bool fault;
+    bool newMessage;
+    char message[100];
 };
 struct TemperatureSensor_t {
     float temperature;
@@ -133,9 +138,23 @@ struct PressureSensor_t {
     char message[100];
 };
 
-struct PowerSensor_t {
+struct VoltageSensor_t {
     float voltage;
+    char unit[8];
+    bool fault;
+    bool newMessage;
+    char message[100];
+};
+
+struct CurrentSensor_t {
     float current;
+    char unit[8];
+    bool fault;
+    bool newMessage;
+    char message[100];
+};
+
+struct PowerSensor_t {
     float power;
     char unit[8];
     bool fault;
@@ -177,6 +196,10 @@ struct StepperDevice_t {
     uint16_t stepsPerRev;
     uint16_t holdCurrent;
     uint16_t runCurrent;
+    char unit[8];           // "rpm"
+    bool fault;
+    bool newMessage;
+    char message[100];
 };
 
 struct MotorDevice_t {
@@ -186,6 +209,10 @@ struct MotorDevice_t {
     bool running;
     bool enabled;
     uint16_t runCurrent;
+    char unit[8];           // "%"
+    bool fault;
+    bool newMessage;
+    char message[100];
 };
 
 // Control objects
@@ -249,14 +276,15 @@ struct wasteControl_t {
 };
 
 // Communication port objects
-struct SerialRS232_t {
-    bool enabled;
-    bool newMessage;
-    char message[100];
-};
-
-struct SerialRS485_t {
-    bool enabled;
-    bool newMessage;
-    char message[100];
+struct SerialCom_t {
+    uint8_t portNumber;      // Port number (1-4)
+    uint32_t baudRate;       // Baud rate (e.g., 9600, 19200, 115200)
+    uint8_t dataBits;        // Data bits (5, 6, 7, or 8)
+    float stopBits;          // Stop bits (1, 1.5, or 2)
+    uint8_t parity;          // Parity: 0=none, 1=odd, 2=even
+    bool enabled;            // Port enabled
+    uint8_t slaveCount;      // Number of Modbus slaves on this port
+    bool fault;              // Fault flag
+    bool newMessage;         // New message flag
+    char message[100];       // Status/error message
 };

@@ -6,6 +6,11 @@
 void init_ipcManager(void) {
   Serial1.setRX(PIN_SI_RX);
   Serial1.setTX(PIN_SI_TX);
+  
+  // Set UART FIFO size to 512 bytes to accommodate large IPC packets (default is 32 bytes)
+  // Max packet size with byte stuffing: ~260 bytes raw data * 2 (worst case stuffing) = 520 bytes
+  Serial1.setFIFOSize(512);
+  
   ipc.begin(2000000); // 2 Mbps
   
   // Register message handlers
@@ -22,9 +27,49 @@ void init_ipcManager(void) {
   statusLocked = false;
 }
 
+// Debug: Test sensor reads via IPC
+unsigned long lastSensorTestTime = 0;
+uint8_t currentTestIndex = 0;
+
+void testSensorReads(void) {
+  static bool testActive = true;  // Set to false to disable debug output
+  
+  if (!testActive) return;
+  
+  unsigned long now = millis();
+  if (now - lastSensorTestTime < 2000) return;  // Test every 2 seconds
+  lastSensorTestTime = now;
+  
+  // Cycle through different sensor types to test
+  const char* testNames[] = {
+    "ADC 0", "ADC 1", "DAC 0", "RTD 0", "GPIO 0", 
+    "Output 0", "Stepper", "Motor 0", "Voltage 0", "Current 0", "Power 0", "Modbus 0"
+  };
+  uint8_t testIndices[] = {0, 1, 8, 10, 13, 21, 26, 27, 31, 32, 33, 37};
+  
+  if (currentTestIndex >= sizeof(testIndices)) {
+    currentTestIndex = 0;
+    log(LOG_INFO, true, "\n=== IPC Sensor Test Cycle Complete ===\n\n");
+  }
+  
+  uint8_t index = testIndices[currentTestIndex];
+  log(LOG_INFO, true, "IPC Test: Requesting %s (index %d)...\n", 
+      testNames[currentTestIndex], index);
+  
+  // Send sensor read request
+  IPC_SensorReadReq_t request;
+  request.index = index;
+  ipc.sendPacket(IPC_MSG_SENSOR_READ_REQ, (uint8_t*)&request, sizeof(request));
+  
+  currentTestIndex++;
+}
+
 void manageIPC(void) {
   // Check for incoming messages
   ipc.update();
+  
+  // Debug: Test sensor reads
+  testSensorReads();
 }
 
 /**
@@ -37,6 +82,20 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
   }
   
   const IPC_SensorData_t *sensorData = (const IPC_SensorData_t *)payload;
+  
+  // DEBUG: Print received sensor data
+  log(LOG_INFO, true, "  ✓ Sensor[%d] Type=%d: value=%0.3f %s", 
+      sensorData->index, sensorData->objectType, sensorData->value, sensorData->unit);
+  
+  if (sensorData->flags & IPC_SENSOR_FLAG_FAULT) {
+    log(LOG_INFO, true, " [FAULT]");
+  }
+  
+  if (sensorData->flags & IPC_SENSOR_FLAG_NEW_MSG) {
+    log(LOG_INFO, true, " MSG: %s", sensorData->message);
+  }
+  
+  log(LOG_INFO, true, "\n");
   
   // Forward to MQTT
   publishSensorDataIPC(sensorData);

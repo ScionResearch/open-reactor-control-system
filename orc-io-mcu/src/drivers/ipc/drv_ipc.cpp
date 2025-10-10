@@ -34,6 +34,8 @@ bool ipc_init(void) {
     
     // Configure UART
     ipcDriver.uart = &Serial1;
+    // Note: SAME51 Serial1 uses hardware FIFO (default ~64 bytes RX buffer)
+    // This should be sufficient as IPC protocol processes bytes continuously
     ipcDriver.uart->begin(2000000);  // 2 Mbps
     
     // Set initial state
@@ -121,12 +123,13 @@ bool ipc_processTxQueue(void) {
     // Start byte
     txBuffer[bufferPos++] = IPC_START_BYTE;
     
-    // Calculate CRC over LENGTH + MSG_TYPE + PAYLOAD
+    // Calculate CRC over LENGTH + MSG_TYPE + PAYLOAD (NOT CRC)
     uint8_t crcData[3 + IPC_MAX_PAYLOAD_SIZE];
     uint16_t crcDataLen = 0;
     
-    // LENGTH = size of (LENGTH field (2) + MSG_TYPE (1) + PAYLOAD (N))
-    uint16_t totalLength = 2 + 1 + packet->payloadLen;
+    // LENGTH = size of (MSG_TYPE (1) + PAYLOAD (N))
+    // NOTE: Length field itself and CRC are NOT included in length value
+    uint16_t totalLength = 1 + packet->payloadLen;
     
     // LENGTH (big-endian)
     crcData[crcDataLen++] = (totalLength >> 8) & 0xFF;
@@ -173,14 +176,7 @@ bool ipc_processTxQueue(void) {
     // End byte
     txBuffer[bufferPos++] = IPC_END_BYTE;
     
-    #if IPC_DEBUG_ENABLED
-    // Print complete packet
-    Serial.printf("[IPC TX] Complete packet (%u bytes): ", bufferPos);
-    for (uint16_t i = 0; i < bufferPos && i < 32; i++) {
-        Serial.printf("%02X ", txBuffer[i]);
-    }
-    Serial.println();
-    #endif
+    // Packet sent successfully (debug logging removed for clarity)
     
     // Send packet
     ipcDriver.uart->write(txBuffer, bufferPos);
@@ -206,9 +202,6 @@ void ipc_processRxByte(uint8_t byte) {
         case IPC_STATE_IDLE:
             if (byte == IPC_START_BYTE) {
                 // Start of new packet
-                #if IPC_DEBUG_ENABLED
-                Serial.printf("[IPC RX] START byte detected (0x7E), entering RECEIVING state\n");
-                #endif
                 ipcDriver.rxBufferPos = 0;
                 ipcDriver.escapeNext = false;
                 ipcDriver.rxStartTime = now;
@@ -219,10 +212,8 @@ void ipc_processRxByte(uint8_t byte) {
         case IPC_STATE_RECEIVING:
             // Check for timeout
             if ((now - ipcDriver.rxStartTime) > IPC_TIMEOUT_MS) {
-                #if IPC_DEBUG_ENABLED
-                Serial.printf("[IPC RX] TIMEOUT after %lu ms, %u bytes buffered\n", 
+                Serial.printf("[IPC RX] ERROR: TIMEOUT after %lu ms, %u bytes buffered\n", 
                              now - ipcDriver.rxStartTime, ipcDriver.rxBufferPos);
-                #endif
                 ipcDriver.state = IPC_STATE_ERROR;
                 ipcDriver.rxErrorCount++;
                 strcpy(ipcDriver.message, "IPC RX: Timeout");
@@ -232,6 +223,7 @@ void ipc_processRxByte(uint8_t byte) {
             
             // Check for buffer overflow
             if (ipcDriver.rxBufferPos >= IPC_RX_BUFFER_SIZE) {
+                Serial.printf("[IPC RX] ERROR: Buffer overflow at %u bytes\n", ipcDriver.rxBufferPos);
                 ipcDriver.state = IPC_STATE_ERROR;
                 ipcDriver.rxErrorCount++;
                 strcpy(ipcDriver.message, "IPC RX: Buffer overflow");
@@ -241,10 +233,6 @@ void ipc_processRxByte(uint8_t byte) {
             
             // Handle end byte
             if (byte == IPC_END_BYTE && !ipcDriver.escapeNext) {
-                #if IPC_DEBUG_ENABLED
-                Serial.printf("[IPC RX] END byte detected (0x%02X), %u bytes buffered\n", 
-                             byte, ipcDriver.rxBufferPos);
-                #endif
                 ipcDriver.state = IPC_STATE_PROCESSING;
                 return;
             }
@@ -270,14 +258,6 @@ void ipc_processRxByte(uint8_t byte) {
 }
 
 void ipc_processReceivedPacket(void) {
-    #if IPC_DEBUG_ENABLED
-    Serial.printf("[IPC RX] Processing packet, buffer has %u bytes\n", ipcDriver.rxBufferPos);
-    Serial.print("[IPC RX] Buffer: ");
-    for (uint16_t i = 0; i < ipcDriver.rxBufferPos && i < 32; i++) {
-        Serial.printf("%02X ", ipcDriver.rxBuffer[i]);
-    }
-    Serial.println();
-    #endif
     
     // Need at least 5 bytes: LENGTH(2) + MSG_TYPE(1) + CRC(2)
     if (ipcDriver.rxBufferPos < 5) {
@@ -289,18 +269,21 @@ void ipc_processReceivedPacket(void) {
     }
     
     // Extract LENGTH (big-endian)
-    // LENGTH = size of (LENGTH field (2) + MSG_TYPE (1) + PAYLOAD (N))
-    uint16_t totalLength = ((uint16_t)ipcDriver.rxBuffer[0] << 8) | ipcDriver.rxBuffer[1];
+    // LENGTH = size of (MSG_TYPE (1) + PAYLOAD (N))
+    // Note: LENGTH field itself and CRC are NOT included in the length value
+    uint16_t packetLength = ((uint16_t)ipcDriver.rxBuffer[0] << 8) | ipcDriver.rxBuffer[1];
     
     // Extract MSG_TYPE
     uint8_t msgType = ipcDriver.rxBuffer[2];
     
-    // Calculate payload length: totalLength - 2 (LENGTH) - 1 (MSG_TYPE)
-    uint16_t payloadLen = totalLength - 3;
+    // Calculate payload length: packetLength - 1 (MSG_TYPE)
+    uint16_t payloadLen = packetLength - 1;
     
-    // Check packet length: LENGTH + PAYLOAD + CRC
-    uint16_t expectedLen = totalLength + 2;  // Total length includes itself + CRC(2)
+    // Check buffer length: LENGTH(2) + packetLength + CRC(2)
+    uint16_t expectedLen = 2 + packetLength + 2;
     if (ipcDriver.rxBufferPos != expectedLen) {
+        Serial.printf("[IPC] ERROR: Length mismatch (buffer %u bytes, expected %u)\n",
+                      ipcDriver.rxBufferPos, expectedLen);
         ipcDriver.state = IPC_STATE_ERROR;
         ipcDriver.rxErrorCount++;
         sprintf(ipcDriver.message, "IPC RX: Length mismatch (exp %u, got %u)", 
@@ -318,6 +301,7 @@ void ipc_processReceivedPacket(void) {
     
     // Verify CRC
     if (rxCRC != calcCRC) {
+        Serial.printf("[IPC] ERROR: CRC mismatch (0x%04X != 0x%04X)\n", rxCRC, calcCRC);
         ipcDriver.state = IPC_STATE_ERROR;
         ipcDriver.crcErrorCount++;
         ipcDriver.rxErrorCount++;
@@ -327,9 +311,7 @@ void ipc_processReceivedPacket(void) {
         return;
     }
     
-    #if IPC_DEBUG_ENABLED
-    Serial.printf("[IPC RX] ✓ Packet valid! Type=0x%02X, Payload=%u bytes\n", msgType, payloadLen);
-    #endif
+    // Packet validated successfully (logging handled by message handlers)
     
     // Extract payload
     ipcDriver.rxMsgType = msgType;

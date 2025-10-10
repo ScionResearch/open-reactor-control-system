@@ -8,23 +8,34 @@ void output_init(void) {
     int outputPins[4] = {PIN_OUT_1, PIN_OUT_2, PIN_OUT_3, PIN_OUT_4};
     analogWriteResolution(8);
 
-    // Setup open-drain outputs
+    // Setup open-drain outputs (indices 21-24)
     for (int i = 0; i < 4; i++) {
         outputDriver.outputObj[i] = &digitalOutput[i];
         outputDriver.pin[i] = outputPins[i];
         pinMode(outputDriver.pin[i], OUTPUT);
         digitalWrite(outputDriver.pin[i], LOW);
+        
+        // Add to object index (fixed indices 21-24)
+        objIndex[21 + i].type = OBJ_T_DIGITAL_OUTPUT;
+        objIndex[21 + i].obj = &digitalOutput[i];
+        sprintf(objIndex[21 + i].name, "Digital Output %d", i + 1);
+        objIndex[21 + i].valid = true;
     }
 
-    // Setup heater high current output (slow PWM)
+    // Setup heater high current output (slow PWM, index 25)
     outputDriver.outputObj[4] = &heaterOutput[0];
     outputDriver.pin[4] = PIN_HEAT_OUT;
+    
+    // Add to object index (fixed index 25)
+    objIndex[25].type = OBJ_T_DIGITAL_OUTPUT;
+    objIndex[25].obj = &heaterOutput[0];
+    strcpy(objIndex[25].name, "Heater Output");
+    objIndex[25].valid = true;
 
     // Initialise the PWM function using the standard core implementation
     analogWrite(PIN_HEAT_OUT, 0);
 
     // Enable TCC0 clock
-    GCLK->PCHCTRL[TCC0_GCLK_ID].reg = GCLK_PCHCTRL_CHEN | GCLK_PCHCTRL_GEN_GCLK0;
     while (!(GCLK->PCHCTRL[TCC0_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
 
     // Disable TCC0

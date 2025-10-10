@@ -8,11 +8,32 @@ bool stepper_init(void) {
     stepperDriver.device = &stepperDevice;
     stepperDriver.ready = false;
     stepperDriver.fault = false;
+    
+    // Initialize device object
+    stepperDevice.rpm = 0;
+    stepperDevice.running = false;
+    stepperDevice.enabled = false;
+    strcpy(stepperDevice.unit, "rpm");
+    stepperDevice.fault = false;
+    stepperDevice.newMessage = false;
+    stepperDevice.message[0] = '\0';
+    
+    // Add to object index (fixed index 26)
+    objIndex[26].type = OBJ_T_STEPPER_MOTOR;
+    objIndex[26].obj = &stepperDevice;
+    strcpy(objIndex[26].name, "Stepper Motor");
+    objIndex[26].valid = true;
 
     if (!stepperDriver.stepper->begin()) {
         stepperDriver.fault = true;
         stepperDriver.newMessage = true;
         strcpy(stepperDriver.message, "Stepper initialisation failed");
+        
+        // Propagate fault to device object
+        stepperDevice.fault = true;
+        stepperDevice.newMessage = true;
+        strcpy(stepperDevice.message, stepperDriver.message);
+        
         return false;
     }
     stepperDriver.stepper->setRPM(0.0);
@@ -28,42 +49,77 @@ bool stepper_update(bool setParams) {
             stepperDriver.fault = true;
             stepperDriver.newMessage = true;
             strcpy(stepperDriver.message, "Stepper max RPM not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
             return false;
         }
         if (!stepperDriver.stepper->setStepsPerRev(stepperDevice.stepsPerRev)) {
             stepperDriver.fault = true;
             stepperDriver.newMessage = true;
             strcpy(stepperDriver.message, "Stepper steps per rev not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
             return false;
         }
         if (!stepperDriver.stepper->invertDirection(stepperDevice.inverted)) {
             stepperDriver.fault = true;
             stepperDriver.newMessage = true;
             strcpy(stepperDriver.message, "Stepper inversion not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
             return false;
         }
         if (!stepperDriver.stepper->setDirection(stepperDevice.direction)) {
             stepperDriver.fault = true;
             stepperDriver.newMessage = true;
             strcpy(stepperDriver.message, "Stepper direction not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
             return false;
         }
         if (!stepperDriver.stepper->setAcceleration(stepperDevice.acceleration)) {
             stepperDriver.fault = true;
             stepperDriver.newMessage = true;
             strcpy(stepperDriver.message, "Stepper acceleration not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
             return false;
         }
         if (!stepperDriver.stepper->setIhold(stepperDevice.holdCurrent)) {
             stepperDriver.fault = true;
             stepperDriver.newMessage = true;
             strcpy(stepperDriver.message, "Stepper hold current not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
             return false;
         }
         if (!stepperDriver.stepper->setIrun(stepperDevice.runCurrent)) {
             stepperDriver.fault = true;
             stepperDriver.newMessage = true;
             strcpy(stepperDriver.message, "Stepper run current not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
             return false;
         }
         stepperDriver.ready = true;
@@ -74,6 +130,11 @@ bool stepper_update(bool setParams) {
                 stepperDriver.fault = true;
                 stepperDriver.newMessage = true;
                 strcpy(stepperDriver.message, "Stepper stop failed");
+                
+                // Propagate fault
+                stepperDevice.fault = true;
+                stepperDevice.newMessage = true;
+                strcpy(stepperDevice.message, stepperDriver.message);
                 return false;
             }
         } else if (stepperDevice.enabled && !stepperDriver.stepper->status.running) {
@@ -81,12 +142,22 @@ bool stepper_update(bool setParams) {
                 stepperDriver.fault = true;
                 stepperDriver.newMessage = true;
                 strcpy(stepperDriver.message, "Stepper RPM not set");
+                
+                // Propagate fault
+                stepperDevice.fault = true;
+                stepperDevice.newMessage = true;
+                strcpy(stepperDevice.message, stepperDriver.message);
                 return false;
             }
             if (!stepperDriver.stepper->run()) {
                 stepperDriver.fault = true;
                 stepperDriver.newMessage = true;
                 strcpy(stepperDriver.message, "Stepper start failed");
+                
+                // Propagate fault
+                stepperDevice.fault = true;
+                stepperDevice.newMessage = true;
+                strcpy(stepperDevice.message, stepperDriver.message);
                 return false;
             }
         }

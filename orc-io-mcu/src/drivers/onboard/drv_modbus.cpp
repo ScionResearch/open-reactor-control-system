@@ -1,28 +1,56 @@
 #include "drv_modbus.h"
 
 ModbusDriver_t modbusDriver[4];
+SerialCom_t modbusPort[4];
 
 bool modbus_init(void) {
     HardwareSerial *serial[4] = {&Serial2, &Serial3, &Serial4, &Serial5};
-    int pins[4] = {-1, -1, PIN_RS485_DE_1, PIN_RS485_DE_2};
+    int8_t pins[4] = {-1, -1, PIN_RS485_DE_1, PIN_RS485_DE_2};
+    
     for (int i = 0; i < 4; i++) {
+        // Initialize port object (user-accessible)
+        modbusPort[i].portNumber = i + 1;
+        modbusPort[i].baudRate = 9600;      // Default baud
+        modbusPort[i].dataBits = 8;         // Default 8 data bits
+        modbusPort[i].stopBits = 1;         // Default 1 stop bit
+        modbusPort[i].parity = 0;           // Default no parity
+        modbusPort[i].enabled = true;
+        modbusPort[i].slaveCount = 0;       // No devices yet
+        modbusPort[i].fault = false;
+        modbusPort[i].newMessage = false;
+        modbusPort[i].message[0] = '\0';
+        
+        // Initialize driver (hardware-specific)
+        modbusDriver[i].portObj = &modbusPort[i];
         modbusDriver[i].serial = serial[i];
-        modbusDriver[i].baud = 9600;
-        modbusDriver[i].stopBits = 1;
-        modbusDriver[i].parity = 0;
-        modbusDriver[i].dataBits = 8;
         modbusDriver[i].dePin = pins[i];
-        modbusDriver[i].newMessage = false;
-        modbusDriver[i].message[0] = '\0';
+        modbusDriver[i].configChanged = false;
+        
+        // Add to object index (indices 37-40)
+        ObjectType portType = (i < 2) ? OBJ_T_SERIAL_RS232_PORT : OBJ_T_SERIAL_RS485_PORT;
+        objIndex[37 + i].type = portType;
+        objIndex[37 + i].obj = &modbusPort[i];
+        sprintf(objIndex[37 + i].name, "Modbus Port %d (%s)", 
+                i + 1, (i < 2) ? "RS-232" : "RS-485");
+        objIndex[37 + i].valid = true;
     }
 
+    // Initialize hardware
     for (int i = 0; i < 4; i++) {
-        uint16_t config = modbus_getSerialConfig(modbusDriver[i].stopBits, modbusDriver[i].parity, modbusDriver[i].dataBits);
-        if (!modbusDriver[i].modbus.begin(modbusDriver[i].serial, modbusDriver[i].baud, config, modbusDriver[i].dePin)) {
-            Serial.printf("Failed to initialize Modbus driver %d\n", i);
+        uint16_t config = modbus_getSerialConfig(modbusPort[i].stopBits, 
+                                                  modbusPort[i].parity, 
+                                                  modbusPort[i].dataBits);
+        if (!modbusDriver[i].modbus.begin(modbusDriver[i].serial, 
+                                          modbusPort[i].baudRate, 
+                                          config, 
+                                          modbusDriver[i].dePin)) {
+            Serial.printf("Failed to initialize Modbus driver %d\n", i + 1);
+            modbusPort[i].fault = true;
+            modbusPort[i].newMessage = true;
+            sprintf(modbusPort[i].message, "Failed to init Modbus port %d", i + 1);
             return false;
         } else {
-            Serial.printf("Modbus driver %d initialized\n", i);
+            Serial.printf("Modbus driver %d initialized\n", i + 1);
         }
     }
     return true;
@@ -30,10 +58,21 @@ bool modbus_init(void) {
 
 void modbus_manage(void) {
     for (int i = 0; i < 4; i++) {
+        // Check if user has changed port configuration via IPC
         if (modbusDriver[i].configChanged) {
-            modbusDriver[i].modbus.setSerialConfig(modbusDriver[i].baud, modbus_getSerialConfig(modbusDriver[i].stopBits, modbusDriver[i].parity, modbusDriver[i].dataBits));
+            uint16_t config = modbus_getSerialConfig(modbusPort[i].stopBits, 
+                                                      modbusPort[i].parity, 
+                                                      modbusPort[i].dataBits);
+            modbusDriver[i].modbus.setSerialConfig(modbusPort[i].baudRate, config);
             modbusDriver[i].configChanged = false;
+            
+            modbusPort[i].newMessage = true;
+            sprintf(modbusPort[i].message, "Port config updated: %lu baud, %dN%d", 
+                    modbusPort[i].baudRate, modbusPort[i].dataBits, 
+                    (int)modbusPort[i].stopBits);
         }
+        
+        // Manage Modbus protocol
         modbusDriver[i].modbus.manage();
     }
 }

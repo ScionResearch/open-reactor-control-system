@@ -6,7 +6,6 @@ DACDriver_t dacDriver;
 bool DAC_init(void) {
     dacDriver.dac = new MCP48FEBxx(PIN_DAC_CS, PIN_DAC_SYNC, &SPI);
     if (!dacDriver.dac->begin()) {
-        dacDriver.fault = true;
         dacDriver.newMessage = true;
         sprintf(dacDriver.message, "DAC initialisation failed");
         return false;
@@ -17,6 +16,13 @@ bool DAC_init(void) {
         dacDriver.outputObj[i]->value = 0;
         dacDriver.outputObj[i]->cal = &calTable[i + CAL_DAC_PTR];
         strcpy(dacDriver.outputObj[i]->unit, "mV");
+        
+        // Add to object index (fixed indices 8-9)
+        objIndex[8 + i].type = OBJ_T_ANALOG_OUTPUT;
+        objIndex[8 + i].obj = &dacOutput[i];
+        sprintf(objIndex[8 + i].name, "Analogue Output %d", i + 1);
+        objIndex[8 + i].valid = true;
+        
         if (!dacDriver.dac->setVREF(i, VREF_EXT_BUFFERED)) {
             dacDriver.outputObj[i]->fault = true;
             dacDriver.outputObj[i]->newMessage = true;

@@ -14,11 +14,32 @@ bool motor_init(void) {
         motorDriver[i].fault = false;
         motorDriver[i].newMessage = false;
 
+        // Initialize device object
+        motorDevice[i].power = 0;
+        motorDevice[i].running = false;
+        motorDevice[i].enabled = false;
+        strcpy(motorDevice[i].unit, "%");
+        motorDevice[i].fault = false;
+        motorDevice[i].newMessage = false;
+        motorDevice[i].message[0] = '\0';
+
+        // Add to object index (fixed indices 27-30)
+        objIndex[27 + i].type = OBJ_T_BDC_MOTOR;
+        objIndex[27 + i].obj = &motorDevice[i];
+        sprintf(objIndex[27 + i].name, "DC Motor %d", i + 1);
+        objIndex[27 + i].valid = true;
+
         if (!motorDriver[i].motor->begin()) {
             motorDriver[i].fault = true;
             motorDriver[i].ready = false;
             motorDriver[i].newMessage = true;
             strcpy(motorDriver[i].message, "Motor initialisation failed");
+            
+            // Propagate fault to device object
+            motorDevice[i].fault = true;
+            motorDevice[i].newMessage = true;
+            strcpy(motorDevice[i].message, motorDriver[i].message);
+            
             return false;
         }
         motorDriver[i].fault = false;
@@ -35,10 +56,11 @@ bool motor_update(void) {
         // Update current value
         motorDriver[i].device->runCurrent = motorDriver[i].motor->motorCurrent();
 
-        // Check fault status
+        // Check fault status and propagate to device
         if (motorDriver[i].motor->faultActive) {
             motorDriver[i].fault = true;
             motorDriver[i].newMessage = true;
+            
             if (motorDriver[i].motor->powerOnReset) strcpy(motorDriver[i].message, "Motor driver restarted after power failed");
             else if (motorDriver[i].motor->overTemperature) strcpy(motorDriver[i].message, "Motor driver high temperature fault");
             else if (motorDriver[i].motor->overVoltage) strcpy(motorDriver[i].message, "Motor driver over voltage fault");
@@ -46,11 +68,19 @@ bool motor_update(void) {
             else if (motorDriver[i].motor->stall) strcpy(motorDriver[i].message, "Motor stall detected");
             else if (motorDriver[i].motor->fault) strcpy(motorDriver[i].message, "Motor driver fault");
             else strcpy(motorDriver[i].message, "Unknown motor driver fault");
+            
+            // Propagate fault to device object
+            motorDevice[i].fault = true;
+            motorDevice[i].newMessage = true;
+            strcpy(motorDevice[i].message, motorDriver[i].message);
+            
             motorDriver[i].motor->faultActive = false;
             fault_occured = true;
         } else {
             motorDriver[i].fault = false;
             motorDriver[i].newMessage = false;
+            motorDevice[i].fault = false;
+            motorDevice[i].newMessage = false;
         }
     }
     return !fault_occured;

@@ -5,12 +5,13 @@
 #include "INA260.h"
 
 struct PowerSensorDriver_t {
-    PowerSensor_t *powerObj;
     INA260 *sensor;
     float updateInterval;
 };
 
-extern PowerSensor_t pwr_sensor[2];
+extern VoltageSensor_t pwr_voltage[2];
+extern CurrentSensor_t pwr_current[2];
+extern PowerSensor_t pwr_power[2];
 extern PowerSensorDriver_t pwr_interface[2];
 
 bool pwrSensor_init(void);

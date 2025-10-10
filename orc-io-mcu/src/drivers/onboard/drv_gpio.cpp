@@ -40,7 +40,18 @@ void gpio_init(void) {
         gpio[i].output = false;
         gpio[i].state = false;
         gpio[i].pullup = true;
+        gpio[i].fault = false;
+        gpio[i].newMessage = false;
+        gpio[i].message[0] = '\0';
+        
+        // Add to object index (fixed indices 13-20)
+        objIndex[13 + i].type = OBJ_T_DIGITAL_INPUT;
+        objIndex[13 + i].obj = &gpio[i];
+        sprintf(objIndex[13 + i].name, "Digital GPIO %d", i);
+        objIndex[13 + i].valid = true;
     }
+    
+    // Initialize spare GPIO (not indexed)
     for (int i = 0; i < 15; i++) {
         gpioDriver.gpioExpObj[i] = &gpioExp[i];
         gpioDriver.expPin[i] = pinsSpare[i];
@@ -48,6 +59,9 @@ void gpio_init(void) {
         gpioExp[i].output = false;
         gpioExp[i].state = false;
         gpioExp[i].pullup = true;
+        gpioExp[i].fault = false;
+        gpioExp[i].newMessage = false;
+        gpioExp[i].message[0] = '\0';
     }
 }
 

@@ -33,6 +33,12 @@ bool init_rtdDriver(void) {
         rtd_interface[i].wires = MAX31865_3WIRE;
         rtd_interface[i].sensorType = PT100;
         rtd_interface[i].cal = &calTable[i + CAL_RTD_PTR];
+        
+        // Add to object index (fixed indices 10-12)
+        objIndex[10 + i].type = OBJ_T_TEMPERATURE_SENSOR;
+        objIndex[10 + i].obj = &rtd_sensor[i];
+        sprintf(objIndex[10 + i].name, "RTD Temperature %d", i + 1);
+        objIndex[10 + i].valid = true;
     }
 
     // Initialise temperature sensors

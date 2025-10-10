@@ -206,27 +206,128 @@ struct IPC_SensorData_t {
 
 ### 5.1 Index Organization (80 Objects Total)
 
-**Fixed Indices (0-39):** Onboard SAME51 hardware
-- **0-7:** Analog Inputs (ADC 1-8)
-- **8-9:** Analog Outputs (DAC 1-2)
-- **10-12:** RTD Temperature Sensors (3x MAX31865)
-- **13-20:** Digital GPIO (8 channels)
-- **21-25:** Digital Outputs (4 standard + 1 heater)
-- **26:** Stepper Motor
-- **27-30:** DC Motors (4x DRV8235)
-- **31-32:** Power Sensors (2x INA260)
-- **33-36:** Modbus Ports (4 ports)
-- **37-39:** Reserved
+The object index provides a unified addressing scheme for all sensors, actuators, and control loops accessible via IPC.
 
-**Dynamic Indices (40-79):** Peripheral devices
-- Modbus sensors (pH, DO, OD, MFC, etc.)
-- User-created devices
-- Assigned sequentially, recycled on deletion
+**Fixed Indices (0-59):** Onboard SAME51 hardware & control objects
 
-### 5.2 Type Safety
+#### **Analog I/O (0-9)**
+- **0-7:** Analog Inputs (ADC channels 1-8) - MCP3464
+- **8-9:** Analog Outputs (DAC channels 1-2) - MCP48FEB
+
+#### **Temperature Sensors (10-12)**
+- **10-12:** RTD Temperature Sensors (PT100/PT1000 1-3) - MAX31865
+
+#### **Digital I/O (13-20)**
+- **13-20:** Digital GPIO (8 channels) - General purpose I/O
+
+#### **Digital Outputs (21-25)**
+- **21-24:** Digital Outputs (4 channels) - Open-drain, PWM capable
+- **25:** Heater Output (1 channel) - High current, 1Hz PWM
+
+#### **Motion Control (26-30)**
+- **26:** Stepper Motor - TMC5130 driver
+- **27-30:** DC Motors (4 channels) - DRV8235 drivers
+
+#### **Power Monitoring (31-36)**
+- **31:** Main Power Voltage (V) - INA260 sensor 1
+- **32:** Main Power Current (A) - INA260 sensor 1
+- **33:** Main Power (W) - INA260 sensor 1
+- **34:** Heater Power Voltage (V) - INA260 sensor 2
+- **35:** Heater Power Current (A) - INA260 sensor 2
+- **36:** Heater Power (W) - INA260 sensor 2
+
+#### **Communication Ports (37-40)**
+- **37:** Modbus Port 1 (RS-232) - Serial2
+- **38:** Modbus Port 2 (RS-232) - Serial3
+- **39:** Modbus Port 3 (RS-485) - Serial4
+- **40:** Modbus Port 4 (RS-485) - Serial5
+
+#### **Control Objects (41-59)** 🚧 Reserved for Future Implementation
+- **41-43:** Temperature Control (3 loops) - PID controllers
+- **44:** pH Control - Dosing control
+- **45:** Dissolved Oxygen Control - Gas mixing + stirrer
+- **46:** Optical Density Control - Turbidity/biomass
+- **47-50:** Gas Flow Control (4 channels) - MFC control loops
+- **51:** Stirrer Speed Control - Motor control loop
+- **52-55:** Pump Control (4 channels) - Peristaltic pump control
+- **56:** Feed Control - Nutrient addition sequencer
+- **57:** Waste Control - Drainage sequencer
+- **58-59:** Reserved (future control objects)
+
+**Dynamic Indices (60-79):** User-created peripheral devices
+- Modbus/peripheral sensors (pH probes, DO sensors, OD sensors, MFCs, etc.)
+- User-created devices via `IPC_MSG_DEVICE_CREATE`
+- Assigned sequentially starting at 60, recycled on deletion
+- **20 slots available** for dynamic objects
+
+### 5.2 Object Type Mapping
+
+Each index has an associated `ObjectType` from the enum:
+
+```cpp
+// Sensors
+OBJ_T_ANALOG_INPUT              // Indices 0-7
+OBJ_T_ANALOG_OUTPUT             // Indices 8-9
+OBJ_T_TEMPERATURE_SENSOR        // Indices 10-12, 60+
+OBJ_T_DIGITAL_INPUT             // Indices 13-20
+OBJ_T_DIGITAL_OUTPUT            // Indices 21-25
+OBJ_T_POWER_SENSOR              // Indices 31-36 (V/A/W split)
+
+// Motion
+OBJ_T_STEPPER_MOTOR             // Index 26
+OBJ_T_BDC_MOTOR                 // Indices 27-30
+
+// Communication
+OBJ_T_SERIAL_RS232_PORT         // Indices 37-38
+OBJ_T_SERIAL_RS485_PORT         // Indices 39-40
+
+// Controls (future)
+OBJ_T_TEMPERATURE_CONTROL       // Indices 41-43
+OBJ_T_PH_CONTROL                // Index 44
+OBJ_T_DISSOLVED_OXYGEN_CONTROL  // Index 45
+OBJ_T_OPTICAL_DENSITY_CONTROL   // Index 46
+OBJ_T_GAS_FLOW_CONTROL          // Indices 47-50
+OBJ_T_STIRRER_CONTROL           // Index 51
+OBJ_T_PUMP_CONTROL              // Indices 52-55
+OBJ_T_FEED_CONTROL              // Index 56
+OBJ_T_WASTE_CONTROL             // Index 57
+
+// Dynamic sensors (60+)
+OBJ_T_PH_SENSOR                 // User-created
+OBJ_T_DISSOLVED_OXYGEN_SENSOR   // User-created
+OBJ_T_OPTICAL_DENSITY_SENSOR    // User-created
+OBJ_T_FLOW_SENSOR               // User-created
+OBJ_T_PRESSURE_SENSOR           // User-created
+```
+
+### 5.3 Unit Strings
+
+Standard unit strings for sensor data:
+
+| Object Type | Primary Unit | Notes |
+|-------------|-------------|-------|
+| Analog Input | `mV` | Millivolts (configurable) |
+| Analog Output | `mV` | Millivolts (0-10240 mV) |
+| Temperature | `°C` | Celsius (configurable to °F/K) |
+| Digital I/O | ` ` | Empty (boolean state) |
+| Digital Output | ` ` | Empty (boolean state) |
+| Power Voltage | `V` | Volts |
+| Power Current | `A` | Amperes |
+| Power | `W` | Watts |
+| Stepper Motor | `rpm` | Revolutions per minute |
+| DC Motor | `%` | Power percentage |
+| Modbus Port | ` ` | Empty (status/config) |
+| pH Sensor | `pH` | pH units (0-14) |
+| DO Sensor | `mg/L` or `%` | Dissolved oxygen |
+| OD Sensor | `OD` or `AU` | Optical density |
+| Flow Sensor | `SLPM` | Standard liters per minute |
+| Pressure Sensor | `kPa` or `bar` | Pressure units |
+
+### 5.4 Type Safety
 Every command includes `objectType` field:
 - Prevents wrong commands to wrong device types
 - Mismatch → `IPC_MSG_ERROR` with code `IPC_ERR_TYPE_MISMATCH`
+- Validated on both SAME51 and RP2040 sides
 
 ---
 

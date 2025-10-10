@@ -6,6 +6,8 @@
 // ============================================================================
 
 void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
+    // Message dispatcher (debug logging in individual handlers)
+    
     switch (msgType) {
         case IPC_MSG_PING:
             ipc_handle_ping(payload, len);
@@ -261,20 +263,27 @@ bool ipc_sendIndexRemove(uint16_t index) {
 
 void ipc_handle_sensor_read_req(const uint8_t *payload, uint16_t len) {
     if (len < sizeof(IPC_SensorReadReq_t)) {
+        Serial.println("[IPC] ERROR: Invalid SENSOR_READ_REQ size");
         ipc_sendError(IPC_ERR_PARSE_FAIL, "SENSOR_READ_REQ: Invalid payload size");
         return;
     }
     
     IPC_SensorReadReq_t *req = (IPC_SensorReadReq_t*)payload;
     
-    // Send sensor data
+    // Send sensor data (logging in sendSensorData)
     if (!ipc_sendSensorData(req->index)) {
+        Serial.printf("[IPC] ERROR: Failed to read sensor %d\n", req->index);
         ipc_sendError(IPC_ERR_INDEX_INVALID, "Invalid sensor index");
     }
 }
 
 bool ipc_sendSensorData(uint16_t index) {
-    if (index >= MAX_NUM_OBJECTS || !objIndex[index].valid) {
+    if (index >= MAX_NUM_OBJECTS) {
+        Serial.printf("[IPC] Index %d out of range (max %d)\n", index, MAX_NUM_OBJECTS);
+        return false;
+    }
+    
+    if (!objIndex[index].valid) {
         return false;
     }
     
@@ -404,11 +413,101 @@ bool ipc_sendSensorData(uint16_t index) {
             break;
         }
         
+        case OBJ_T_DIGITAL_INPUT: {
+            DigitalIO_t *gpio = (DigitalIO_t*)obj;
+            data.value = gpio->state ? 1.0f : 0.0f;
+            strcpy(data.unit, gpio->output ? "out" : "in");
+            if (gpio->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (gpio->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, gpio->message, sizeof(data.message) - 1);
+            }
+            break;
+        }
+        
+        case OBJ_T_STEPPER_MOTOR: {
+            StepperDevice_t *stepper = (StepperDevice_t*)obj;
+            data.value = stepper->rpm;
+            strncpy(data.unit, stepper->unit, sizeof(data.unit) - 1);
+            if (stepper->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (stepper->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, stepper->message, sizeof(data.message) - 1);
+            }
+            break;
+        }
+        
+        case OBJ_T_BDC_MOTOR: {
+            MotorDevice_t *motor = (MotorDevice_t*)obj;
+            data.value = motor->power;
+            strncpy(data.unit, motor->unit, sizeof(data.unit) - 1);
+            if (motor->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (motor->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, motor->message, sizeof(data.message) - 1);
+            }
+            break;
+        }
+        
+        case OBJ_T_VOLTAGE_SENSOR: {
+            VoltageSensor_t *sensor = (VoltageSensor_t*)obj;
+            data.value = sensor->voltage;
+            strncpy(data.unit, sensor->unit, sizeof(data.unit) - 1);
+            if (sensor->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (sensor->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, sensor->message, sizeof(data.message) - 1);
+            }
+            break;
+        }
+        
+        case OBJ_T_CURRENT_SENSOR: {
+            CurrentSensor_t *sensor = (CurrentSensor_t*)obj;
+            data.value = sensor->current;
+            strncpy(data.unit, sensor->unit, sizeof(data.unit) - 1);
+            if (sensor->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (sensor->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, sensor->message, sizeof(data.message) - 1);
+            }
+            break;
+        }
+        
+        case OBJ_T_POWER_SENSOR: {
+            PowerSensor_t *sensor = (PowerSensor_t*)obj;
+            data.value = sensor->power;
+            strncpy(data.unit, sensor->unit, sizeof(data.unit) - 1);
+            if (sensor->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (sensor->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, sensor->message, sizeof(data.message) - 1);
+            }
+            break;
+        }
+        
+        case OBJ_T_SERIAL_RS232_PORT:
+        case OBJ_T_SERIAL_RS485_PORT: {
+            SerialCom_t *port = (SerialCom_t*)obj;
+            data.value = port->baudRate;  // Return baud rate as primary value
+            strcpy(data.unit, "baud");
+            if (port->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (port->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, port->message, sizeof(data.message) - 1);
+            }
+            break;
+        }
+        
         default:
+            Serial.printf("[IPC] ERROR: No handler for object type %d\n", objIndex[index].type);
             return false;
     }
     
-    return ipc_sendPacket(IPC_MSG_SENSOR_DATA, (uint8_t*)&data, sizeof(data));
+    bool sent = ipc_sendPacket(IPC_MSG_SENSOR_DATA, (uint8_t*)&data, sizeof(data));
+    if (sent) {
+        Serial.printf("[IPC] ✓ Sent %s: %.2f %s\n", objIndex[index].name, data.value, data.unit);
+    }
+    return sent;
 }
 
 bool ipc_sendSensorBatch(const uint16_t *indices, uint8_t count) {

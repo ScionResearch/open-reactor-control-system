@@ -6,25 +6,21 @@ ADCDriver_t adcDriver;
 bool ADC_init(void) {
     adcDriver.adc = new MCP346x(PIN_ADC_CS, PIN_ADC_IRQ, &SPI);
     for (int i = 0; i < 8; i++) {
-        // Pre-set inpud data objects
         adcDriver.inputObj[i] = &adcInput[i];
         adcDriver.inputObj[i]->value = 0;
         adcDriver.inputObj[i]->cal = &calTable[i + CAL_ADC_PTR];
         strcpy(adcDriver.inputObj[i]->unit, "mV");
 
-        // Add to object index
-        objIndex[numObjects].type = OBJ_T_ANALOG_INPUT;
-        objIndex[numObjects].obj = &adcDriver.inputObj[i];
-        strcpy(objIndex[numObjects].name, "Analogue Input ");
-        strcat(objIndex[numObjects].name, String(i+1).c_str());
-        objIndex[numObjects].valid = true;
-        numObjects++;
+        // Add to object index (fixed indices 0-7)
+        objIndex[0 + i].type = OBJ_T_ANALOG_INPUT;
+        objIndex[0 + i].obj = &adcDriver.inputObj[i];
+        sprintf(objIndex[0 + i].name, "Analogue Input %d", i + 1);
+        objIndex[0 + i].valid = true;
     }
     if (!adcDriver.adc->begin()) {
         adcDriver.fault = true;
         adcDriver.ready = false;
         adcDriver.newMessage = true;
-        strcpy(adcDriver.message, "ADC initialisation failed");
         return false;
     }
     if (!adcDriver.adc->start_continuous_adc(MCP346X_SCAN_ALL_CH)) {

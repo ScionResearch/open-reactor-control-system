@@ -14,11 +14,11 @@ void schedulerHeatbeat(void) {
 
 void printStuff(void) {  
   // Print CPU usage summary
-  /*Serial.println("\n=== CPU Usage Report ===");
+  //Serial.println("\n=== CPU Usage Report ===");
   Serial.printf("Total CPU Usage: %0.2f%%\n", tasks.getTotalCpuUsagePercent());
-  Serial.println("Task information ↓↓↓\n");
+  //Serial.println("Task information ↓↓↓\n");
   
-  if (analog_input_task) {
+  /*if (analog_input_task) {
     Serial.printf("Analog input task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
                   analog_input_task->getLastExecTime(), analog_input_task->getMinExecTime(), 
                   analog_input_task->getMaxExecTime(), analog_input_task->getAverageExecTime(),
@@ -203,44 +203,35 @@ void setup() {
   strcpy(adcInput[6].unit, "xx");
 
   // TMC5130 stepper setup testing
-  /*Serial.println("Initialising TMC5130 driver");
-
+  Serial.println("Initialising TMC5130 stepper driver");
   if (!stepper_init()) {
     Serial.println("Failed to initialise TMC5130 driver.");
+    if (stepperDevice.fault) Serial.printf("Fault: %s\n", stepperDevice.message);
+  } else {
+    Serial.println("TMC5130 stepper driver initialised.");
   }
-  stepperDevice.maxRPM = 800;
-  stepperDevice.stepsPerRev = 200;
-  stepperDevice.inverted = false;
-  stepperDevice.direction = 0;
-  stepperDevice.acceleration = 100;
-  stepperDevice.holdCurrent = 150;
-  stepperDevice.runCurrent = 300;
-  stepperDevice.enabled = true;
-  stepperDevice.rpm = 120;
 
-  if (!stepper_update(true)) {
-    Serial.println("Failed to update TMC5130 parameters.");
-    if (stepperDriver.newMessage) {
-      Serial.println(stepperDriver.message);
-    }
-  }
-  Serial.println("Setup done");
-
-  // DRV8235 initialisation
-  Serial.println("Initialising DRV8235 driver");
+  // DRV8235 motor driver initialisation
+  Serial.println("Initialising DRV8235 motor drivers");
   if (!motor_init()) {
-    Serial.println("Failed to initialise DRV8235 driver.");
-  } else Serial.println("DRV8235 driver initialised.");
+    Serial.println("Failed to initialise DRV8235 motor drivers.");
+    for (int i = 0; i < 4; i++) {
+      if (motorDevice[i].fault) Serial.printf("Motor %d fault: %s\n", i+1, motorDevice[i].message);
+    }
+  } else {
+    Serial.println("DRV8235 motor drivers initialised.");
+  }
 
-  motorDriver[0].device->enabled = true;
-  
-  motor_run(0, 20, false);
-
-  // INA260 initialisation
-  Serial.println("Initialising INA260 driver");
+  // INA260 power sensor initialisation
+  Serial.println("Initialising INA260 power sensors");
   if (!pwrSensor_init()) {
-    Serial.println("Failed to initialise INA260 driver.");
-  }*/
+    Serial.println("Failed to initialise INA260 power sensors.");
+    for (int i = 0; i < 2; i++) {
+      if (pwr_power[i].fault) Serial.printf("Power sensor %d fault: %s\n", i+1, pwr_power[i].message);
+    }
+  } else {
+    Serial.println("INA260 power sensors initialised.");
+  }
 
   // Outputs initialisation
   Serial.println("Initialising outputs");
@@ -269,22 +260,45 @@ void setup() {
 
   Serial.println("Starting Modbus interface");
   modbus_init();
-  modbusDriver[2].baud = 19200;   // Change Modbus 3 (pH probe) to 19200 baud
-  modbusDriver[2].stopBits = 2;
-  modbusDriver[2].parity = 0;
+  
+  // Configure Modbus Port 3 for pH probe (19200 baud, 8N2)
+  modbusPort[2].baudRate = 19200;
+  modbusPort[2].stopBits = 2;
+  modbusPort[2].parity = 0;
   modbusDriver[2].configChanged = true;
 
-  modbusDriver[3].baud = 19200;   // Change Modbus 4 (Alicat MFC) to 19200 baud
-  modbusDriver[3].stopBits = 1;
-  modbusDriver[3].parity = 0;
+  // Configure Modbus Port 4 for Alicat MFC (19200 baud, 8N1)
+  modbusPort[3].baudRate = 19200;
+  modbusPort[3].stopBits = 1;
+  modbusPort[3].parity = 0;
   modbusDriver[3].configChanged = true;
 
   Serial.println("Starting IPC interface");
   if (!ipc_init()) {
     Serial.println("Failed to initialise IPC driver.");
   } else {
-    Serial.println("IPC driver initialised at 1 Mbps.");
+    Serial.println("IPC driver initialised at 2 Mbps.");
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ALL FIXED ONBOARD OBJECTS ENROLLED - SET INDEX BOUNDARY
+  // ═══════════════════════════════════════════════════════════════════════
+  numObjects = 41;  // Fixed objects complete (0-40)
+  Serial.println("\n=== Object Index Status ===");
+  Serial.printf("Fixed objects enrolled: 0-40 (%d objects)\n", numObjects);
+  Serial.println("Index map:");
+  Serial.println("  0-7   : Analog Inputs (ADC)");
+  Serial.println("  8-9   : Analog Outputs (DAC)");
+  Serial.println("  10-12 : RTD Temperature Sensors");
+  Serial.println("  13-20 : Digital GPIO");
+  Serial.println("  21-25 : Digital Outputs (4 + heater)");
+  Serial.println("  26    : Stepper Motor");
+  Serial.println("  27-30 : DC Motors");
+  Serial.println("  31-36 : Power Sensors (V/A/W)");
+  Serial.println("  37-40 : Modbus Ports");
+  Serial.println("  41-59 : Reserved for control objects");
+  Serial.println("  60-79 : Dynamic user-created devices");
+  Serial.println("===========================\n");
 
   // Initialise Hamilton pH probe interface (class-based)
   Serial.println("Initialising Hamilton pH probe interface");
@@ -300,6 +314,11 @@ void setup() {
   gpio_task = tasks.addTask(gpio_update, 100, true, true);
   modbus_task = tasks.addTask(modbus_manage, 10, true, true);
   ipc_task = tasks.addTask(ipc_update, 5, true, true);  // 5ms, high priority
+  RTDsensor_task = tasks.addTask(RTD_manage, 200, true, false);
+  
+  // Add onboard device tasks
+  ScheduledTask* motor_task = tasks.addTask([]() { motor_update(); }, 100, true, false);
+  ScheduledTask* pwrSensor_task = tasks.addTask([]() { pwrSensor_update(); }, 1000, true, false);
   
   // Add peripheral device tasks using lambda functions
   if (phProbe) {
@@ -308,8 +327,9 @@ void setup() {
   if (alicatMFC) {
     mfc_task = tasks.addTask([]() { alicatMFC->update(); }, 2000, true, false);
   }
+  
+  // Debug/monitoring tasks
   printStuff_task = tasks.addTask(printStuff, 1000, true, false);
-  RTDsensor_task = tasks.addTask(RTD_manage, 200, true, false);
   SchedulerAlive_task = tasks.addTask(schedulerHeatbeat, 1000, true, false);
   TEST_TASK = tasks.addTask(testTaskFunction, 5000, true, false);
 
