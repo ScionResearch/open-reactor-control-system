@@ -5,6 +5,7 @@
 #include "../storage/sdManager.h"
 #include "../controls/controlManager.h"
 #include "../utils/objectCache.h"
+#include "../config/ioConfig.h"
 
 #include <ArduinoJson.h>
 
@@ -59,6 +60,18 @@ void setupEthernet()
     networkConfig.dstEnabled = false;
     saveNetworkConfig();
   }
+  
+  // Load IO configuration (Core 0 only accesses LittleFS)
+  if (!loadIOConfig())
+  {
+    // Set default configuration if load fails or file doesn't exist
+    log(LOG_INFO, false, "IO config not found, creating defaults\n");
+    setDefaultIOConfig();
+    saveIOConfig();
+  }
+  
+  // Print loaded IO configuration for verification
+  printIOConfig();
 
   SPI.setMOSI(PIN_ETH_MOSI);
   SPI.setMISO(PIN_ETH_MISO);
@@ -131,7 +144,7 @@ bool loadNetworkConfig()
   }
 
   // Allocate a buffer to store contents of the file
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<1024> doc;
   DeserializationError error = deserializeJson(doc, configFile);
   configFile.close();
 
@@ -139,6 +152,8 @@ bool loadNetworkConfig()
     log(LOG_WARNING, true, "Failed to parse config file: %s\n", error.c_str());
     LittleFS.end();
     return false;
+  } else {
+    log(LOG_INFO, false, "Deserialized network config file: %d bytes\n", doc.memoryUsage());
   }
 
   // Check magic number

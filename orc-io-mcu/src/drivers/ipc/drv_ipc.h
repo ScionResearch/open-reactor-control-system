@@ -210,7 +210,10 @@ void ipc_handle_control_read(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_create(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_delete(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_write(const uint8_t *payload, uint16_t len);
-void ipc_handle_calibrate(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_analog_input(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_analog_output(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_rtd(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_gpio(const uint8_t *payload, uint16_t len);
 
 // ============================================================================
 // UTILITY FUNCTIONS

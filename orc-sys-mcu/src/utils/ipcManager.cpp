@@ -2,6 +2,7 @@
 #include "network/mqttManager.h" // For publishSensorData
 #include "statusManager.h" // For status struct
 #include "objectCache.h" // For caching sensor data
+#include "config/ioConfig.h" // For IO configuration push
 
 // Inter-processor communication
 void init_ipcManager(void) {
@@ -169,6 +170,9 @@ void handleHelloAck(uint8_t messageType, const uint8_t *payload, uint16_t length
   
   log(LOG_INFO, true, "IPC: ✓ Handshake complete! SAME51 firmware v%08X (%u/%u objects)\n",
       ack->firmwareVersion, ack->currentObjectCount, ack->maxObjectCount);
+  
+  // Push IO configuration to IO MCU now that IPC is established
+  pushIOConfigToIOmcu();
   
   // TODO: Update connection state, start requesting index sync if needed
 }

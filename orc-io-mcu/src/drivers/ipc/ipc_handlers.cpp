@@ -1,5 +1,6 @@
 #include "drv_ipc.h"
 #include "../../sys_init.h"
+#include "../onboard/drv_rtd.h"  // For RTD configuration
 
 // ============================================================================
 // MESSAGE HANDLER DISPATCHER
@@ -49,8 +50,20 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             ipc_handle_config_write(payload, len);
             break;
             
-        case IPC_MSG_CALIBRATE:
-            ipc_handle_calibrate(payload, len);
+        case IPC_MSG_CONFIG_ANALOG_INPUT:
+            ipc_handle_config_analog_input(payload, len);
+            break;
+            
+        case IPC_MSG_CONFIG_ANALOG_OUTPUT:
+            ipc_handle_config_analog_output(payload, len);
+            break;
+            
+        case IPC_MSG_CONFIG_RTD:
+            ipc_handle_config_rtd(payload, len);
+            break;
+            
+        case IPC_MSG_CONFIG_GPIO:
+            ipc_handle_config_gpio(payload, len);
             break;
             
         default:
@@ -668,42 +681,138 @@ void ipc_handle_config_write(const uint8_t *payload, uint16_t len) {
     ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "CONFIG_WRITE not implemented yet");
 }
 
-void ipc_handle_calibrate(const uint8_t *payload, uint16_t len) {
-    if (len < sizeof(IPC_Calibrate_t)) {
-        ipc_sendError(IPC_ERR_PARSE_FAIL, "CALIBRATE: Invalid payload size");
+/**
+ * @brief Handle analog input (ADC) configuration
+ */
+void ipc_handle_config_analog_input(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_ConfigAnalogInput_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid ADC config message size");
         return;
     }
     
-    IPC_Calibrate_t *cmd = (IPC_Calibrate_t*)payload;
+    const IPC_ConfigAnalogInput_t *cfg = (const IPC_ConfigAnalogInput_t*)payload;
     
     // Validate index
-    if (cmd->index >= MAX_NUM_OBJECTS || !objIndex[cmd->index].valid) {
-        ipc_sendError(IPC_ERR_INDEX_INVALID, "Invalid calibration index");
+    if (cfg->index >= MAX_NUM_OBJECTS || !objIndex[cfg->index].valid) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Invalid ADC index");
         return;
     }
     
-    // Apply calibration based on object type
-    ObjectType type = objIndex[cmd->index].type;
-    
-    if (type == OBJ_T_ANALOG_INPUT) {
-        AnalogInput_t *sensor = (AnalogInput_t*)objIndex[cmd->index].obj;
-        if (sensor && sensor->cal) {
-            sensor->cal->scale = cmd->scale;
-            sensor->cal->offset = cmd->offset;
-            sensor->cal->timestamp = cmd->timestamp;
-            ipc_sendControlAck(cmd->index, true, "Calibration updated");
-            return;
-        }
-    } else if (type == OBJ_T_ANALOG_OUTPUT) {
-        AnalogOutput_t *output = (AnalogOutput_t*)objIndex[cmd->index].obj;
-        if (output && output->cal) {
-            output->cal->scale = cmd->scale;
-            output->cal->offset = cmd->offset;
-            output->cal->timestamp = cmd->timestamp;
-            ipc_sendControlAck(cmd->index, true, "Calibration updated");
-            return;
-        }
+    AnalogInput_t *sensor = (AnalogInput_t*)objIndex[cfg->index].obj;
+    if (sensor && sensor->cal) {
+        // Update unit string
+        strncpy(sensor->unit, cfg->unit, sizeof(sensor->unit) - 1);
+        sensor->unit[sizeof(sensor->unit) - 1] = '\0';
+        
+        // Update calibration
+        sensor->cal->scale = cfg->calScale;
+        sensor->cal->offset = cfg->calOffset;
+        sensor->cal->timestamp = millis();
+        
+        Serial.printf("[IPC] ✓ ADC[%d]: %s, cal=(%.3f, %.3f)\n",
+                     cfg->index, sensor->unit, sensor->cal->scale, sensor->cal->offset);
+    } else {
+        ipc_sendError(IPC_ERR_DEVICE_FAIL, "ADC object not initialized");
+    }
+}
+
+/**
+ * @brief Handle analog output (DAC) configuration
+ */
+void ipc_handle_config_analog_output(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_ConfigAnalogOutput_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid DAC config message size");
+        return;
     }
     
-    ipc_sendError(IPC_ERR_DEVICE_FAIL, "Object does not support calibration");
+    const IPC_ConfigAnalogOutput_t *cfg = (const IPC_ConfigAnalogOutput_t*)payload;
+    
+    // Validate index
+    if (cfg->index >= MAX_NUM_OBJECTS || !objIndex[cfg->index].valid) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Invalid DAC index");
+        return;
+    }
+    
+    AnalogOutput_t *output = (AnalogOutput_t*)objIndex[cfg->index].obj;
+    if (output && output->cal) {
+        // Update unit string
+        strncpy(output->unit, cfg->unit, sizeof(output->unit) - 1);
+        output->unit[sizeof(output->unit) - 1] = '\0';
+        
+        // Update calibration
+        output->cal->scale = cfg->calScale;
+        output->cal->offset = cfg->calOffset;
+        output->cal->timestamp = millis();
+        
+        Serial.printf("[IPC] ✓ DAC[%d]: %s, cal=(%.3f, %.3f)\n",
+                     cfg->index, output->unit, output->cal->scale, output->cal->offset);
+    } else {
+        ipc_sendError(IPC_ERR_DEVICE_FAIL, "DAC object not initialized");
+    }
+}
+
+/**
+ * @brief Handle RTD temperature sensor configuration
+ */
+void ipc_handle_config_rtd(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_ConfigRTD_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid RTD config message size");
+        return;
+    }
+    
+    const IPC_ConfigRTD_t *cfg = (const IPC_ConfigRTD_t*)payload;
+    
+    // Validate index
+    if (cfg->index >= MAX_NUM_OBJECTS || !objIndex[cfg->index].valid) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Invalid RTD index");
+        return;
+    }
+    
+    TemperatureSensor_t *sensor = (TemperatureSensor_t*)objIndex[cfg->index].obj;
+    if (sensor) {
+        // Update unit string
+        strncpy(sensor->unit, cfg->unit, sizeof(sensor->unit) - 1);
+        sensor->unit[sizeof(sensor->unit) - 1] = '\0';
+        
+        // Get RTD driver interface (indices 10-12 map to rtd_interface[0-2])
+        int rtdIdx = cfg->index - 10;
+        if (rtdIdx >= 0 && rtdIdx < NUM_MAX31865_INTERFACES) {
+            // Configure wire type
+            max31865_numwires_t wireType;
+            switch (cfg->wireConfig) {
+                case 2: wireType = MAX31865_2WIRE; break;
+                case 4: wireType = MAX31865_4WIRE; break;
+                default: wireType = MAX31865_3WIRE; break;
+            }
+            setRtdWires(&rtd_interface[rtdIdx], wireType);
+            
+            // Configure sensor type (PT100 or PT1000)
+            RtdSensorType sensorType = (cfg->nominalOhms == 1000) ? PT1000 : PT100;
+            setRtdSensorType(&rtd_interface[rtdIdx], sensorType);
+            
+            Serial.printf("[IPC] ✓ RTD[%d]: %s, %d-wire, PT%d, offset=%.2f\n",
+                         cfg->index, sensor->unit, cfg->wireConfig, cfg->nominalOhms, cfg->offset);
+        } else {
+            Serial.printf("[IPC] ✓ RTD[%d]: %s (no driver)\n",
+                         cfg->index, sensor->unit);
+        }
+    } else {
+        ipc_sendError(IPC_ERR_DEVICE_FAIL, "RTD object not initialized");
+    }
+}
+
+/**
+ * @brief Handle GPIO configuration
+ */
+void ipc_handle_config_gpio(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_ConfigGPIO_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid GPIO config message size");
+        return;
+    }
+    
+    const IPC_ConfigGPIO_t *cfg = (const IPC_ConfigGPIO_t*)payload;
+    
+    // TODO: Implement GPIO configuration
+    Serial.printf("[IPC] GPIO[%d] config (not implemented)\n", cfg->index);
+    ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "GPIO config not implemented yet");
 }

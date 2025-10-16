@@ -76,10 +76,13 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_FAULT_CLEAR     = 0x52,  // Clear fault
     
     // Configuration (0x60-0x6F)
-    IPC_MSG_CONFIG_READ     = 0x60,  // Read configuration
-    IPC_MSG_CONFIG_WRITE    = 0x61,  // Write configuration
-    IPC_MSG_CONFIG_DATA     = 0x62,  // Configuration data
-    IPC_MSG_CALIBRATE       = 0x63,  // Calibration command
+    IPC_MSG_CONFIG_READ           = 0x60,  // Read configuration
+    IPC_MSG_CONFIG_WRITE          = 0x61,  // Write configuration
+    IPC_MSG_CONFIG_DATA           = 0x62,  // Configuration data
+    IPC_MSG_CONFIG_ANALOG_INPUT   = 0x63,  // Configure analog input (ADC)
+    IPC_MSG_CONFIG_ANALOG_OUTPUT  = 0x64,  // Configure analog output (DAC)
+    IPC_MSG_CONFIG_RTD            = 0x65,  // Configure RTD temperature sensor
+    IPC_MSG_CONFIG_GPIO           = 0x66,  // Configure digital GPIO
 };
 
 // ============================================================================
@@ -334,13 +337,6 @@ struct IPC_ConfigWrite_t {
     uint8_t data[200];       // Configuration data (varies by type)
 } __attribute__((packed));
 
-struct IPC_Calibrate_t {
-    uint16_t index;
-    float scale;
-    float offset;
-    uint32_t timestamp;
-} __attribute__((packed));
-
 // ============================================================================
 // HELPER MACROS
 // ============================================================================
@@ -465,6 +461,58 @@ struct WasteControl {
     float sp_mlPerMinute;
     bool enabled;
 } __attribute__((packed));
+
+// ============================================================================
+// OBJECT CONFIGURATION MESSAGES
+// ============================================================================
+
+/**
+ * @brief Analog Input (ADC) configuration
+ * Message type: IPC_MSG_CONFIG_ANALOG_INPUT
+ */
+typedef struct {
+    uint16_t index;          // Object index (0-7 for ADC inputs)
+    uint8_t _padding[2];     // Alignment padding
+    char unit[8];            // Unit string (e.g., "mV", "V", "A")
+    float calScale;          // Calibration scale factor
+    float calOffset;         // Calibration offset
+} IPC_ConfigAnalogInput_t __attribute__((packed));
+
+/**
+ * @brief Analog Output (DAC) configuration
+ * Message type: IPC_MSG_CONFIG_ANALOG_OUTPUT
+ */
+typedef struct {
+    uint16_t index;          // Object index (8-9 for DAC outputs)
+    uint8_t _padding[2];     // Alignment padding
+    char unit[8];            // Unit string (e.g., "mV", "V", "mA")
+    float calScale;          // Calibration scale factor
+    float calOffset;         // Calibration offset
+} IPC_ConfigAnalogOutput_t __attribute__((packed));
+
+/**
+ * @brief RTD Temperature Sensor configuration
+ * Message type: IPC_MSG_CONFIG_RTD
+ */
+typedef struct {
+    uint16_t index;          // Object index (10-12 for RTD sensors)
+    uint8_t wireConfig;      // 2, 3, or 4 wire configuration
+    uint8_t _padding;        // Alignment padding
+    char unit[8];            // Unit string (e.g., "degC", "degF")
+    float offset;            // Temperature offset calibration
+    uint16_t nominalOhms;    // 100 (PT100) or 1000 (PT1000)
+    uint8_t _padding2[2];    // Alignment padding
+} IPC_ConfigRTD_t __attribute__((packed));
+
+/**
+ * @brief GPIO configuration
+ * Message type: IPC_MSG_CONFIG_GPIO
+ */
+typedef struct {
+    uint16_t index;          // Object index (13-20 for GPIO)
+    uint8_t mode;            // GPIO mode (input/output/etc)
+    uint8_t _padding;        // Alignment padding
+} IPC_ConfigGPIO_t __attribute__((packed));
 
 // Legacy message structure (for backward compatibility)
 struct Message {
