@@ -1,16 +1,17 @@
-
 #include "network.h"
 #include "mqttManager.h"
 #include "../utils/statusManager.h"
 #include "../utils/timeManager.h"
 #include "../storage/sdManager.h"
 #include "../controls/controlManager.h"
+#include "../utils/objectCache.h"
 
 #include <ArduinoJson.h>
 
 // Global variables
 NetworkConfig networkConfig;
 
+// Wiznet5500lwIP eth(PIN_ETH_CS, SPI, PIN_ETH_IRQ);
 
 Wiznet5500lwIP eth(PIN_ETH_CS, SPI, PIN_ETH_IRQ);
 WebServer server(80);
@@ -53,7 +54,7 @@ void setupEthernet()
     networkConfig.gateway = IPAddress(192, 168, 1, 1);
     networkConfig.dns = IPAddress(8, 8, 8, 8);
     strcpy(networkConfig.timezone, "+13:00");
-    strcpy(networkConfig.hostname, "open-reactor-tasman");
+    strcpy(networkConfig.hostname, "open-reactor");
     strcpy(networkConfig.ntpServer, "pool.ntp.org");
     networkConfig.dstEnabled = false;
     saveNetworkConfig();
@@ -160,7 +161,7 @@ bool loadNetworkConfig()
   if (dns.fromString(doc["dns"] | "8.8.8.8")) networkConfig.dns = dns;
   
   // Parse strings
-  strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor-tasman", sizeof(networkConfig.hostname));
+  strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor", sizeof(networkConfig.hostname));
   strlcpy(networkConfig.ntpServer, doc["ntp_server"] | "pool.ntp.org", sizeof(networkConfig.ntpServer));
   strlcpy(networkConfig.timezone, doc["timezone"] | "+13:00", sizeof(networkConfig.timezone));
   
@@ -353,7 +354,7 @@ void setupNetworkAPI()
               }
 
               // Update hostname
-              strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor-tasman", sizeof(networkConfig.hostname));
+              strlcpy(networkConfig.hostname, doc["hostname"] | "open-reactor", sizeof(networkConfig.hostname));
 
               // Update NTP server
               strlcpy(networkConfig.ntpServer, doc["ntp"] | "pool.ntp.org", sizeof(networkConfig.ntpServer));
@@ -551,6 +552,73 @@ void handleGetSensors() {
   server.send(200, "application/json", response);
 }
 
+// --- Object Index API Handlers ---
+
+void handleGetInputs() {
+  // Compact JSON response for inputs tab
+  StaticJsonDocument<1536> doc;
+  
+  // Always request fresh data when Inputs tab is active (don't use staleness check)
+  // The 2-second polling from the UI means we want real-time updates
+  // Note: Response is sent before IPC data arrives, so first call may show stale data
+  // but subsequent calls (every 2 seconds) will show updated values
+  objectCache.requestBulkUpdate(0, 21);  // ADC(0-7) + DAC(8-9) + RTD(10-12) + GPIO(13-20)
+  
+  // Analog Inputs (ADC) - Indices 0-7
+  JsonArray adc = doc.createNestedArray("adc");
+  for (uint8_t i = 0; i < 8; i++) {
+    ObjectCache::CachedObject* obj = objectCache.getObject(i);
+    if (obj && obj->valid) {
+      JsonObject o = adc.createNestedObject();
+      o["i"] = i;  // Compact key names
+      o["v"] = obj->value;
+      // Ensure unit string is null-terminated and clean
+      char cleanUnit[8];
+      strncpy(cleanUnit, obj->unit, sizeof(cleanUnit) - 1);
+      cleanUnit[sizeof(cleanUnit) - 1] = '\0';
+      o["u"] = cleanUnit;
+      if (obj->flags & IPC_SENSOR_FLAG_FAULT) o["f"] = 1;
+    }
+  }
+  
+  // RTD Temperature Sensors - Indices 10-12
+  JsonArray rtd = doc.createNestedArray("rtd");
+  for (uint8_t i = 10; i < 13; i++) {
+    ObjectCache::CachedObject* obj = objectCache.getObject(i);
+    if (obj && obj->valid) {
+      JsonObject o = rtd.createNestedObject();
+      o["i"] = i;
+      o["v"] = obj->value;
+      // Ensure unit string is null-terminated and clean
+      char cleanUnit[8];
+      strncpy(cleanUnit, obj->unit, sizeof(cleanUnit) - 1);
+      cleanUnit[sizeof(cleanUnit) - 1] = '\0';
+      o["u"] = cleanUnit;
+      if (obj->flags & IPC_SENSOR_FLAG_FAULT) o["f"] = 1;
+    }
+  }
+  
+  // Digital GPIO - Indices 13-20
+  JsonArray gpio = doc.createNestedArray("gpio");
+  for (uint8_t i = 13; i < 21; i++) {
+    ObjectCache::CachedObject* obj = objectCache.getObject(i);
+    if (obj && obj->valid) {
+      JsonObject o = gpio.createNestedObject();
+      o["i"] = i;
+      o["s"] = (obj->value > 0.5) ? 1 : 0;  // State as boolean
+      if (obj->flags & IPC_SENSOR_FLAG_FAULT) o["f"] = 1;
+    }
+  }
+  
+  String response;
+  serializeJson(doc, response);
+  
+  // Debug: Log the JSON response
+  log(LOG_DEBUG, false, "API /api/inputs response: %s\n", response.c_str());
+  
+  server.send(200, "application/json", response);
+}
+
 void setupWebServer()
 {
   // Initialize LittleFS for serving web files
@@ -596,6 +664,9 @@ void setupWebServer()
     // Perform system reboot
     rp2040.reboot();
   });
+
+  // Object Index API endpoints
+  server.on("/api/inputs", HTTP_GET, handleGetInputs);
 
   // Setup API endpoints
   setupNetworkAPI();

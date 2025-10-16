@@ -10,10 +10,16 @@
     <div class="container">
         <header>
             <h1>Open Reactor Control System</h1>
-            <img src="Scion-Logo-260x65.png" alt="Scion Logo" style="height:65px;" />
+            <img src="BSI-logo-187x65.png" alt="BSI Logo" style="height:65px;" />
         </header>
         <nav class="tabs">
             <button class="tab-link active" onclick="openTab(event, 'dashboard')">Dashboard</button>
+            <button class="tab-link" onclick="openTab(event, 'inputs')">Inputs</button>
+            <button class="tab-link" onclick="openTab(event, 'outputs')">Outputs</button>
+            <button class="tab-link" onclick="openTab(event, 'devices')">Devices</button>
+            <button class="tab-link" onclick="openTab(event, 'comports')">Com Ports</button>
+            <button class="tab-link" onclick="openTab(event, 'sensors')">Sensors</button>
+            <button class="tab-link" onclick="openTab(event, 'controllers')">Controllers</button>
             <button class="tab-link" onclick="openTab(event, 'control')">Control</button>
             <button class="tab-link" onclick="openTab(event, 'filemanager')">File Manager</button>
             <button class="tab-link" onclick="openTab(event, 'system')">System</button>
@@ -62,7 +68,67 @@
                 </div>
             </div>
 
-            
+            <!-- Inputs Tab -->
+            <div id="inputs" class="tab-content">
+                <h2>Hardware Inputs</h2>
+                <p class="page-description">Monitor real-time values from onboard input channels</p>
+                
+                <div class="inputs-grid">
+                    <!-- Analog Inputs Section -->
+                    <div class="input-section-card">
+                        <h3>Analog Inputs (ADC)</h3>
+                        <div id="adc-list" class="input-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- RTD Temperature Sensors Section -->
+                    <div class="input-section-card">
+                        <h3>RTD Temperature Sensors</h3>
+                        <div id="rtd-list" class="input-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Digital GPIO Section -->
+                    <div class="input-section-card">
+                        <h3>Digital GPIO</h3>
+                        <div id="gpio-list" class="input-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Outputs Tab (placeholder) -->
+            <div id="outputs" class="tab-content">
+                <h2>Hardware Outputs</h2>
+                <p class="page-description">Coming soon...</p>
+            </div>
+
+            <!-- Devices Tab (placeholder) -->
+            <div id="devices" class="tab-content">
+                <h2>Peripheral Devices</h2>
+                <p class="page-description">Coming soon...</p>
+            </div>
+
+            <!-- Com Ports Tab (placeholder) -->
+            <div id="comports" class="tab-content">
+                <h2>Serial Communication Ports</h2>
+                <p class="page-description">Coming soon...</p>
+            </div>
+
+            <!-- Sensors Tab (placeholder) -->
+            <div id="sensors" class="tab-content">
+                <h2>Sensor Objects</h2>
+                <p class="page-description">Coming soon...</p>
+            </div>
+
+            <!-- Controllers Tab (placeholder) -->
+            <div id="controllers" class="tab-content">
+                <h2>Control Loops</h2>
+                <p class="page-description">Coming soon...</p>
+            </div>
             
             <!-- Control Tab -->
 
@@ -327,7 +393,7 @@
                         </div>
                         <div class="form-group">
                             <label for="hostName">Hostname:</label>
-                            <input type="text" id="hostName" value="open-reactor-tasman">
+                            <input type="text" id="hostName" value="open-reactor">
                         </div>
                         <div class="form-group">
                             <label for="ntpServer">NTP Server:</label>

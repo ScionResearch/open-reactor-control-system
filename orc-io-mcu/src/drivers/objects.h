@@ -217,12 +217,38 @@ struct MotorDevice_t {
 
 // Control objects
 struct TemperatureControl_t {
-    TemperatureSensor_t sensor;
+    // References to existing objects (by index)
+    uint16_t sensorIndex;       // Index in objIndex[] for temperature sensor
+    uint16_t outputIndex;       // Index in objIndex[] for analog output
+    
+    // Control state
     bool enabled;
-    float setpoint;
-    float kp;
-    float ki;
-    float kd;
+    bool autotuning;
+    
+    // Setpoint & limits
+    float setpoint;             // Target temperature
+    float setpointMin;          // Minimum allowed setpoint
+    float setpointMax;          // Maximum allowed setpoint
+    
+    // PID parameters
+    float kp;                   // Proportional gain
+    float ki;                   // Integral gain  
+    float kd;                   // Derivative gain
+    
+    // Output limits
+    float outputMin;            // Minimum output (typically 0%)
+    float outputMax;            // Maximum output (typically 100%)
+    bool outputInverted;        // true for cooling, false for heating
+    
+    // Status
+    float currentTemp;          // Last measured temperature
+    float currentOutput;        // Last computed output
+    float processError;         // Current error (setpoint - currentTemp)
+    
+    // Fault handling
+    bool fault;
+    bool newMessage;
+    char message[100];
 };
 
 struct PhControl_t {

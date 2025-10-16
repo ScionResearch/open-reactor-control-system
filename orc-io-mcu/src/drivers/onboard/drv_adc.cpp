@@ -13,7 +13,7 @@ bool ADC_init(void) {
 
         // Add to object index (fixed indices 0-7)
         objIndex[0 + i].type = OBJ_T_ANALOG_INPUT;
-        objIndex[0 + i].obj = &adcDriver.inputObj[i];
+        objIndex[0 + i].obj = adcDriver.inputObj[i];  // Already a pointer, don't take address again
         sprintf(objIndex[0 + i].name, "Analogue Input %d", i + 1);
         objIndex[0 + i].valid = true;
     }
@@ -57,7 +57,7 @@ void ADC_update(void) {
             adcDriver.inputObj[i]->value = result * ADC_mA_PER_LSB;
         } else if (strcmp(adcDriver.inputObj[i]->unit, "V") == 0) {
             adcDriver.inputObj[i]->value = result * ADC_V_PER_LSB;
-        } else if (strcmp(adcDriver.inputObj[i]->unit, "µV") == 0) {
+        } else if (strcmp(adcDriver.inputObj[i]->unit, "uV") == 0) {  // Changed from µV to uV
             adcDriver.inputObj[i]->value = result * ADC_uV_PER_LSB;
         } else {
             adcDriver.inputObj[i]->value = result * ADC_mV_PER_LSB;   // Default to mV

@@ -55,7 +55,7 @@ bool initTemperatureSensor(RTDDriver_t *sensorObj) {
     rtdSensorCount ++;
     // Initialise the temperature sensor object
     sensorObj->temperatureObj->temperature = 0;
-    strcpy(sensorObj->temperatureObj->unit, "°C"); // Default units for the temperature
+    strcpy(sensorObj->temperatureObj->unit, "degC"); // Default units for the temperature (avoid UTF-8 degree symbol)
     // Initialise the temperature sensor
     sensorObj->sensor = new MAX31865(sensorObj->cs_pin, &SPI);
     return sensorObj->sensor->begin(sensorObj->wires);

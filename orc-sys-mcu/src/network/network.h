@@ -46,6 +46,9 @@ void handleUpdateControl();
 void handleSystemStatus();
 void handleGetSensors();
 
+// Object Index API handlers
+void handleGetInputs();
+
 // File manager API functions
 void handleFileManager(void);
 void handleSDListDirectory(void);

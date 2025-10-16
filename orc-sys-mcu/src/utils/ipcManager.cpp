@@ -1,15 +1,21 @@
 #include "ipcManager.h"
 #include "network/mqttManager.h" // For publishSensorData
 #include "statusManager.h" // For status struct
+#include "objectCache.h" // For caching sensor data
 
 // Inter-processor communication
 void init_ipcManager(void) {
   Serial1.setRX(PIN_SI_RX);
   Serial1.setTX(PIN_SI_TX);
   
-  // Set UART FIFO size to 512 bytes to accommodate large IPC packets (default is 32 bytes)
+  // Set UART FIFO size to 4096 bytes to accommodate multiple IPC packets from bulk requests
+  // With bulk requests of 21 objects, we need room for 21 responses (~150 bytes each = 3150 bytes)
   // Max packet size with byte stuffing: ~260 bytes raw data * 2 (worst case stuffing) = 520 bytes
-  Serial1.setFIFOSize(512);
+  Serial1.setFIFOSize(4096);
+  
+  // Clear object cache to force fresh data from IO MCU
+  objectCache.clear();
+  log(LOG_INFO, false, "Object cache cleared\n");
   
   ipc.begin(2000000); // 2 Mbps
   
@@ -32,7 +38,7 @@ unsigned long lastSensorTestTime = 0;
 uint8_t currentTestIndex = 0;
 
 void testSensorReads(void) {
-  static bool testActive = true;  // Set to false to disable debug output
+  static bool testActive = false;  // Disabled - using web API polling instead
   
   if (!testActive) return;
   
@@ -83,19 +89,13 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
   
   const IPC_SensorData_t *sensorData = (const IPC_SensorData_t *)payload;
   
-  // DEBUG: Print received sensor data
-  log(LOG_INFO, true, "  ✓ Sensor[%d] Type=%d: value=%0.3f %s", 
-      sensorData->index, sensorData->objectType, sensorData->value, sensorData->unit);
+  // DEBUG: Print received sensor data (simplified for performance)
+  log(LOG_DEBUG, false, "IPC RX: Sensor[%d] = %.2f %s%s\n", 
+      sensorData->index, sensorData->value, sensorData->unit,
+      (sensorData->flags & IPC_SENSOR_FLAG_FAULT) ? " [FAULT]" : "");
   
-  if (sensorData->flags & IPC_SENSOR_FLAG_FAULT) {
-    log(LOG_INFO, true, " [FAULT]");
-  }
-  
-  if (sensorData->flags & IPC_SENSOR_FLAG_NEW_MSG) {
-    log(LOG_INFO, true, " MSG: %s", sensorData->message);
-  }
-  
-  log(LOG_INFO, true, "\n");
+  // Update object cache
+  objectCache.updateObject(sensorData);
   
   // Forward to MQTT
   publishSensorDataIPC(sensorData);

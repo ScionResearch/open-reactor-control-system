@@ -70,6 +70,8 @@ function openTab(evt, tabName) {
         initFileManager();
     } else if (tabName === 'control') {
         initControlBoard();
+    } else if (tabName === 'inputs') {
+        initInputsTab();
     }
 }
 
@@ -1792,4 +1794,131 @@ function startControlPolling() {
     };
     poll();
     controlPollTimer = setInterval(poll, 4000);
+}
+
+// ============================================================================
+// INPUTS TAB - Hardware Inputs Monitoring
+// ============================================================================
+
+let inputsRefreshInterval = null;
+
+function initInputsTab() {
+    // Stop any existing interval
+    if (inputsRefreshInterval) {
+        clearInterval(inputsRefreshInterval);
+    }
+    
+    // Load inputs immediately
+    fetchAndRenderInputs();
+    
+    // Start polling every 2 seconds while tab is active
+    inputsRefreshInterval = setInterval(() => {
+        if (document.getElementById('inputs').classList.contains('active')) {
+            fetchAndRenderInputs();
+        } else {
+            // Stop polling if tab is not active
+            clearInterval(inputsRefreshInterval);
+            inputsRefreshInterval = null;
+        }
+    }, 2000);
+}
+
+async function fetchAndRenderInputs() {
+    try {
+        const response = await fetch('/api/inputs');
+        if (!response.ok) throw new Error('Failed to fetch inputs');
+        
+        const data = await response.json();
+        
+        // Render each section
+        renderADCInputs(data.adc || []);
+        renderRTDInputs(data.rtd || []);
+        renderGPIOInputs(data.gpio || []);
+        
+    } catch (error) {
+        console.error('Error fetching inputs:', error);
+        showInputError('adc-list');
+        showInputError('rtd-list');
+        showInputError('gpio-list');
+    }
+}
+
+function renderADCInputs(adcData) {
+    const container = document.getElementById('adc-list');
+    if (!container) return;
+    
+    if (adcData.length === 0) {
+        container.innerHTML = '<div class="empty-message">No ADC data available</div>';
+        return;
+    }
+    
+    container.innerHTML = adcData.map(input => `
+        <div class="input-item ${input.f ? 'fault' : ''}">
+            <div class="input-header">
+                <span class="input-name">ADC ${input.i + 1}</span>
+                <span class="input-index">Index: ${input.i}</span>
+            </div>
+            <div class="input-value">
+                <span class="value-large">${input.v.toFixed(2)}</span>
+                <span class="value-unit">${input.u}</span>
+            </div>
+            ${input.f ? '<div class="fault-indicator">FAULT</div>' : ''}
+        </div>
+    `).join('');
+}
+
+function renderRTDInputs(rtdData) {
+    const container = document.getElementById('rtd-list');
+    if (!container) return;
+    
+    if (rtdData.length === 0) {
+        container.innerHTML = '<div class="empty-message">No RTD data available</div>';
+        return;
+    }
+    
+    container.innerHTML = rtdData.map(input => `
+        <div class="input-item ${input.f ? 'fault' : ''}">
+            <div class="input-header">
+                <span class="input-name">RTD ${input.i - 9}</span>
+                <span class="input-index">Index: ${input.i}</span>
+            </div>
+            <div class="input-value">
+                <span class="value-large">${input.v.toFixed(2)}</span>
+                <span class="value-unit">${input.u}</span>
+            </div>
+            ${input.f ? '<div class="fault-indicator">FAULT</div>' : ''}
+        </div>
+    `).join('');
+}
+
+function renderGPIOInputs(gpioData) {
+    const container = document.getElementById('gpio-list');
+    if (!container) return;
+    
+    if (gpioData.length === 0) {
+        container.innerHTML = '<div class="empty-message">No GPIO data available</div>';
+        return;
+    }
+    
+    container.innerHTML = gpioData.map(input => `
+        <div class="input-item ${input.f ? 'fault' : ''}">
+            <div class="input-header">
+                <span class="input-name">GPIO ${input.i - 13}</span>
+                <span class="input-index">Index: ${input.i}</span>
+            </div>
+            <div class="input-value">
+                <span class="digital-state ${input.s ? 'state-high' : 'state-low'}">
+                    ${input.s ? 'HIGH' : 'LOW'}
+                </span>
+            </div>
+            ${input.f ? '<div class="fault-indicator">FAULT</div>' : ''}
+        </div>
+    `).join('');
+}
+
+function showInputError(containerId) {
+    const container = document.getElementById(containerId);
+    if (container) {
+        container.innerHTML = '<div class="error-message">Failed to load data</div>';
+    }
 }
