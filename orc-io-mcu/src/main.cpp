@@ -335,7 +335,7 @@ void setup() {
 
   //heartbeatMillis = millis();
 
-  Serial.println("Setup done");
+  Serial.println("Setup done - VERSION CHECK: 4 (IPC queue drain fix)");
 }
 
 void loop() {

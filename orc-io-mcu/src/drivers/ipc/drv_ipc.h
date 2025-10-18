@@ -205,6 +205,7 @@ void ipc_handle_pong(const uint8_t *payload, uint16_t len);
 void ipc_handle_hello(const uint8_t *payload, uint16_t len);
 void ipc_handle_index_sync_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_sensor_read_req(const uint8_t *payload, uint16_t len);
+void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_write(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_read(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_create(const uint8_t *payload, uint16_t len);

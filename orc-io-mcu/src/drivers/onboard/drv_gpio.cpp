@@ -36,10 +36,10 @@ void gpio_init(void) {
     for (int i = 0; i < 8; i++) {
         gpioDriver.gpioObj[i] = &gpio[i];
         gpioDriver.pin[i] = pinsGPIO[i];
+        gpio[i].pullMode = 1;  // Default to pull-up
         pinMode(gpioDriver.pin[i], INPUT_PULLUP);
         gpio[i].output = false;
         gpio[i].state = false;
-        gpio[i].pullup = true;
         gpio[i].fault = false;
         gpio[i].newMessage = false;
         gpio[i].message[0] = '\0';
@@ -47,7 +47,7 @@ void gpio_init(void) {
         // Add to object index (fixed indices 13-20)
         objIndex[13 + i].type = OBJ_T_DIGITAL_INPUT;
         objIndex[13 + i].obj = &gpio[i];
-        sprintf(objIndex[13 + i].name, "Digital GPIO %d", i);
+        sprintf(objIndex[13 + i].name, "Input %d", i + 1);  // Match board labels (1-8)
         objIndex[13 + i].valid = true;
     }
     
@@ -55,10 +55,10 @@ void gpio_init(void) {
     for (int i = 0; i < 15; i++) {
         gpioDriver.gpioExpObj[i] = &gpioExp[i];
         gpioDriver.expPin[i] = pinsSpare[i];
+        gpioExp[i].pullMode = 1;  // Default to pull-up
         pinMode(gpioDriver.expPin[i], INPUT_PULLUP);
         gpioExp[i].output = false;
         gpioExp[i].state = false;
-        gpioExp[i].pullup = true;
         gpioExp[i].fault = false;
         gpioExp[i].newMessage = false;
         gpioExp[i].message[0] = '\0';
@@ -86,10 +86,64 @@ void gpio_update(void) {
     if (gpioDriver.configChanged) {
         gpioDriver.configChanged = false;
         for (int i = 0; i < 8; i++) {
-            pinMode(gpioDriver.pin[i], gpioDriver.gpioObj[i]->output ? OUTPUT : gpioDriver.gpioObj[i]->pullup ? INPUT_PULLUP : INPUT);
+            if (gpioDriver.gpioObj[i]->output) {
+                pinMode(gpioDriver.pin[i], OUTPUT);
+            } else {
+                // Set pull mode: 0=None, 1=Pull-up, 2=Pull-down
+                if (gpioDriver.gpioObj[i]->pullMode == 1) {
+                    pinMode(gpioDriver.pin[i], INPUT_PULLUP);
+                } else if (gpioDriver.gpioObj[i]->pullMode == 2) {
+                    pinMode(gpioDriver.pin[i], INPUT_PULLDOWN);
+                } else {
+                    pinMode(gpioDriver.pin[i], INPUT);  // High-Z
+                }
+            }
         }
         for (int i = 0; i < 15; i++) {
-            pinMode(gpioDriver.expPin[i], gpioDriver.gpioExpObj[i]->output ? OUTPUT : gpioDriver.gpioExpObj[i]->pullup ? INPUT_PULLUP : INPUT);
+            if (gpioDriver.gpioExpObj[i]->output) {
+                pinMode(gpioDriver.expPin[i], OUTPUT);
+            } else {
+                if (gpioDriver.gpioExpObj[i]->pullMode == 1) {
+                    pinMode(gpioDriver.expPin[i], INPUT_PULLUP);
+                } else if (gpioDriver.gpioExpObj[i]->pullMode == 2) {
+                    pinMode(gpioDriver.expPin[i], INPUT_PULLDOWN);
+                } else {
+                    pinMode(gpioDriver.expPin[i], INPUT);
+                }
+            }
         }
+    }
+}
+
+/**
+ * @brief Configure a GPIO input with name and pull mode
+ * @param index Object index (13-20 for main GPIO)
+ * @param name Custom name for the input
+ * @param pullMode 0=None (High-Z), 1=Pull-up, 2=Pull-down
+ */
+void gpio_configure(uint8_t index, const char* name, uint8_t pullMode) {
+    // Validate index (13-20 for main GPIO)
+    if (index < 13 || index >= 21) {
+        Serial.printf("[GPIO] Invalid index %d for configuration\n", index);
+        return;
+    }
+    
+    uint8_t gpioIndex = index - 13;  // Convert to array index (0-7)
+    
+    // Update name in object index
+    if (name != nullptr && name[0] != '\0') {
+        strncpy(objIndex[index].name, name, sizeof(objIndex[index].name) - 1);
+        objIndex[index].name[sizeof(objIndex[index].name) - 1] = '\0';
+    }
+    
+    // Update pull mode if changed
+    if (gpio[gpioIndex].pullMode != pullMode) {
+        gpio[gpioIndex].pullMode = pullMode;
+        gpioDriver.configChanged = true;  // Trigger pin reconfiguration
+        
+        const char* modeStr = (pullMode == 1) ? "PULL-UP" :
+                              (pullMode == 2) ? "PULL-DOWN" : "HIGH-Z";
+        Serial.printf("[GPIO] Input %d (%s) configured: %s\n", 
+                      gpioIndex + 1, objIndex[index].name, modeStr);
     }
 }

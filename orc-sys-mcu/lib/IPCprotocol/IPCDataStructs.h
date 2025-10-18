@@ -53,10 +53,11 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_INDEX_UPDATE    = 0x14,  // Update object metadata (name, etc.)
     
     // Sensor Data (0x20-0x2F)
-    IPC_MSG_SENSOR_READ_REQ = 0x20,  // Request sensor reading
-    IPC_MSG_SENSOR_DATA     = 0x21,  // Sensor data response
-    IPC_MSG_SENSOR_STREAM   = 0x22,  // Continuous sensor streaming (not implemented yet)
-    IPC_MSG_SENSOR_BATCH    = 0x23,  // Batch sensor data (multiple sensors)
+    IPC_MSG_SENSOR_READ_REQ       = 0x20,  // Request sensor reading
+    IPC_MSG_SENSOR_DATA           = 0x21,  // Sensor data response
+    IPC_MSG_SENSOR_STREAM         = 0x22,  // Continuous sensor streaming (not implemented yet)
+    IPC_MSG_SENSOR_BATCH          = 0x23,  // Batch sensor data (multiple sensors)
+    IPC_MSG_SENSOR_BULK_READ_REQ  = 0x24,  // Request bulk sensor reading (range of indices)
     
     // Control Data (0x30-0x3F)
     IPC_MSG_CONTROL_WRITE   = 0x30,  // Write control value/setpoint
@@ -190,6 +191,11 @@ struct IPC_IndexUpdate_t {
 
 struct IPC_SensorReadReq_t {
     uint16_t index;
+} __attribute__((packed));
+
+struct IPC_SensorBulkReadReq_t {
+    uint16_t startIndex;     // Starting index
+    uint16_t count;          // Number of consecutive indices to read
 } __attribute__((packed));
 
 struct IPC_SensorData_t {
@@ -498,8 +504,9 @@ typedef struct {
     uint16_t index;          // Object index (10-12 for RTD sensors)
     uint8_t wireConfig;      // 2, 3, or 4 wire configuration
     uint8_t _padding;        // Alignment padding
-    char unit[8];            // Unit string (e.g., "degC", "degF")
-    float offset;            // Temperature offset calibration
+    char unit[8];            // Unit string (e.g., "C", "F", "K")
+    float calScale;          // Calibration scale
+    float calOffset;         // Calibration offset
     uint16_t nominalOhms;    // 100 (PT100) or 1000 (PT1000)
     uint8_t _padding2[2];    // Alignment padding
 } IPC_ConfigRTD_t __attribute__((packed));
@@ -510,8 +517,9 @@ typedef struct {
  */
 typedef struct {
     uint16_t index;          // Object index (13-20 for GPIO)
-    uint8_t mode;            // GPIO mode (input/output/etc)
-    uint8_t _padding;        // Alignment padding
+    char name[32];           // Custom name
+    uint8_t pullMode;        // 0=None, 1=Pull-up, 2=Pull-down
+    uint8_t enabled;         // Enable/disable flag
 } IPC_ConfigGPIO_t __attribute__((packed));
 
 // Legacy message structure (for backward compatibility)

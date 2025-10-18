@@ -82,17 +82,9 @@
                         </div>
                     </div>
                     
-                    <!-- RTD Temperature Sensors Section -->
+                    <!-- Digital Inputs Section -->
                     <div class="input-section-card">
-                        <h3>RTD Temperature Sensors</h3>
-                        <div id="rtd-list" class="input-list">
-                            <div class="loading">Loading...</div>
-                        </div>
-                    </div>
-                    
-                    <!-- Digital GPIO Section -->
-                    <div class="input-section-card">
-                        <h3>Digital GPIO</h3>
+                        <h3>Digital Inputs</h3>
                         <div id="gpio-list" class="input-list">
                             <div class="loading">Loading...</div>
                         </div>
@@ -118,10 +110,20 @@
                 <p class="page-description">Coming soon...</p>
             </div>
 
-            <!-- Sensors Tab (placeholder) -->
+            <!-- Sensors Tab -->
             <div id="sensors" class="tab-content">
                 <h2>Sensor Objects</h2>
-                <p class="page-description">Coming soon...</p>
+                <p class="page-description">Configured sensor objects based on physical inputs</p>
+                
+                <div class="inputs-grid">
+                    <!-- RTD Temperature Sensors Section -->
+                    <div class="input-section-card">
+                        <h3>RTD Temperature Sensors</h3>
+                        <div id="rtd-list" class="input-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Controllers Tab (placeholder) -->
@@ -442,6 +444,256 @@
             <div class="modal-buttons">
                 <button id="cancelReboot" class="modal-cancel">Cancel</button>
                 <button id="confirmReboot" class="modal-confirm">Yes, Reboot</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ADC Configuration Modal -->
+    <div id="adcConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure Analog Input <span id="adcConfigIndex"></span></h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="adcConfigName">Name:</label>
+                    <input type="text" id="adcConfigName" maxlength="31" placeholder="Sensor name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="adcConfigUnit">Unit:</label>
+                    <select id="adcConfigUnit">
+                        <option value="mV">mV (millivolts)</option>
+                        <option value="V">V (volts)</option>
+                        <option value="mA">mA (milliamps)</option>
+                        <option value="uV">uV (microvolts)</option>
+                    </select>
+                </div>
+                
+                <div class="form-section">
+                    <h4>Calibration</h4>
+                    <div class="calibration-tabs">
+                        <button class="cal-tab-btn active" data-tab="two-point">Two-Point Calibration</button>
+                        <button class="cal-tab-btn" data-tab="direct">Direct Entry</button>
+                    </div>
+                    
+                    <!-- Two-Point Calibration -->
+                    <div id="twoPointCal" class="cal-tab-content active">
+                        <p class="cal-description">Enter two calibration points: current displayed value vs actual measured value</p>
+                        <div class="cal-point">
+                            <h5>Point 1 (Low)</h5>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="calP1Raw">Displayed Value:</label>
+                                    <input type="number" id="calP1Raw" step="0.01" placeholder="e.g., 1500 mV">
+                                </div>
+                                <div class="form-group">
+                                    <label for="calP1Real">Measured Value:</label>
+                                    <input type="number" id="calP1Real" step="0.01" placeholder="e.g., 1250 mV">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cal-point">
+                            <h5>Point 2 (High)</h5>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="calP2Raw">Displayed Value:</label>
+                                    <input type="number" id="calP2Raw" step="0.01" placeholder="e.g., 2500 mV">
+                                </div>
+                                <div class="form-group">
+                                    <label for="calP2Real">Measured Value:</label>
+                                    <input type="number" id="calP2Real" step="0.01" placeholder="e.g., 2100 mV">
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="calculateTwoPointCal()">Calculate</button>
+                    </div>
+                    
+                    <!-- Direct Entry -->
+                    <div id="directCal" class="cal-tab-content">
+                        <p class="cal-description">Directly enter scale and offset values</p>
+                        <div class="form-group">
+                            <label for="calScale">Scale:</label>
+                            <input type="number" id="calScale" step="0.0001" placeholder="1.0">
+                        </div>
+                        <div class="form-group">
+                            <label for="calOffset">Offset:</label>
+                            <input type="number" id="calOffset" step="0.01" placeholder="0.0">
+                        </div>
+                    </div>
+                    
+                    <div class="cal-result">
+                        <div class="form-group">
+                            <label>Calculated Scale:</label>
+                            <span id="resultScale" class="result-value">--</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Calculated Offset:</label>
+                            <span id="resultOffset" class="result-value">--</span>
+                        </div>
+                        <button class="btn btn-secondary" onclick="resetCalibration()" style="margin-top: 10px;">Reset to Default (1.0, 0.0)</button>
+                    </div>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="adcShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeADCConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveADCConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- RTD Configuration Modal -->
+    <div id="rtdConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure RTD Sensor <span id="rtdConfigIndex"></span></h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="rtdConfigName">Name:</label>
+                    <input type="text" id="rtdConfigName" maxlength="31" placeholder="Sensor name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="rtdConfigUnit">Unit:</label>
+                    <select id="rtdConfigUnit">
+                        <option value="C">°C (Celsius)</option>
+                        <option value="F">°F (Fahrenheit)</option>
+                        <option value="K">K (Kelvin)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="rtdConfigWires">Wire Configuration:</label>
+                    <select id="rtdConfigWires">
+                        <option value="2">2-Wire</option>
+                        <option value="3">3-Wire</option>
+                        <option value="4">4-Wire</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="rtdConfigType">RTD Type:</label>
+                    <select id="rtdConfigType">
+                        <option value="100">PT100 (100Ω @ 0°C)</option>
+                        <option value="1000">PT1000 (1000Ω @ 0°C)</option>
+                    </select>
+                </div>
+                
+                <div class="form-section">
+                    <h4>Calibration</h4>
+                    <div class="calibration-tabs">
+                        <button class="cal-tab-btn active" data-tab="two-point-rtd">Two-Point Calibration</button>
+                        <button class="cal-tab-btn" data-tab="direct-rtd">Direct Entry</button>
+                    </div>
+                    
+                    <!-- Two-Point Calibration -->
+                    <div id="twoPointCalRTD" class="cal-tab-content active">
+                        <p class="cal-description">Enter two calibration points: current displayed value vs actual measured value</p>
+                        <div class="cal-point">
+                            <h5>Point 1 (Low)</h5>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="calP1RawRTD">Displayed Value:</label>
+                                    <input type="number" id="calP1RawRTD" step="0.01" placeholder="e.g., 20.0 °C">
+                                </div>
+                                <div class="form-group">
+                                    <label for="calP1RealRTD">Measured Value:</label>
+                                    <input type="number" id="calP1RealRTD" step="0.01" placeholder="e.g., 19.5 °C">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cal-point">
+                            <h5>Point 2 (High)</h5>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="calP2RawRTD">Displayed Value:</label>
+                                    <input type="number" id="calP2RawRTD" step="0.01" placeholder="e.g., 80.0 °C">
+                                </div>
+                                <div class="form-group">
+                                    <label for="calP2RealRTD">Measured Value:</label>
+                                    <input type="number" id="calP2RealRTD" step="0.01" placeholder="e.g., 79.2 °C">
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="calculateTwoPointCalRTD()">Calculate</button>
+                    </div>
+                    
+                    <!-- Direct Entry -->
+                    <div id="directCalRTD" class="cal-tab-content">
+                        <p class="cal-description">Directly enter scale and offset values</p>
+                        <div class="form-group">
+                            <label for="calScaleRTD">Scale:</label>
+                            <input type="number" id="calScaleRTD" step="0.0001" placeholder="1.0">
+                        </div>
+                        <div class="form-group">
+                            <label for="calOffsetRTD">Offset:</label>
+                            <input type="number" id="calOffsetRTD" step="0.01" placeholder="0.0">
+                        </div>
+                    </div>
+                    
+                    <div class="cal-result">
+                        <div class="form-group">
+                            <label>Calculated Scale:</label>
+                            <span id="resultScaleRTD" class="result-value">--</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Calculated Offset:</label>
+                            <span id="resultOffsetRTD" class="result-value">--</span>
+                        </div>
+                        <button class="btn btn-secondary" onclick="resetCalibrationRTD()" style="margin-top: 10px;">Reset to Default (1.0, 0.0)</button>
+                    </div>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="rtdShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeRTDConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveRTDConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- GPIO Configuration Modal -->
+    <div id="gpioConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure Digital Input <span id="gpioConfigIndex"></span></h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="gpioConfigName">Name:</label>
+                    <input type="text" id="gpioConfigName" maxlength="31" placeholder="Input name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="gpioConfigPullMode">Pull Resistor:</label>
+                    <select id="gpioConfigPullMode">
+                        <option value="0">None (High-Z)</option>
+                        <option value="1">Pull-Up</option>
+                        <option value="2">Pull-Down</option>
+                    </select>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="gpioShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeGPIOConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveGPIOConfig()">Save</button>
             </div>
         </div>
     </div>

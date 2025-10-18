@@ -1,6 +1,7 @@
 #include "drv_ipc.h"
 #include "../../sys_init.h"
 #include "../onboard/drv_rtd.h"  // For RTD configuration
+#include "../onboard/drv_gpio.h" // For GPIO configuration
 
 // ============================================================================
 // MESSAGE HANDLER DISPATCHER
@@ -28,6 +29,10 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             
         case IPC_MSG_SENSOR_READ_REQ:
             ipc_handle_sensor_read_req(payload, len);
+            break;
+            
+        case IPC_MSG_SENSOR_BULK_READ_REQ:
+            ipc_handle_sensor_bulk_read_req(payload, len);
             break;
             
         case IPC_MSG_CONTROL_WRITE:
@@ -290,13 +295,72 @@ void ipc_handle_sensor_read_req(const uint8_t *payload, uint16_t len) {
     }
 }
 
+void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len) {
+    if (len < sizeof(IPC_SensorBulkReadReq_t)) {
+        Serial.println("[IPC] ERROR: Invalid SENSOR_BULK_READ_REQ size");
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "SENSOR_BULK_READ_REQ: Invalid payload size");
+        return;
+    }
+    
+    IPC_SensorBulkReadReq_t *req = (IPC_SensorBulkReadReq_t*)payload;
+    
+    // Validate range
+    if (req->startIndex >= MAX_NUM_OBJECTS || req->count == 0) {
+        Serial.printf("[IPC] ERROR: Invalid bulk read range: start=%d, count=%d\n", 
+                     req->startIndex, req->count);
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Invalid bulk read range");
+        return;
+    }
+    
+    // Clamp count to valid range
+    uint16_t count = req->count;
+    if (req->startIndex + count > MAX_NUM_OBJECTS) {
+        count = MAX_NUM_OBJECTS - req->startIndex;
+    }
+    
+    // Send individual sensor responses
+    // Wait for IPC TX queue space before each send (queue size = 8 packets)
+    uint16_t sentCount = 0;
+    for (uint16_t i = 0; i < count; i++) {
+        uint16_t index = req->startIndex + i;
+        
+        // Wait for TX queue to have space (process queue to drain it)
+        uint16_t waitCount = 0;
+        while (!ipc_txQueueHasSpace() && waitCount < 100) {
+            ipc_processTxQueue();  // Drain the queue
+            delayMicroseconds(100);
+            waitCount++;
+        }
+        
+        if (waitCount > 0) {
+            Serial.printf("[IPC] DEBUG: Waited %d*100us for queue space (queueCount=%d)\n", 
+                         waitCount, ipc_txQueueCount());
+        }
+        
+        if (ipc_sendSensorData(index)) {
+            sentCount++;
+        }
+    }
+    
+    Serial.printf("[IPC] ✓ Sent bulk read response: %d-%d (%d requested, %d sent)\n",
+                 req->startIndex, req->startIndex + count - 1, count, sentCount);
+}
+
 bool ipc_sendSensorData(uint16_t index) {
     if (index >= MAX_NUM_OBJECTS) {
-        Serial.printf("[IPC] Index %d out of range (max %d)\n", index, MAX_NUM_OBJECTS);
+        Serial.printf("[IPC] DEBUG: Index %d out of range (max %d)\n", index, MAX_NUM_OBJECTS);
         return false;
     }
     
     if (!objIndex[index].valid) {
+        Serial.printf("[IPC] DEBUG: Index %d not valid\n", index);
+        return false;
+    }
+    
+    void *obj = objIndex[index].obj;
+    if (obj == nullptr) {
+        Serial.printf("[IPC] DEBUG: Index %d obj pointer is NULL (type=%d)\n", 
+                     index, objIndex[index].type);
         return false;
     }
     
@@ -307,11 +371,6 @@ bool ipc_sendSensorData(uint16_t index) {
     data.objectType = objIndex[index].type;
     data.flags = 0;
     data.timestamp = 0;  // RP2040 will add timestamp
-    
-    void *obj = objIndex[index].obj;
-    if (obj == nullptr) {
-        return false;
-    }
     
     // Extract sensor data based on type
     switch (objIndex[index].type) {
@@ -519,6 +578,8 @@ bool ipc_sendSensorData(uint16_t index) {
     bool sent = ipc_sendPacket(IPC_MSG_SENSOR_DATA, (uint8_t*)&data, sizeof(data));
     if (sent) {
         Serial.printf("[IPC] ✓ Sent %s: %.2f %s\n", objIndex[index].name, data.value, data.unit);
+    } else {
+        Serial.printf("[IPC] DEBUG: Failed to send packet for index %d - TX queue full?\n", index);
     }
     return sent;
 }
@@ -769,10 +830,15 @@ void ipc_handle_config_rtd(const uint8_t *payload, uint16_t len) {
     }
     
     TemperatureSensor_t *sensor = (TemperatureSensor_t*)objIndex[cfg->index].obj;
-    if (sensor) {
+    if (sensor && sensor->cal) {
         // Update unit string
         strncpy(sensor->unit, cfg->unit, sizeof(sensor->unit) - 1);
         sensor->unit[sizeof(sensor->unit) - 1] = '\0';
+        
+        // Update calibration
+        sensor->cal->scale = cfg->calScale;
+        sensor->cal->offset = cfg->calOffset;
+        sensor->cal->timestamp = millis();
         
         // Get RTD driver interface (indices 10-12 map to rtd_interface[0-2])
         int rtdIdx = cfg->index - 10;
@@ -790,8 +856,9 @@ void ipc_handle_config_rtd(const uint8_t *payload, uint16_t len) {
             RtdSensorType sensorType = (cfg->nominalOhms == 1000) ? PT1000 : PT100;
             setRtdSensorType(&rtd_interface[rtdIdx], sensorType);
             
-            Serial.printf("[IPC] ✓ RTD[%d]: %s, %d-wire, PT%d, offset=%.2f\n",
-                         cfg->index, sensor->unit, cfg->wireConfig, cfg->nominalOhms, cfg->offset);
+            Serial.printf("[IPC] ✓ RTD[%d]: %s, %d-wire, PT%d, cal=(%.3f, %.3f)\n",
+                         cfg->index, sensor->unit, cfg->wireConfig, cfg->nominalOhms, 
+                         sensor->cal->scale, sensor->cal->offset);
         } else {
             Serial.printf("[IPC] ✓ RTD[%d]: %s (no driver)\n",
                          cfg->index, sensor->unit);
@@ -812,7 +879,25 @@ void ipc_handle_config_gpio(const uint8_t *payload, uint16_t len) {
     
     const IPC_ConfigGPIO_t *cfg = (const IPC_ConfigGPIO_t*)payload;
     
-    // TODO: Implement GPIO configuration
-    Serial.printf("[IPC] GPIO[%d] config (not implemented)\n", cfg->index);
-    ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "GPIO config not implemented yet");
+    // Validate index range (13-20 for GPIO inputs)
+    if (cfg->index < 13 || cfg->index >= 21) {
+        Serial.printf("[IPC] Invalid GPIO index: %d\n", cfg->index);
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "GPIO index out of range (13-20)");
+        return;
+    }
+    
+    // Validate pull mode
+    if (cfg->pullMode > 2) {
+        Serial.printf("[IPC] Invalid pull mode: %d\n", cfg->pullMode);
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid pull mode (0-2)");
+        return;
+    }
+    
+    // Apply configuration using GPIO driver
+    gpio_configure(cfg->index, cfg->name, cfg->pullMode);
+    
+    const char* pullStr = (cfg->pullMode == 1) ? "PULL-UP" :
+                          (cfg->pullMode == 2) ? "PULL-DOWN" : "HIGH-Z";
+    Serial.printf("[IPC] GPIO[%d] configured: %s, pull=%s\n", 
+                  cfg->index, cfg->name, pullStr);
 }

@@ -72,6 +72,9 @@ function openTab(evt, tabName) {
         initControlBoard();
     } else if (tabName === 'inputs') {
         initInputsTab();
+    } else if (tabName === 'sensors') {
+        // Initialize sensors tab with continuous polling
+        initSensorsTab();
     }
 }
 
@@ -1801,6 +1804,7 @@ function startControlPolling() {
 // ============================================================================
 
 let inputsRefreshInterval = null;
+let sensorsRefreshInterval = null;
 
 function initInputsTab() {
     // Stop any existing interval
@@ -1823,12 +1827,37 @@ function initInputsTab() {
     }, 2000);
 }
 
+function initSensorsTab() {
+    // Stop any existing interval
+    if (sensorsRefreshInterval) {
+        clearInterval(sensorsRefreshInterval);
+    }
+    
+    // Load sensors immediately
+    fetchAndRenderInputs();
+    
+    // Start polling every 2 seconds while tab is active
+    sensorsRefreshInterval = setInterval(() => {
+        if (document.getElementById('sensors').classList.contains('active')) {
+            fetchAndRenderInputs();
+        } else {
+            // Stop polling if tab is not active
+            clearInterval(sensorsRefreshInterval);
+            sensorsRefreshInterval = null;
+        }
+    }, 2000);
+}
+
 async function fetchAndRenderInputs() {
     try {
         const response = await fetch('/api/inputs');
         if (!response.ok) throw new Error('Failed to fetch inputs');
         
         const data = await response.json();
+        console.log('Inputs data received:', data);
+        console.log('  ADC:', data.adc ? data.adc.length : 0, 'entries');
+        console.log('  RTD:', data.rtd ? data.rtd.length : 0, 'entries');
+        console.log('  GPIO:', data.gpio ? data.gpio.length : 0, 'entries');
         
         // Render each section
         renderADCInputs(data.adc || []);
@@ -1855,12 +1884,19 @@ function renderADCInputs(adcData) {
     container.innerHTML = adcData.map(input => `
         <div class="input-item ${input.f ? 'fault' : ''}">
             <div class="input-header">
-                <span class="input-name">ADC ${input.i + 1}</span>
-                <span class="input-index">Index: ${input.i}</span>
-            </div>
-            <div class="input-value">
-                <span class="value-large">${input.v.toFixed(2)}</span>
-                <span class="value-unit">${input.u}</span>
+                <div class="input-header-left">
+                    <span class="input-name">${input.n || `ADC ${input.i}`}</span>
+                    <span class="input-value-inline">
+                        <span class="value-large">${input.v.toFixed(2)}</span>
+                        <span class="value-unit">${input.u}</span>
+                    </span>
+                </div>
+                <span class="dashboard-icon ${input.d ? 'active' : 'inactive'}" title="${input.d ? 'Shown on Dashboard' : 'Hidden from Dashboard'}">
+                    <svg viewBox="0 0 24 24"><path d="M21,16V4H3V16H21M21,2A2,2 0 0,1 23,4V16A2,2 0 0,1 21,18H14V20H16V22H8V20H10V18H3C1.89,18 1,17.1 1,16V4C1,2.89 1.89,2 3,2H21M5,6H14V11H5V6M15,6H19V8H15V6M19,9V14H15V9H19M5,12H9V14H5V12M10,12H14V14H10V12Z" /></svg>
+                </span>
+                <button class="icon-btn" onclick="openADCConfigModal(${input.i})" title="Configure">
+                    <svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>
+                </button>
             </div>
             ${input.f ? '<div class="fault-indicator">FAULT</div>' : ''}
         </div>
@@ -1879,12 +1915,19 @@ function renderRTDInputs(rtdData) {
     container.innerHTML = rtdData.map(input => `
         <div class="input-item ${input.f ? 'fault' : ''}">
             <div class="input-header">
-                <span class="input-name">RTD ${input.i - 9}</span>
-                <span class="input-index">Index: ${input.i}</span>
-            </div>
-            <div class="input-value">
-                <span class="value-large">${input.v.toFixed(2)}</span>
-                <span class="value-unit">${input.u}</span>
+                <div class="input-header-left">
+                    <span class="input-name">${input.n || `RTD ${input.i - 9}`}</span>
+                    <span class="input-value-inline">
+                        <span class="value-large">${input.v.toFixed(2)}</span>
+                        <span class="value-unit">${input.u}</span>
+                    </span>
+                </div>
+                <span class="dashboard-icon ${input.d ? 'active' : 'inactive'}" title="${input.d ? 'Shown on Dashboard' : 'Hidden from Dashboard'}">
+                    <svg viewBox="0 0 24 24"><path d="M21,16V4H3V16H21M21,2A2,2 0 0,1 23,4V16A2,2 0 0,1 21,18H14V20H16V22H8V20H10V18H3C1.89,18 1,17.1 1,16V4C1,2.89 1.89,2 3,2H21M5,6H14V11H5V6M15,6H19V8H15V6M19,9V14H15V9H19M5,12H9V14H5V12M10,12H14V14H10V12Z" /></svg>
+                </span>
+                <button class="icon-btn" onclick="openRTDConfigModal(${input.i})" title="Configure">
+                    <svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>
+                </button>
             </div>
             ${input.f ? '<div class="fault-indicator">FAULT</div>' : ''}
         </div>
@@ -1896,24 +1939,37 @@ function renderGPIOInputs(gpioData) {
     if (!container) return;
     
     if (gpioData.length === 0) {
-        container.innerHTML = '<div class="empty-message">No GPIO data available</div>';
+        container.innerHTML = '<div class="empty-message">No Input data available</div>';
         return;
     }
     
-    container.innerHTML = gpioData.map(input => `
-        <div class="input-item ${input.f ? 'fault' : ''}">
-            <div class="input-header">
-                <span class="input-name">GPIO ${input.i - 13}</span>
-                <span class="input-index">Index: ${input.i}</span>
+    container.innerHTML = gpioData.map(input => {
+        // Defensive check: ensure input.i is valid
+        const inputNumber = (typeof input.i === 'number' && !isNaN(input.i)) ? input.i - 12 : '?';
+        const inputName = input.n || `Input ${inputNumber}`;
+        
+        return `
+            <div class="input-item ${input.f ? 'fault' : ''}">
+                <div class="input-header">
+                    <div class="input-header-left">
+                        <span class="input-name">${inputName}</span>
+                        <span class="input-value-inline">
+                            <span class="digital-state ${input.s ? 'state-high' : 'state-low'}">
+                                ${input.s ? 'HIGH' : 'LOW'}
+                            </span>
+                        </span>
+                    </div>
+                    <span class="dashboard-icon ${input.d ? 'active' : 'inactive'}" title="${input.d ? 'Shown on Dashboard' : 'Hidden from Dashboard'}">
+                        <svg viewBox="0 0 24 24"><path d="M21,16V4H3V16H21M21,2A2,2 0 0,1 23,4V16A2,2 0 0,1 21,18H14V20H16V22H8V20H10V18H3C1.89,18 1,17.1 1,16V4C1,2.89 1.89,2 3,2H21M5,6H14V11H5V6M15,6H19V8H15V6M19,9V14H15V9H19M5,12H9V14H5V12M10,12H14V14H10V12Z" /></svg>
+                    </span>
+                    <button class="icon-btn" onclick="openGPIOConfigModal(${input.i})" title="Configure">
+                        <svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>
+                    </button>
+                </div>
+                ${input.f ? '<div class="fault-indicator">FAULT</div>' : ''}
             </div>
-            <div class="input-value">
-                <span class="digital-state ${input.s ? 'state-high' : 'state-low'}">
-                    ${input.s ? 'HIGH' : 'LOW'}
-                </span>
-            </div>
-            ${input.f ? '<div class="fault-indicator">FAULT</div>' : ''}
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function showInputError(containerId) {
@@ -1922,3 +1978,489 @@ function showInputError(containerId) {
         container.innerHTML = '<div class="error-message">Failed to load data</div>';
     }
 }
+
+// ============================================================================
+// ADC Configuration Modal
+// ============================================================================
+
+let currentADCIndex = null;
+let adcConfigData = null;
+
+async function openADCConfigModal(index) {
+    currentADCIndex = index;
+    
+    // Fetch current configuration
+    try {
+        const response = await fetch(`/api/config/adc/${index}`);
+        if (!response.ok) throw new Error('Failed to fetch config');
+        
+        adcConfigData = await response.json();
+        
+        // Populate form
+        document.getElementById('adcConfigIndex').textContent = `[${index}]`;
+        document.getElementById('adcConfigName').value = adcConfigData.name || '';
+        document.getElementById('adcConfigUnit').value = adcConfigData.unit || 'mV';
+        document.getElementById('calScale').value = adcConfigData.cal.scale || 1.0;
+        document.getElementById('calOffset').value = adcConfigData.cal.offset || 0.0;
+        document.getElementById('resultScale').textContent = adcConfigData.cal.scale.toFixed(4);
+        document.getElementById('resultOffset').textContent = adcConfigData.cal.offset.toFixed(2);
+        document.getElementById('adcShowOnDashboard').checked = adcConfigData.showOnDashboard || false;
+        
+        // Show modal
+        document.getElementById('adcConfigModal').classList.add('active');
+        
+    } catch (error) {
+        console.error('Error fetching ADC config:', error);
+        showToast('error', 'Error', 'Failed to load configuration');
+    }
+}
+
+function closeADCConfigModal() {
+    document.getElementById('adcConfigModal').classList.remove('active');
+    currentADCIndex = null;
+    adcConfigData = null;
+    
+    // Reset form
+    document.getElementById('adcConfigName').value = '';
+    document.getElementById('adcConfigUnit').value = 'mV';
+    document.getElementById('calP1Raw').value = '';
+    document.getElementById('calP1Real').value = '';
+    document.getElementById('calP2Raw').value = '';
+    document.getElementById('calP2Real').value = '';
+    document.getElementById('calScale').value = '';
+    document.getElementById('calOffset').value = '';
+    document.getElementById('resultScale').textContent = '--';
+    document.getElementById('resultOffset').textContent = '--';
+}
+
+async function saveADCConfig() {
+    if (currentADCIndex === null) return;
+    
+    // Get values from form
+    const name = document.getElementById('adcConfigName').value;
+    const unit = document.getElementById('adcConfigUnit').value;
+    const scale = parseFloat(document.getElementById('calScale').value) || 1.0;
+    const offset = parseFloat(document.getElementById('calOffset').value) || 0.0;
+    
+    const configData = {
+        index: currentADCIndex,
+        name: name,
+        unit: unit,
+        showOnDashboard: document.getElementById('adcShowOnDashboard').checked,
+        cal: {
+            scale: scale,
+            offset: offset
+        }
+    };
+    
+    try {
+        const response = await fetch(`/api/config/adc/${currentADCIndex}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) throw new Error('Failed to save config');
+        
+        const result = await response.json();
+        
+        showToast('success', 'Success', `Configuration saved for ADC ${currentADCIndex}`);
+        closeADCConfigModal();
+        
+        // Refresh inputs to show new name
+        fetchAndRenderInputs();
+        
+    } catch (error) {
+        console.error('Error saving ADC config:', error);
+        showToast('error', 'Error', 'Failed to save configuration');
+    }
+}
+
+function resetCalibration() {
+    // Reset to default calibration
+    document.getElementById('calScale').value = '1.0';
+    document.getElementById('calOffset').value = '0.0';
+    document.getElementById('resultScale').textContent = '1.0000';
+    document.getElementById('resultOffset').textContent = '0.00';
+    
+    // Clear two-point calibration fields
+    document.getElementById('calP1Raw').value = '';
+    document.getElementById('calP1Real').value = '';
+    document.getElementById('calP2Raw').value = '';
+    document.getElementById('calP2Real').value = '';
+    
+    showToast('info', 'Reset', 'Calibration reset to default values');
+}
+
+function calculateTwoPointCal() {
+    const p1Displayed = parseFloat(document.getElementById('calP1Raw').value);
+    const p1Actual = parseFloat(document.getElementById('calP1Real').value);
+    const p2Displayed = parseFloat(document.getElementById('calP2Raw').value);
+    const p2Actual = parseFloat(document.getElementById('calP2Real').value);
+    
+    if (isNaN(p1Displayed) || isNaN(p1Actual) || isNaN(p2Displayed) || isNaN(p2Actual)) {
+        showToast('error', 'Error', 'Please fill in all calibration points');
+        return;
+    }
+    
+    if (Math.abs(p2Displayed - p1Displayed) < 0.001) {
+        showToast('error', 'Error', 'Displayed values must be different');
+        return;
+    }
+    
+    // Get current calibration and unit to reverse transformations
+    const currentScale = adcConfigData.cal.scale || 1.0;
+    const currentOffset = adcConfigData.cal.offset || 0.0;
+    const currentUnit = adcConfigData.unit || 'mV';
+    
+    // Unit conversion factors (from IO MCU drv_adc.h)
+    const unitFactors = {
+        'mV': 0.314,
+        'V': 0.000314,
+        'mA': 0.001308333,
+        'uV': 314.0
+    };
+    const unitFactor = unitFactors[currentUnit] || 0.314;
+    
+    // Step 1: Convert displayed values back to raw ADC counts
+    // IO MCU applies: displayed = (raw * scale + offset) * unitFactor
+    // Reverse: result = displayed / unitFactor
+    //          raw = (result - offset) / scale
+    
+    const p1Result = p1Displayed / unitFactor;
+    const p1Raw = (p1Result - currentOffset) / currentScale;
+    
+    const p2Result = p2Displayed / unitFactor;
+    const p2Raw = (p2Result - currentOffset) / currentScale;
+    
+    if (Math.abs(p2Raw - p1Raw) < 0.001) {
+        showToast('error', 'Error', 'Calculated raw values too close together');
+        return;
+    }
+    
+    // Step 2: Convert actual measured values to intermediate "result" values
+    // These are what the calibrated result should be (before unit conversion)
+    const p1ActualResult = p1Actual / unitFactor;
+    const p2ActualResult = p2Actual / unitFactor;
+    
+    // Step 3: Calculate NEW calibration: actualResult = newScale * raw + newOffset
+    // This ensures calibration is always based on raw ADC values
+    const scale = (p2ActualResult - p1ActualResult) / (p2Raw - p1Raw);
+    const offset = p1ActualResult - (scale * p1Raw);
+    
+    // Update form fields
+    document.getElementById('calScale').value = scale.toFixed(6);
+    document.getElementById('calOffset').value = offset.toFixed(4);
+    document.getElementById('resultScale').textContent = scale.toFixed(4);
+    document.getElementById('resultOffset').textContent = offset.toFixed(2);
+    
+    showToast('success', 'Success', 'Calibration calculated successfully');
+}
+
+/* ============================================================================
+   RTD Configuration Modal Functions
+   ============================================================================ */
+
+let currentRTDIndex = null;
+let rtdConfigData = null;
+
+async function openRTDConfigModal(index) {
+    currentRTDIndex = index;
+    
+    // Fetch current configuration
+    try {
+        const response = await fetch(`/api/config/rtd/${index}`);
+        if (!response.ok) throw new Error('Failed to fetch config');
+        
+        rtdConfigData = await response.json();
+        
+        // Populate form
+        document.getElementById('rtdConfigIndex').textContent = `[${index}]`;
+        document.getElementById('rtdConfigName').value = rtdConfigData.name || '';
+        document.getElementById('rtdConfigUnit').value = rtdConfigData.unit || 'C';
+        document.getElementById('rtdConfigWires').value = rtdConfigData.wires || '3';
+        document.getElementById('rtdConfigType').value = rtdConfigData.type || '100';
+        document.getElementById('calScaleRTD').value = rtdConfigData.cal.scale || 1.0;
+        document.getElementById('calOffsetRTD').value = rtdConfigData.cal.offset || 0.0;
+        document.getElementById('resultScaleRTD').textContent = rtdConfigData.cal.scale.toFixed(4);
+        document.getElementById('resultOffsetRTD').textContent = rtdConfigData.cal.offset.toFixed(2);
+        document.getElementById('rtdShowOnDashboard').checked = rtdConfigData.showOnDashboard || false;
+        
+        // Show modal
+        document.getElementById('rtdConfigModal').classList.add('active');
+        
+    } catch (error) {
+        console.error('Error fetching RTD config:', error);
+        showToast('error', 'Error', 'Failed to load configuration');
+    }
+}
+
+function closeRTDConfigModal() {
+    document.getElementById('rtdConfigModal').classList.remove('active');
+    currentRTDIndex = null;
+    rtdConfigData = null;
+    
+    // Reset form
+    document.getElementById('rtdConfigName').value = '';
+    document.getElementById('rtdConfigUnit').value = 'C';
+    document.getElementById('rtdConfigWires').value = '3';
+    document.getElementById('rtdConfigType').value = '100';
+    document.getElementById('calP1RawRTD').value = '';
+    document.getElementById('calP1RealRTD').value = '';
+    document.getElementById('calP2RawRTD').value = '';
+    document.getElementById('calP2RealRTD').value = '';
+    document.getElementById('calScaleRTD').value = '';
+    document.getElementById('calOffsetRTD').value = '';
+    document.getElementById('resultScaleRTD').textContent = '--';
+    document.getElementById('resultOffsetRTD').textContent = '--';
+}
+
+async function saveRTDConfig() {
+    if (currentRTDIndex === null) return;
+    
+    // Get values from form
+    const name = document.getElementById('rtdConfigName').value;
+    const unit = document.getElementById('rtdConfigUnit').value;
+    const wires = parseInt(document.getElementById('rtdConfigWires').value);
+    const type = parseInt(document.getElementById('rtdConfigType').value);
+    const scale = parseFloat(document.getElementById('calScaleRTD').value) || 1.0;
+    const offset = parseFloat(document.getElementById('calOffsetRTD').value) || 0.0;
+    
+    const configData = {
+        index: currentRTDIndex,
+        name: name,
+        unit: unit,
+        wires: wires,
+        type: type,
+        showOnDashboard: document.getElementById('rtdShowOnDashboard').checked,
+        cal: {
+            scale: scale,
+            offset: offset
+        }
+    };
+    
+    try {
+        const response = await fetch(`/api/config/rtd/${currentRTDIndex}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) throw new Error('Failed to save config');
+        
+        const result = await response.json();
+        
+        showToast('success', 'Success', `Configuration saved for RTD ${currentRTDIndex - 9}`);
+        closeRTDConfigModal();
+        
+        // Refresh inputs to show new name
+        fetchAndRenderInputs();
+        
+    } catch (error) {
+        console.error('Error saving RTD config:', error);
+        showToast('error', 'Error', 'Failed to save configuration');
+    }
+}
+
+function resetCalibrationRTD() {
+    // Reset to default calibration
+    document.getElementById('calScaleRTD').value = '1.0';
+    document.getElementById('calOffsetRTD').value = '0.0';
+    document.getElementById('resultScaleRTD').textContent = '1.0000';
+    document.getElementById('resultOffsetRTD').textContent = '0.00';
+    
+    // Clear two-point calibration fields
+    document.getElementById('calP1RawRTD').value = '';
+    document.getElementById('calP1RealRTD').value = '';
+    document.getElementById('calP2RawRTD').value = '';
+    document.getElementById('calP2RealRTD').value = '';
+    
+    showToast('info', 'Reset', 'Calibration reset to default values');
+}
+
+function calculateTwoPointCalRTD() {
+    const p1Displayed = parseFloat(document.getElementById('calP1RawRTD').value);
+    const p1Actual = parseFloat(document.getElementById('calP1RealRTD').value);
+    const p2Displayed = parseFloat(document.getElementById('calP2RawRTD').value);
+    const p2Actual = parseFloat(document.getElementById('calP2RealRTD').value);
+    
+    if (isNaN(p1Displayed) || isNaN(p1Actual) || isNaN(p2Displayed) || isNaN(p2Actual)) {
+        showToast('error', 'Error', 'Please fill in all calibration points');
+        return;
+    }
+    
+    if (Math.abs(p2Displayed - p1Displayed) < 0.001) {
+        showToast('error', 'Error', 'Displayed values must be different');
+        return;
+    }
+    
+    // Get current calibration and unit
+    const currentScale = rtdConfigData.cal.scale || 1.0;
+    const currentOffset = rtdConfigData.cal.offset || 0.0;
+    const currentUnit = rtdConfigData.unit || 'C';
+    
+    // For RTD, we need to reverse any temperature unit conversion
+    // Calibration is done in base unit (Celsius in IO MCU)
+    // Convert displayed and actual values to Celsius if needed
+    function toBaseTempUnit(value, unit) {
+        if (unit === 'F') return (value - 32) * 5/9;  // F to C
+        if (unit === 'K') return value - 273.15;       // K to C
+        return value;  // Already C
+    }
+    
+    const p1DisplayedC = toBaseTempUnit(p1Displayed, currentUnit);
+    const p1ActualC = toBaseTempUnit(p1Actual, currentUnit);
+    const p2DisplayedC = toBaseTempUnit(p2Displayed, currentUnit);
+    const p2ActualC = toBaseTempUnit(p2Actual, currentUnit);
+    
+    // Reverse current calibration to get raw values
+    const p1Raw = (p1DisplayedC - currentOffset) / currentScale;
+    const p2Raw = (p2DisplayedC - currentOffset) / currentScale;
+    
+    if (Math.abs(p2Raw - p1Raw) < 0.001) {
+        showToast('error', 'Error', 'Calculated raw values too close together');
+        return;
+    }
+    
+    // Calculate NEW calibration: actualC = newScale * raw + newOffset
+    const scale = (p2ActualC - p1ActualC) / (p2Raw - p1Raw);
+    const offset = p1ActualC - (scale * p1Raw);
+    
+    // Update form fields
+    document.getElementById('calScaleRTD').value = scale.toFixed(6);
+    document.getElementById('calOffsetRTD').value = offset.toFixed(4);
+    document.getElementById('resultScaleRTD').textContent = scale.toFixed(4);
+    document.getElementById('resultOffsetRTD').textContent = offset.toFixed(2);
+    
+    showToast('success', 'Success', 'Calibration calculated successfully');
+}
+
+// ============================================================================
+// GPIO Configuration Modal
+// ============================================================================
+
+let currentGPIOIndex = null;
+let gpioConfigData = null;
+
+async function openGPIOConfigModal(index) {
+    currentGPIOIndex = index;
+    
+    // Fetch current configuration
+    try {
+        const response = await fetch(`/api/config/gpio/${index}`);
+        if (!response.ok) throw new Error('Failed to fetch config');
+        
+        gpioConfigData = await response.json();
+        
+        // Populate form
+        document.getElementById('gpioConfigIndex').textContent = `${index - 12}`;  // Display as 1-8
+        document.getElementById('gpioConfigName').value = gpioConfigData.name || '';
+        document.getElementById('gpioConfigPullMode').value = gpioConfigData.pullMode || '1';
+        document.getElementById('gpioShowOnDashboard').checked = gpioConfigData.showOnDashboard || false;
+        
+        // Show modal
+        document.getElementById('gpioConfigModal').classList.add('active');
+        
+    } catch (error) {
+        console.error('Error loading GPIO config:', error);
+        showToast('error', 'Error', 'Failed to load GPIO configuration');
+    }
+}
+
+function closeGPIOConfigModal() {
+    document.getElementById('gpioConfigModal').classList.remove('active');
+    currentGPIOIndex = null;
+    gpioConfigData = null;
+}
+
+async function saveGPIOConfig() {
+    if (currentGPIOIndex === null) return;
+    
+    // Get values from form
+    const name = document.getElementById('gpioConfigName').value;
+    const pullMode = parseInt(document.getElementById('gpioConfigPullMode').value);
+    
+    const configData = {
+        index: currentGPIOIndex,
+        name: name,
+        pullMode: pullMode,
+        showOnDashboard: document.getElementById('gpioShowOnDashboard').checked,
+        enabled: true
+    };
+    
+    try {
+        const response = await fetch(`/api/config/gpio/${currentGPIOIndex}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) throw new Error('Failed to save config');
+        
+        const result = await response.json();
+        
+        showToast('success', 'Success', `Configuration saved for Input ${currentGPIOIndex - 12}`);
+        closeGPIOConfigModal();
+        
+        // Refresh inputs to show new name
+        fetchAndRenderInputs();
+        
+    } catch (error) {
+        console.error('Error saving GPIO config:', error);
+        showToast('error', 'Error', 'Failed to save configuration');
+    }
+}
+
+// Calibration tab switching
+document.addEventListener('DOMContentLoaded', function() {
+    const calTabBtns = document.querySelectorAll('.cal-tab-btn');
+    calTabBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const tab = this.getAttribute('data-tab');
+            
+            // Remove active from all tabs
+            document.querySelectorAll('.cal-tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.cal-tab-content').forEach(c => c.classList.remove('active'));
+            
+            // Add active to clicked tab
+            this.classList.add('active');
+            if (tab === 'two-point') {
+                document.getElementById('twoPointCal').classList.add('active');
+            } else if (tab === 'direct') {
+                document.getElementById('directCal').classList.add('active');
+            } else if (tab === 'two-point-rtd') {
+                document.getElementById('twoPointCalRTD').classList.add('active');
+            } else if (tab === 'direct-rtd') {
+                document.getElementById('directCalRTD').classList.add('active');
+            }
+        });
+    });
+    
+    // Update result display when direct entry changes
+    document.getElementById('calScale').addEventListener('input', function() {
+        const scale = parseFloat(this.value) || 0;
+        document.getElementById('resultScale').textContent = scale.toFixed(4);
+    });
+    
+    document.getElementById('calOffset').addEventListener('input', function() {
+        const offset = parseFloat(this.value) || 0;
+        document.getElementById('resultOffset').textContent = offset.toFixed(2);
+    });
+    
+    // RTD direct entry listeners
+    document.getElementById('calScaleRTD').addEventListener('input', function() {
+        const scale = parseFloat(this.value) || 0;
+        document.getElementById('resultScaleRTD').textContent = scale.toFixed(4);
+    });
+    
+    document.getElementById('calOffsetRTD').addEventListener('input', function() {
+        const offset = parseFloat(this.value) || 0;
+        document.getElementById('resultOffsetRTD').textContent = offset.toFixed(2);
+    });
+});

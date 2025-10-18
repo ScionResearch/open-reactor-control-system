@@ -24,6 +24,7 @@ void setDefaultIOConfig() {
         ioConfig.adcInputs[i].cal.scale = 1.0;
         ioConfig.adcInputs[i].cal.offset = 0.0;
         ioConfig.adcInputs[i].enabled = true;
+        ioConfig.adcInputs[i].showOnDashboard = false;
     }
     
     // ========================================================================
@@ -36,6 +37,7 @@ void setDefaultIOConfig() {
         ioConfig.dacOutputs[i].cal.scale = 1.0;
         ioConfig.dacOutputs[i].cal.offset = 0.0;
         ioConfig.dacOutputs[i].enabled = true;
+        ioConfig.dacOutputs[i].showOnDashboard = false;
     }
     
     // ========================================================================
@@ -44,20 +46,24 @@ void setDefaultIOConfig() {
     for (int i = 0; i < MAX_RTD_SENSORS; i++) {
         snprintf(ioConfig.rtdSensors[i].name, sizeof(ioConfig.rtdSensors[i].name), 
                  "RTD Temperature %d", i + 1);
-        strcpy(ioConfig.rtdSensors[i].unit, "degC");
-        ioConfig.rtdSensors[i].offset = 0.0;
+        strcpy(ioConfig.rtdSensors[i].unit, "C");
+        ioConfig.rtdSensors[i].cal.scale = 1.0;
+        ioConfig.rtdSensors[i].cal.offset = 0.0;
         ioConfig.rtdSensors[i].wireConfig = 3;      // 3-wire by default
         ioConfig.rtdSensors[i].nominalOhms = 100;   // PT100 by default
         ioConfig.rtdSensors[i].enabled = true;
+        ioConfig.rtdSensors[i].showOnDashboard = false;
     }
     
     // ========================================================================
-    // Digital GPIO (Indices 13-20)
+    // Digital Inputs (Indices 13-20)
     // ========================================================================
     for (int i = 0; i < MAX_GPIO; i++) {
         snprintf(ioConfig.gpio[i].name, sizeof(ioConfig.gpio[i].name), 
-                 "Digital GPIO %d", i);
+                 "Input %d", i + 1);  // Label as Input 1-8 to match board
+        ioConfig.gpio[i].pullMode = GPIO_PULL_UP;  // Default to pull-up
         ioConfig.gpio[i].enabled = true;
+        ioConfig.gpio[i].showOnDashboard = false;
     }
     
     // ========================================================================
@@ -109,8 +115,8 @@ bool loadIOConfig() {
         return false;
     }
     
-    // Allocate JSON document (sized for our config)
-    StaticJsonDocument<8192> doc;
+    // Allocate JSON document on heap (sized for our config)
+    DynamicJsonDocument doc(8192);
     DeserializationError error = deserializeJson(doc, configFile);
     configFile.close();
     LittleFS.end();
@@ -153,6 +159,7 @@ bool loadIOConfig() {
             ioConfig.adcInputs[i].cal.scale = adc["cal_scale"] | 1.0;
             ioConfig.adcInputs[i].cal.offset = adc["cal_offset"] | 0.0;
             ioConfig.adcInputs[i].enabled = adc["enabled"] | true;
+            ioConfig.adcInputs[i].showOnDashboard = adc["showOnDashboard"] | false;
         }
     }
     
@@ -170,6 +177,7 @@ bool loadIOConfig() {
             ioConfig.dacOutputs[i].cal.scale = dac["cal_scale"] | 1.0;
             ioConfig.dacOutputs[i].cal.offset = dac["cal_offset"] | 0.0;
             ioConfig.dacOutputs[i].enabled = dac["enabled"] | true;
+            ioConfig.dacOutputs[i].showOnDashboard = dac["showOnDashboard"] | false;
         }
     }
     
@@ -182,10 +190,14 @@ bool loadIOConfig() {
             JsonObject rtd = rtdArray[i];
             strlcpy(ioConfig.rtdSensors[i].name, rtd["name"] | "", 
                     sizeof(ioConfig.rtdSensors[i].name));
-            strlcpy(ioConfig.rtdSensors[i].unit, rtd["unit"] | "degC", 
+            strlcpy(ioConfig.rtdSensors[i].unit, rtd["unit"] | "C", 
                     sizeof(ioConfig.rtdSensors[i].unit));
-            ioConfig.rtdSensors[i].offset = rtd["offset"] | 0.0;
+            ioConfig.rtdSensors[i].cal.scale = rtd["cal"]["scale"] | 1.0;
+            ioConfig.rtdSensors[i].cal.offset = rtd["cal"]["offset"] | 0.0;
+            ioConfig.rtdSensors[i].wireConfig = rtd["wire_config"] | 3;
+            ioConfig.rtdSensors[i].nominalOhms = rtd["nominal_ohms"] | 100;
             ioConfig.rtdSensors[i].enabled = rtd["enabled"] | true;
+            ioConfig.rtdSensors[i].showOnDashboard = rtd["showOnDashboard"] | false;
         }
     }
     
@@ -198,7 +210,9 @@ bool loadIOConfig() {
             JsonObject gpio = gpioArray[i];
             strlcpy(ioConfig.gpio[i].name, gpio["name"] | "", 
                     sizeof(ioConfig.gpio[i].name));
+            ioConfig.gpio[i].pullMode = (GPIOPullMode)(gpio["pullMode"] | GPIO_PULL_UP);
             ioConfig.gpio[i].enabled = gpio["enabled"] | true;
+            ioConfig.gpio[i].showOnDashboard = gpio["showOnDashboard"] | false;
         }
     }
     
@@ -245,8 +259,8 @@ void saveIOConfig() {
         return;
     }
     
-    // Create JSON document
-    StaticJsonDocument<2048> doc;
+    // Create JSON document on heap to avoid stack overflow
+    DynamicJsonDocument doc(8192);
     
     // Store magic number and version
     doc["magic"] = IO_CONFIG_MAGIC_NUMBER;
@@ -263,6 +277,7 @@ void saveIOConfig() {
         adc["cal_scale"] = ioConfig.adcInputs[i].cal.scale;
         adc["cal_offset"] = ioConfig.adcInputs[i].cal.offset;
         adc["enabled"] = ioConfig.adcInputs[i].enabled;
+        adc["showOnDashboard"] = ioConfig.adcInputs[i].showOnDashboard;
     }
     
     // ========================================================================
@@ -276,6 +291,7 @@ void saveIOConfig() {
         dac["cal_scale"] = ioConfig.dacOutputs[i].cal.scale;
         dac["cal_offset"] = ioConfig.dacOutputs[i].cal.offset;
         dac["enabled"] = ioConfig.dacOutputs[i].enabled;
+        dac["showOnDashboard"] = ioConfig.dacOutputs[i].showOnDashboard;
     }
     
     // ========================================================================
@@ -286,8 +302,13 @@ void saveIOConfig() {
         JsonObject rtd = rtdArray.createNestedObject();
         rtd["name"] = ioConfig.rtdSensors[i].name;
         rtd["unit"] = ioConfig.rtdSensors[i].unit;
-        rtd["offset"] = ioConfig.rtdSensors[i].offset;
+        JsonObject cal = rtd.createNestedObject("cal");
+        cal["scale"] = ioConfig.rtdSensors[i].cal.scale;
+        cal["offset"] = ioConfig.rtdSensors[i].cal.offset;
+        rtd["wire_config"] = ioConfig.rtdSensors[i].wireConfig;
+        rtd["nominal_ohms"] = ioConfig.rtdSensors[i].nominalOhms;
         rtd["enabled"] = ioConfig.rtdSensors[i].enabled;
+        rtd["showOnDashboard"] = ioConfig.rtdSensors[i].showOnDashboard;
     }
     
     // ========================================================================
@@ -297,7 +318,9 @@ void saveIOConfig() {
     for (int i = 0; i < MAX_GPIO; i++) {
         JsonObject gpio = gpioArray.createNestedObject();
         gpio["name"] = ioConfig.gpio[i].name;
+        gpio["pullMode"] = (uint8_t)ioConfig.gpio[i].pullMode;
         gpio["enabled"] = ioConfig.gpio[i].enabled;
+        gpio["showOnDashboard"] = ioConfig.gpio[i].showOnDashboard;
     }
     
     // ========================================================================
@@ -335,6 +358,8 @@ void saveIOConfig() {
     } else {
         log(LOG_INFO, true, "IO configuration saved successfully\n");
     }
+
+    log(LOG_DEBUG, false, "IO configuration JSON doc size: %d bytes\n", doc.memoryUsage());
     
     configFile.close();
     // Don't end LittleFS here as it will prevent serving web files
@@ -360,18 +385,20 @@ void printIOConfig() {
     // RTD Sensors
     log(LOG_INFO, true, "\nRTD Sensors:\n");
     for (int i = 0; i < MAX_RTD_SENSORS; i++) {
-        log(LOG_INFO, true, "  [%d] %s: %s, %d-wire PT%d (offset=%.2f) %s\n",
+        log(LOG_INFO, true, "  [%d] %s: %s, %d-wire PT%d (scale=%.4f, offset=%.2f) %s\n",
             i + 10, ioConfig.rtdSensors[i].name, ioConfig.rtdSensors[i].unit,
             ioConfig.rtdSensors[i].wireConfig, ioConfig.rtdSensors[i].nominalOhms,
-            ioConfig.rtdSensors[i].offset,
+            ioConfig.rtdSensors[i].cal.scale, ioConfig.rtdSensors[i].cal.offset,
             ioConfig.rtdSensors[i].enabled ? "ENABLED" : "DISABLED");
     }
     
     // GPIO
-    log(LOG_INFO, true, "\nDigital GPIO:\n");
+    log(LOG_INFO, true, "\nDigital Inputs (GPIO):\n");
     for (int i = 0; i < MAX_GPIO; i++) {
-        log(LOG_INFO, true, "  [%d] %s %s\n",
-            i + 13, ioConfig.gpio[i].name,
+        const char* pullStr = (ioConfig.gpio[i].pullMode == GPIO_PULL_UP) ? "PULL-UP" :
+                              (ioConfig.gpio[i].pullMode == GPIO_PULL_DOWN) ? "PULL-DOWN" : "HIGH-Z";
+        log(LOG_INFO, true, "  [%d] %s (%s) %s\n",
+            i + 13, ioConfig.gpio[i].name, pullStr,
             ioConfig.gpio[i].enabled ? "ENABLED" : "DISABLED");
     }
     
@@ -465,7 +492,8 @@ void pushIOConfigToIOmcu() {
         cfg.index = 10 + i;
         strncpy(cfg.unit, ioConfig.rtdSensors[i].unit, sizeof(cfg.unit) - 1);
         cfg.unit[sizeof(cfg.unit) - 1] = '\0';
-        cfg.offset = ioConfig.rtdSensors[i].offset;
+        cfg.calScale = ioConfig.rtdSensors[i].cal.scale;
+        cfg.calOffset = ioConfig.rtdSensors[i].cal.offset;
         cfg.wireConfig = ioConfig.rtdSensors[i].wireConfig;
         cfg.nominalOhms = ioConfig.rtdSensors[i].nominalOhms;
         
@@ -475,8 +503,8 @@ void pushIOConfigToIOmcu() {
             if (ipc.sendPacket(IPC_MSG_CONFIG_RTD, (uint8_t*)&cfg, sizeof(cfg))) {
                 sent = true;
                 sentCount++;
-                log(LOG_DEBUG, false, "  → RTD[%d]: %s, %d-wire, PT%d, offset=%.3f\n",
-                    10 + i, cfg.unit, cfg.wireConfig, cfg.nominalOhms, cfg.offset);
+                log(LOG_DEBUG, false, "  → RTD[%d]: %s, %d-wire, PT%d, scale=%.3f, offset=%.3f\n",
+                    10 + i, cfg.unit, cfg.wireConfig, cfg.nominalOhms, cfg.calScale, cfg.calOffset);
                 break;
             }
             ipc.update();  // Process any pending RX/TX
@@ -485,6 +513,42 @@ void pushIOConfigToIOmcu() {
         
         if (!sent) {
             log(LOG_WARNING, false, "  ✗ Failed to send RTD[%d] config after retries\n", 10 + i);
+        }
+        
+        delay(10);
+    }
+    
+    // ========================================================================
+    // Push GPIO Input configurations (indices 13-20)
+    // ========================================================================
+    for (int i = 0; i < MAX_GPIO; i++) {
+        if (!ioConfig.gpio[i].enabled) continue;
+        
+        IPC_ConfigGPIO_t cfg;
+        cfg.index = 13 + i;
+        strncpy(cfg.name, ioConfig.gpio[i].name, sizeof(cfg.name) - 1);
+        cfg.name[sizeof(cfg.name) - 1] = '\0';
+        cfg.pullMode = (uint8_t)ioConfig.gpio[i].pullMode;
+        cfg.enabled = ioConfig.gpio[i].enabled;
+        
+        // Retry up to 10 times if queue is full
+        bool sent = false;
+        for (int retry = 0; retry < 10; retry++) {
+            if (ipc.sendPacket(IPC_MSG_CONFIG_GPIO, (uint8_t*)&cfg, sizeof(cfg))) {
+                sent = true;
+                sentCount++;
+                const char* pullStr = (cfg.pullMode == 1) ? "PULL-UP" :
+                                      (cfg.pullMode == 2) ? "PULL-DOWN" : "HIGH-Z";
+                log(LOG_DEBUG, false, "  → GPIO[%d]: %s, pull=%s\n",
+                    13 + i, cfg.name, pullStr);
+                break;
+            }
+            ipc.update();  // Process any pending RX/TX
+            delay(10);  // Wait for queue space
+        }
+        
+        if (!sent) {
+            log(LOG_WARNING, false, "  ✗ Failed to send GPIO[%d] config after retries\n", 13 + i);
         }
         
         delay(10);

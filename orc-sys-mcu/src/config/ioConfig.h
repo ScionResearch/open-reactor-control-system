@@ -34,6 +34,7 @@ struct ADCInputConfig {
     char unit[8];           // Unit of measurement (mV, V, mA, uV)
     CalibrationConfig cal;  // Calibration scale and offset
     bool enabled;           // Enable/disable this input
+    bool showOnDashboard;   // Show on main dashboard
 };
 
 /**
@@ -44,6 +45,7 @@ struct DACOutputConfig {
     char unit[8];           // Usually mV or V
     CalibrationConfig cal;
     bool enabled;
+    bool showOnDashboard;   // Show on main dashboard
 };
 
 /**
@@ -51,19 +53,31 @@ struct DACOutputConfig {
  */
 struct RTDSensorConfig {
     char name[32];
-    char unit[8];           // degC or degF
-    float offset;           // Temperature offset calibration
+    char unit[8];           // C, F, or K
+    CalibrationConfig cal;  // Calibration (scale and offset)
     uint8_t wireConfig;     // 2, 3, or 4 wire configuration
     uint16_t nominalOhms;   // 100 (PT100) or 1000 (PT1000)
     bool enabled;
+    bool showOnDashboard;   // Show on main dashboard
 };
 
 /**
- * @brief Configuration for digital GPIO (indices 13-20)
+ * @brief Pull resistor mode for GPIO inputs
+ */
+enum GPIOPullMode : uint8_t {
+    GPIO_PULL_NONE = 0,    // High-Z (floating)
+    GPIO_PULL_UP = 1,      // Internal pull-up
+    GPIO_PULL_DOWN = 2     // Internal pull-down
+};
+
+/**
+ * @brief Configuration for digital GPIO inputs (indices 13-20)
  */
 struct GPIOConfig {
     char name[32];
+    GPIOPullMode pullMode;  // Pull resistor configuration
     bool enabled;
+    bool showOnDashboard;   // Show on main dashboard
 };
 
 /**

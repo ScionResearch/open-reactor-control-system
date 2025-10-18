@@ -17,3 +17,4 @@ extern DigitalIO_t gpioExp[15];
 // Manages 8 main GPIO plus expansion GPIO
 void gpio_init(void);
 void gpio_update(void);
+void gpio_configure(uint8_t index, const char* name, uint8_t pullMode);

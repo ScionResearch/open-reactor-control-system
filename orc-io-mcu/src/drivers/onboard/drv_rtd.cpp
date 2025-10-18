@@ -1,4 +1,5 @@
 #include "drv_rtd.h"
+#include <string.h>  // For strcmp
 
 int rtdSensorCount = 0;
 
@@ -34,6 +35,13 @@ bool init_rtdDriver(void) {
         rtd_interface[i].sensorType = PT100;
         rtd_interface[i].cal = &calTable[i + CAL_RTD_PTR];
         
+        // Initialize temperature sensor object
+        rtd_sensor[i].temperature = 0;
+        strcpy(rtd_sensor[i].unit, "C");
+        rtd_sensor[i].fault = false;
+        rtd_sensor[i].newMessage = false;
+        rtd_sensor[i].cal = &calTable[i + CAL_RTD_PTR];
+        
         // Add to object index (fixed indices 10-12)
         objIndex[10 + i].type = OBJ_T_TEMPERATURE_SENSOR;
         objIndex[10 + i].obj = &rtd_sensor[i];
@@ -53,10 +61,7 @@ bool init_rtdDriver(void) {
 bool initTemperatureSensor(RTDDriver_t *sensorObj) {
     if (rtdSensorCount >= NUM_MAX31865_INTERFACES) return false;
     rtdSensorCount ++;
-    // Initialise the temperature sensor object
-    sensorObj->temperatureObj->temperature = 0;
-    strcpy(sensorObj->temperatureObj->unit, "degC"); // Default units for the temperature (avoid UTF-8 degree symbol)
-    // Initialise the temperature sensor
+    // Initialise the temperature sensor hardware
     sensorObj->sensor = new MAX31865(sensorObj->cs_pin, &SPI);
     return sensorObj->sensor->begin(sensorObj->wires);
 }
@@ -106,9 +111,26 @@ bool readRtdSensor(RTDDriver_t *sensorObj) {
         }
         sensorObj->sensor->clearFault();
     }
-    float temperature = sensorObj->sensor->temperature(rtdRefs[sensorObj->sensorType].R_nom, rtdRefs[sensorObj->sensorType].R_ref);
-    temperature = (temperature * sensorObj->cal->scale) + sensorObj->cal->offset;
-    sensorObj->temperatureObj->temperature = temperature;
+    // Read temperature from MAX31865 (always returns Celsius)
+    float tempCelsius = sensorObj->sensor->temperature(rtdRefs[sensorObj->sensorType].R_nom, rtdRefs[sensorObj->sensorType].R_ref);
+    
+    // Apply calibration (scale and offset) to the Celsius reading
+    tempCelsius = (tempCelsius * sensorObj->cal->scale) + sensorObj->cal->offset;
+    
+    // Convert to the requested unit
+    float finalTemperature;
+    if (strcmp(sensorObj->temperatureObj->unit, "F") == 0) {
+        // Convert Celsius to Fahrenheit: F = C × 9/5 + 32
+        finalTemperature = (tempCelsius * 9.0 / 5.0) + 32.0;
+    } else if (strcmp(sensorObj->temperatureObj->unit, "K") == 0) {
+        // Convert Celsius to Kelvin: K = C + 273.15
+        finalTemperature = tempCelsius + 273.15;
+    } else {
+        // Default to Celsius (or if unit is explicitly "C")
+        finalTemperature = tempCelsius;
+    }
+    
+    sensorObj->temperatureObj->temperature = finalTemperature;
     return true;
 }
 

@@ -83,7 +83,7 @@ struct AnalogInput_t {
 };
 
 struct DigitalIO_t {
-    bool pullup;
+    uint8_t pullMode;    // 0=None (High-Z), 1=Pull-up, 2=Pull-down
     bool output;
     bool state;
     bool fault;
@@ -96,6 +96,7 @@ struct TemperatureSensor_t {
     bool fault;
     bool newMessage;
     char message[100];
+    Calibrate_t *cal;
 };
 
 struct PhSensor_t {

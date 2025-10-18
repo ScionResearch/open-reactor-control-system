@@ -1,6 +1,6 @@
 # Inter-Processor Communication (IPC) Protocol Specification
-**Version:** 2.0  
-**Date:** 2025-10-06  
+**Version:** 2.1  
+**Date:** 2025-10-18  
 **Status:** ✅ Implemented & Operational
 
 ---
@@ -91,10 +91,11 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_INDEX_UPDATE    = 0x14,  // Update object metadata
     
     // Sensor Data (0x20-0x2F)
-    IPC_MSG_SENSOR_READ_REQ = 0x20,  // Request sensor reading
-    IPC_MSG_SENSOR_DATA     = 0x21,  // Sensor data response
-    IPC_MSG_SENSOR_STREAM   = 0x22,  // Continuous streaming
-    IPC_MSG_SENSOR_BATCH    = 0x23,  // Batch sensor data
+    IPC_MSG_SENSOR_READ_REQ      = 0x20,  // Request sensor reading
+    IPC_MSG_SENSOR_DATA          = 0x21,  // Sensor data response
+    IPC_MSG_SENSOR_STREAM        = 0x22,  // Continuous streaming
+    IPC_MSG_SENSOR_BATCH         = 0x23,  // Batch sensor data
+    IPC_MSG_SENSOR_BULK_READ_REQ = 0x24,  // ✅ Bulk read request (multiple sensors)
     
     // Control Data (0x30-0x3F)
     IPC_MSG_CONTROL_WRITE   = 0x30,  // Write setpoint/parameter
@@ -198,6 +199,69 @@ struct IPC_SensorData_t {
     uint32_t timestamp;      // Optional (0 if unused)
     char message[100];       // Optional message
 } __attribute__((packed));
+```
+
+#### SENSOR_BULK_READ_REQ (0x24) ✅ NEW
+**Purpose:** Request multiple sensor readings in one operation
+
+```cpp
+struct IPC_SensorBulkReadReq_t {
+    uint16_t startIndex;     // Starting object index (e.g., 0)
+    uint16_t count;          // Number of objects to read (e.g., 21)
+} __attribute__((packed));
+```
+
+**Response:** Multiple `IPC_MSG_SENSOR_DATA` (0x21) packets sent sequentially
+
+**Example Flow:**
+```
+RP2040 → SAME51: SENSOR_BULK_READ_REQ (startIndex=0, count=21)
+SAME51 → RP2040: SENSOR_DATA (index=0, ADC 1)
+SAME51 → RP2040: SENSOR_DATA (index=1, ADC 2)
+...
+SAME51 → RP2040: SENSOR_DATA (index=20, GPIO 8)
+```
+
+**TX Queue Management:** 
+- IO MCU TX queue limited to 8 packets
+- Handler actively drains queue by calling `ipc_processTxQueue()` between sends
+- Waits for queue space before sending each response (prevents overflow)
+- Typical performance: 21 sensors read in ~20-30ms
+
+**Benefits:**
+- Single 4-byte request vs 21 individual requests (95% reduction)
+- Prevents RX buffer overflow on SYS MCU
+- Efficient bulk sensor polling for cache updates
+- Used by background polling: 21 sensors updated every 1 second
+
+### 4.4 Configuration Messages ✅ IMPLEMENTED
+
+#### CONFIG_ANALOG_INPUT (ADC Configuration)
+```cpp
+struct IPC_ConfigAnalogInput_t {
+    uint8_t index;           // ADC index (0-7)
+    char unit[8];            // Unit string (e.g., "mV", "V", "mA")
+    float calScale;          // Calibration scale factor
+    float calOffset;         // Calibration offset
+} __attribute__((packed));
+```
+
+#### CONFIG_RTD (Temperature Sensor Configuration)
+```cpp
+struct IPC_ConfigRTD_t {
+    uint8_t index;           // RTD index (10-12)
+    char unit[8];            // Unit string (e.g., "C", "degC")
+    uint8_t sensorType;      // 0=PT100, 1=PT1000
+    uint8_t wireMode;        // 2=2-wire, 3=3-wire, 4=4-wire
+    float calScale;          // Calibration scale factor
+    float calOffset;         // Calibration offset
+} __attribute__((packed));
+```
+
+**Configuration Flow:**
+```
+RP2040 → SAME51: CONFIG_ANALOG_INPUT (index=0, unit="V", scale=1.0, offset=0.0)
+SAME51: Updates ADC configuration in real-time
 ```
 
 ---
@@ -443,20 +507,22 @@ enum IPC_ErrorCode : uint8_t {
 - [x] Binary packet framing with byte stuffing
 - [x] CRC16-CCITT validation
 - [x] State machine RX/TX processing
-- [x] TX queue (8 packets deep)
+- [x] TX queue (8 packets deep) with active draining
 - [x] PING/PONG keepalive with timeout
 - [x] HELLO handshake with version checking
 - [x] Message handler registration
 - [x] Error detection and reporting
 - [x] Non-blocking operation
 - [x] 2 Mbps reliable communication
+- [x] **Bulk sensor read (SENSOR_BULK_READ_REQ)**
+- [x] **Background sensor polling (1 Hz cache updates)**
+- [x] **Object cache system on SYS MCU**
 
 ### 9.2 🚧 In Progress
-- [ ] Object index synchronization
-- [ ] Sensor data streaming
+- [ ] Object index synchronization (partial - fixed objects working)
+- [ ] Configuration messages (ADC/RTD config working)
 - [ ] Control command handlers
 - [ ] Device management (create/delete)
-- [ ] Configuration management
 - [ ] Calibration protocol
 
 ### 9.3 📋 Planned Features
@@ -583,8 +649,15 @@ ipc.begin(2000000);  // 2 Mbps
 
 ---
 
-**Document Version:** 2.0  
+**Document Version:** 2.1  
 **Protocol Version:** v1.0.0  
-**Last Updated:** 2025-10-06  
-**Status:** ✅ Operational at 2 Mbps  
+**Last Updated:** 2025-10-18  
+**Status:** ✅ Operational at 2 Mbps with bulk sensor reading  
 **Maintainer:** Open Reactor Control System Team
+
+**Recent Updates (v2.1):**
+- Added SENSOR_BULK_READ_REQ message type (0x24)
+- Implemented TX queue draining to handle bulk responses
+- Added background sensor polling architecture
+- Documented object cache system on SYS MCU
+- Updated implementation status

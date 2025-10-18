@@ -85,11 +85,11 @@ void ObjectCache::requestBulkUpdate(uint8_t startIndex, uint8_t count) {
         count = MAX_CACHED_OBJECTS - startIndex;
     }
     
-    // Send individual requests (batch message not yet implemented on IO MCU)
-    for (uint8_t i = 0; i < count; i++) {
-        requestUpdate(startIndex + i);
-        delay(5);  // Small delay to avoid overwhelming IPC
-    }
+    // Use efficient bulk read request (single packet instead of 21 individual requests)
+    IPC_SensorBulkReadReq_t request;
+    request.startIndex = startIndex;
+    request.count = count;
+    ipc.sendPacket(IPC_MSG_SENSOR_BULK_READ_REQ, (uint8_t*)&request, sizeof(request));
     
     _lastBulkRequest = millis();
     

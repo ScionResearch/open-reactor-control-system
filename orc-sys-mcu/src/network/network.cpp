@@ -1,5 +1,6 @@
 #include "network.h"
 #include "mqttManager.h"
+#include "../sys_init.h"
 #include "../utils/statusManager.h"
 #include "../utils/timeManager.h"
 #include "../storage/sdManager.h"
@@ -571,13 +572,8 @@ void handleGetSensors() {
 
 void handleGetInputs() {
   // Compact JSON response for inputs tab
-  StaticJsonDocument<1536> doc;
-  
-  // Always request fresh data when Inputs tab is active (don't use staleness check)
-  // The 2-second polling from the UI means we want real-time updates
-  // Note: Response is sent before IPC data arrives, so first call may show stale data
-  // but subsequent calls (every 2 seconds) will show updated values
-  objectCache.requestBulkUpdate(0, 21);  // ADC(0-7) + DAC(8-9) + RTD(10-12) + GPIO(13-20)
+  // Data is served from cache, which is continuously updated by pollSensors()
+  StaticJsonDocument<2048> doc;  // Increased from 1536 to fit all inputs
   
   // Analog Inputs (ADC) - Indices 0-7
   JsonArray adc = doc.createNestedArray("adc");
@@ -587,11 +583,13 @@ void handleGetInputs() {
       JsonObject o = adc.createNestedObject();
       o["i"] = i;  // Compact key names
       o["v"] = obj->value;
+      o["n"] = ioConfig.adcInputs[i].name;  // Custom name from config
       // Ensure unit string is null-terminated and clean
       char cleanUnit[8];
       strncpy(cleanUnit, obj->unit, sizeof(cleanUnit) - 1);
       cleanUnit[sizeof(cleanUnit) - 1] = '\0';
       o["u"] = cleanUnit;
+      o["d"] = ioConfig.adcInputs[i].showOnDashboard;  // Dashboard flag
       if (obj->flags & IPC_SENSOR_FLAG_FAULT) o["f"] = 1;
     }
   }
@@ -604,11 +602,13 @@ void handleGetInputs() {
       JsonObject o = rtd.createNestedObject();
       o["i"] = i;
       o["v"] = obj->value;
+      o["n"] = ioConfig.rtdSensors[i - 10].name;  // Custom name from config
       // Ensure unit string is null-terminated and clean
       char cleanUnit[8];
       strncpy(cleanUnit, obj->unit, sizeof(cleanUnit) - 1);
       cleanUnit[sizeof(cleanUnit) - 1] = '\0';
       o["u"] = cleanUnit;
+      o["d"] = ioConfig.rtdSensors[i - 10].showOnDashboard;  // Dashboard flag
       if (obj->flags & IPC_SENSOR_FLAG_FAULT) o["f"] = 1;
     }
   }
@@ -620,18 +620,354 @@ void handleGetInputs() {
     if (obj && obj->valid) {
       JsonObject o = gpio.createNestedObject();
       o["i"] = i;
+      o["n"] = ioConfig.gpio[i - 13].name;  // Custom name from config
       o["s"] = (obj->value > 0.5) ? 1 : 0;  // State as boolean
+      o["d"] = ioConfig.gpio[i - 13].showOnDashboard;  // Dashboard flag
       if (obj->flags & IPC_SENSOR_FLAG_FAULT) o["f"] = 1;
+    } else {
+      log(LOG_DEBUG, false, "GPIO %d skipped: obj=%p, valid=%d\n", 
+          i, obj, obj ? obj->valid : 0);
     }
   }
   
   String response;
   serializeJson(doc, response);
   
-  // Debug: Log the JSON response
-  log(LOG_DEBUG, false, "API /api/inputs response: %s\n", response.c_str());
+  // Check for overflow
+  if (doc.overflowed()) {
+    log(LOG_ERROR, true, "JSON document overflow in /api/inputs! Increase buffer size.\n");
+  }
+  
+  // Debug: Log the JSON response size
+  log(LOG_DEBUG, false, "API /api/inputs response (%d bytes): %s\n", response.length(), response.c_str());
   
   server.send(200, "application/json", response);
+}
+
+// --- ADC Configuration API Handlers ---
+
+void handleGetADCConfig(uint8_t index) {
+  if (index >= MAX_ADC_INPUTS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid ADC index\"}");
+    return;
+  }
+  
+  StaticJsonDocument<256> doc;
+  doc["index"] = index;
+  doc["name"] = ioConfig.adcInputs[index].name;
+  doc["unit"] = ioConfig.adcInputs[index].unit;
+  doc["enabled"] = ioConfig.adcInputs[index].enabled;
+  doc["showOnDashboard"] = ioConfig.adcInputs[index].showOnDashboard;
+  
+  JsonObject cal = doc.createNestedObject("cal");
+  cal["scale"] = ioConfig.adcInputs[index].cal.scale;
+  cal["offset"] = ioConfig.adcInputs[index].cal.offset;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveADCConfig(uint8_t index) {
+  log(LOG_DEBUG, false, "handleSaveADCConfig: START index=%d\n", index);
+  
+  if (index >= MAX_ADC_INPUTS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid ADC index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveADCConfig: Parsing JSON\n");
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    log(LOG_DEBUG, false, "handleSaveADCConfig: JSON parse error\n");
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveADCConfig: Updating config\n");
+  
+  // Update name
+  if (doc.containsKey("name")) {
+    strncpy(ioConfig.adcInputs[index].name, doc["name"], sizeof(ioConfig.adcInputs[index].name) - 1);
+    ioConfig.adcInputs[index].name[sizeof(ioConfig.adcInputs[index].name) - 1] = '\0';
+  }
+  
+  // Update unit
+  if (doc.containsKey("unit")) {
+    strncpy(ioConfig.adcInputs[index].unit, doc["unit"], sizeof(ioConfig.adcInputs[index].unit) - 1);
+    ioConfig.adcInputs[index].unit[sizeof(ioConfig.adcInputs[index].unit) - 1] = '\0';
+  }
+  
+  // Update calibration values
+  if (doc.containsKey("cal")) {
+    JsonObject cal = doc["cal"];
+    if (cal.containsKey("scale")) {
+      ioConfig.adcInputs[index].cal.scale = cal["scale"];
+    }
+    if (cal.containsKey("offset")) {
+      ioConfig.adcInputs[index].cal.offset = cal["offset"];
+    }
+  }
+  
+  // Update showOnDashboard flag
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.adcInputs[index].showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveADCConfig: Calling saveIOConfig\n");
+  
+  // Save configuration to flash
+  saveIOConfig();
+  
+  log(LOG_DEBUG, false, "handleSaveADCConfig: saveIOConfig complete, preparing IPC\n");
+  
+  // Send updated calibration to IO MCU
+  IPC_ConfigAnalogInput_t cfg;
+  cfg.index = index;
+  strncpy(cfg.unit, ioConfig.adcInputs[index].unit, sizeof(cfg.unit) - 1);
+  cfg.unit[sizeof(cfg.unit) - 1] = '\0';
+  cfg.calScale = ioConfig.adcInputs[index].cal.scale;
+  cfg.calOffset = ioConfig.adcInputs[index].cal.offset;
+  
+  log(LOG_DEBUG, false, "handleSaveADCConfig: Sending IPC packet\n");
+  
+  if (ipc.sendPacket(IPC_MSG_CONFIG_ANALOG_INPUT, (uint8_t*)&cfg, sizeof(cfg))) {
+    log(LOG_INFO, false, "Updated ADC[%d] config: %s, unit=%s, scale=%.4f, offset=%.4f\n",
+        index, ioConfig.adcInputs[index].name, cfg.unit, cfg.calScale, cfg.calOffset);
+    log(LOG_DEBUG, false, "handleSaveADCConfig: Sending response\n");
+    server.send(200, "application/json", "{\"success\":true}");
+    log(LOG_DEBUG, false, "handleSaveADCConfig: COMPLETE\n");
+  } else {
+    log(LOG_WARNING, false, "Failed to send ADC[%d] config to IO MCU\n", index);
+    server.send(500, "application/json", "{\"success\":false,\"error\":\"Failed to update IO MCU\"}");
+  }
+}
+
+// --- RTD Configuration API Handlers ---
+
+void handleGetRTDConfig(uint8_t index) {
+  if (index < 10 || index >= 10 + MAX_RTD_SENSORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid RTD index\"}");
+    return;
+  }
+  
+  uint8_t rtdIndex = index - 10;
+  StaticJsonDocument<256> doc;
+  doc["index"] = index;
+  doc["name"] = ioConfig.rtdSensors[rtdIndex].name;
+  doc["unit"] = ioConfig.rtdSensors[rtdIndex].unit;
+  doc["wires"] = ioConfig.rtdSensors[rtdIndex].wireConfig;
+  doc["type"] = ioConfig.rtdSensors[rtdIndex].nominalOhms;
+  doc["showOnDashboard"] = ioConfig.rtdSensors[rtdIndex].showOnDashboard;
+  
+  JsonObject cal = doc.createNestedObject("cal");
+  cal["scale"] = ioConfig.rtdSensors[rtdIndex].cal.scale;
+  cal["offset"] = ioConfig.rtdSensors[rtdIndex].cal.offset;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveRTDConfig(uint8_t index) {
+  log(LOG_DEBUG, false, "handleSaveRTDConfig: START index=%d\n", index);
+  
+  if (index < 10 || index >= 10 + MAX_RTD_SENSORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid RTD index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveRTDConfig: Parsing JSON\n");
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    log(LOG_DEBUG, false, "handleSaveRTDConfig: JSON parse error\n");
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveRTDConfig: Updating config\n");
+  
+  uint8_t rtdIndex = index - 10;
+  
+  // Update name
+  if (doc.containsKey("name")) {
+    strncpy(ioConfig.rtdSensors[rtdIndex].name, doc["name"], sizeof(ioConfig.rtdSensors[rtdIndex].name) - 1);
+    ioConfig.rtdSensors[rtdIndex].name[sizeof(ioConfig.rtdSensors[rtdIndex].name) - 1] = '\0';
+  }
+  
+  // Update unit
+  if (doc.containsKey("unit")) {
+    strncpy(ioConfig.rtdSensors[rtdIndex].unit, doc["unit"], sizeof(ioConfig.rtdSensors[rtdIndex].unit) - 1);
+    ioConfig.rtdSensors[rtdIndex].unit[sizeof(ioConfig.rtdSensors[rtdIndex].unit) - 1] = '\0';
+  }
+  
+  // Update wire configuration
+  if (doc.containsKey("wires")) {
+    ioConfig.rtdSensors[rtdIndex].wireConfig = doc["wires"];
+  }
+  
+  // Update RTD type
+  if (doc.containsKey("type")) {
+    ioConfig.rtdSensors[rtdIndex].nominalOhms = doc["type"];
+  }
+  
+  // Update calibration values
+  if (doc.containsKey("cal")) {
+    JsonObject cal = doc["cal"];
+    if (cal.containsKey("scale")) {
+      ioConfig.rtdSensors[rtdIndex].cal.scale = cal["scale"];
+    }
+    if (cal.containsKey("offset")) {
+      ioConfig.rtdSensors[rtdIndex].cal.offset = cal["offset"];
+    }
+  }
+  
+  // Update showOnDashboard flag
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.rtdSensors[rtdIndex].showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveRTDConfig: Calling saveIOConfig\n");
+  
+  // Save configuration to flash
+  saveIOConfig();
+  
+  log(LOG_DEBUG, false, "handleSaveRTDConfig: saveIOConfig complete, preparing IPC\n");
+  
+  // Send updated configuration to IO MCU
+  IPC_ConfigRTD_t cfg;
+  cfg.index = index;
+  strncpy(cfg.unit, ioConfig.rtdSensors[rtdIndex].unit, sizeof(cfg.unit) - 1);
+  cfg.unit[sizeof(cfg.unit) - 1] = '\0';
+  cfg.calScale = ioConfig.rtdSensors[rtdIndex].cal.scale;
+  cfg.calOffset = ioConfig.rtdSensors[rtdIndex].cal.offset;
+  cfg.wireConfig = ioConfig.rtdSensors[rtdIndex].wireConfig;
+  cfg.nominalOhms = ioConfig.rtdSensors[rtdIndex].nominalOhms;
+  
+  log(LOG_DEBUG, false, "handleSaveRTDConfig: Sending IPC packet\n");
+  
+  if (ipc.sendPacket(IPC_MSG_CONFIG_RTD, (uint8_t*)&cfg, sizeof(cfg))) {
+    log(LOG_INFO, false, "Updated RTD[%d] config: %s, unit=%s, %d-wire PT%d, scale=%.4f, offset=%.4f\n",
+        index, ioConfig.rtdSensors[rtdIndex].name, cfg.unit, cfg.wireConfig, cfg.nominalOhms, 
+        cfg.calScale, cfg.calOffset);
+    log(LOG_DEBUG, false, "handleSaveRTDConfig: Sending response\n");
+    server.send(200, "application/json", "{\"success\":true}");
+    log(LOG_DEBUG, false, "handleSaveRTDConfig: COMPLETE\n");
+  } else {
+    log(LOG_WARNING, false, "Failed to send RTD[%d] config to IO MCU\n", index);
+    server.send(500, "application/json", "{\"success\":false,\"error\":\"Failed to update IO MCU\"}");
+  }
+}
+
+// --- GPIO Configuration API Handlers ---
+
+void handleGetGPIOConfig(uint8_t index) {
+  // GPIO indices are 13-20, convert to array index 0-7
+  if (index < 13 || index >= 13 + MAX_GPIO) {
+    server.send(400, "application/json", "{\"error\":\"Invalid GPIO index\"}");
+    return;
+  }
+  
+  uint8_t gpioIndex = index - 13;
+  
+  StaticJsonDocument<256> doc;
+  doc["index"] = index;
+  doc["name"] = ioConfig.gpio[gpioIndex].name;
+  doc["pullMode"] = (uint8_t)ioConfig.gpio[gpioIndex].pullMode;
+  doc["enabled"] = ioConfig.gpio[gpioIndex].enabled;
+  doc["showOnDashboard"] = ioConfig.gpio[gpioIndex].showOnDashboard;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveGPIOConfig(uint8_t index) {
+  log(LOG_DEBUG, false, "handleSaveGPIOConfig: START index=%d\n", index);
+  
+  if (index < 13 || index >= 13 + MAX_GPIO) {
+    server.send(400, "application/json", "{\"error\":\"Invalid GPIO index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveGPIOConfig: Parsing JSON\n");
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    log(LOG_DEBUG, false, "handleSaveGPIOConfig: JSON parse error\n");
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveGPIOConfig: Updating config\n");
+  
+  uint8_t gpioIndex = index - 13;
+  
+  // Update configuration from JSON
+  if (doc.containsKey("name")) {
+    strlcpy(ioConfig.gpio[gpioIndex].name, doc["name"] | "", 
+            sizeof(ioConfig.gpio[gpioIndex].name));
+  }
+  
+  if (doc.containsKey("pullMode")) {
+    ioConfig.gpio[gpioIndex].pullMode = (GPIOPullMode)(doc["pullMode"] | GPIO_PULL_UP);
+  }
+  
+  if (doc.containsKey("enabled")) {
+    ioConfig.gpio[gpioIndex].enabled = doc["enabled"] | true;
+  }
+  
+  // Update showOnDashboard flag
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.gpio[gpioIndex].showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveGPIOConfig: Calling saveIOConfig\n");
+  
+  // Save configuration to flash
+  saveIOConfig();
+  
+  log(LOG_DEBUG, false, "handleSaveGPIOConfig: saveIOConfig complete, preparing IPC\n");
+  
+  // Send updated configuration to IO MCU
+  IPC_ConfigGPIO_t cfg;
+  cfg.index = index;
+  strlcpy(cfg.name, ioConfig.gpio[gpioIndex].name, sizeof(cfg.name));
+  cfg.pullMode = (uint8_t)ioConfig.gpio[gpioIndex].pullMode;
+  cfg.enabled = ioConfig.gpio[gpioIndex].enabled;
+  
+  log(LOG_DEBUG, false, "handleSaveGPIOConfig: Sending IPC packet\n");
+  
+  if (ipc.sendPacket(IPC_MSG_CONFIG_GPIO, (uint8_t*)&cfg, sizeof(cfg))) {
+    log(LOG_INFO, false, "Updated GPIO[%d] config: %s, pullMode=%d, enabled=%d\n",
+        index, cfg.name, cfg.pullMode, cfg.enabled);
+    log(LOG_DEBUG, false, "handleSaveGPIOConfig: Sending response\n");
+    server.send(200, "application/json", "{\"success\":true}");
+    log(LOG_DEBUG, false, "handleSaveGPIOConfig: COMPLETE\n");
+  } else {
+    log(LOG_WARNING, false, "Failed to send GPIO[%d] config to IO MCU\n", index);
+    server.send(500, "application/json", "{\"success\":false,\"error\":\"Failed to update IO MCU\"}");
+  }
 }
 
 void setupWebServer()
@@ -682,6 +1018,53 @@ void setupWebServer()
 
   // Object Index API endpoints
   server.on("/api/inputs", HTTP_GET, handleGetInputs);
+  
+  // Configuration API endpoints
+  server.on("/api/config/adc/0", HTTP_GET, []() { handleGetADCConfig(0); });
+  server.on("/api/config/adc/1", HTTP_GET, []() { handleGetADCConfig(1); });
+  server.on("/api/config/adc/2", HTTP_GET, []() { handleGetADCConfig(2); });
+  server.on("/api/config/adc/3", HTTP_GET, []() { handleGetADCConfig(3); });
+  server.on("/api/config/adc/4", HTTP_GET, []() { handleGetADCConfig(4); });
+  server.on("/api/config/adc/5", HTTP_GET, []() { handleGetADCConfig(5); });
+  server.on("/api/config/adc/6", HTTP_GET, []() { handleGetADCConfig(6); });
+  server.on("/api/config/adc/7", HTTP_GET, []() { handleGetADCConfig(7); });
+  
+  server.on("/api/config/adc/0", HTTP_POST, []() { handleSaveADCConfig(0); });
+  server.on("/api/config/adc/1", HTTP_POST, []() { handleSaveADCConfig(1); });
+  server.on("/api/config/adc/2", HTTP_POST, []() { handleSaveADCConfig(2); });
+  server.on("/api/config/adc/3", HTTP_POST, []() { handleSaveADCConfig(3); });
+  server.on("/api/config/adc/4", HTTP_POST, []() { handleSaveADCConfig(4); });
+  server.on("/api/config/adc/5", HTTP_POST, []() { handleSaveADCConfig(5); });
+  server.on("/api/config/adc/6", HTTP_POST, []() { handleSaveADCConfig(6); });
+  server.on("/api/config/adc/7", HTTP_POST, []() { handleSaveADCConfig(7); });
+  
+  // RTD Configuration endpoints (indices 10-12)
+  server.on("/api/config/rtd/10", HTTP_GET, []() { handleGetRTDConfig(10); });
+  server.on("/api/config/rtd/11", HTTP_GET, []() { handleGetRTDConfig(11); });
+  server.on("/api/config/rtd/12", HTTP_GET, []() { handleGetRTDConfig(12); });
+  
+  server.on("/api/config/rtd/10", HTTP_POST, []() { handleSaveRTDConfig(10); });
+  server.on("/api/config/rtd/11", HTTP_POST, []() { handleSaveRTDConfig(11); });
+  server.on("/api/config/rtd/12", HTTP_POST, []() { handleSaveRTDConfig(12); });
+  
+  // GPIO Configuration endpoints (indices 13-20)
+  server.on("/api/config/gpio/13", HTTP_GET, []() { handleGetGPIOConfig(13); });
+  server.on("/api/config/gpio/14", HTTP_GET, []() { handleGetGPIOConfig(14); });
+  server.on("/api/config/gpio/15", HTTP_GET, []() { handleGetGPIOConfig(15); });
+  server.on("/api/config/gpio/16", HTTP_GET, []() { handleGetGPIOConfig(16); });
+  server.on("/api/config/gpio/17", HTTP_GET, []() { handleGetGPIOConfig(17); });
+  server.on("/api/config/gpio/18", HTTP_GET, []() { handleGetGPIOConfig(18); });
+  server.on("/api/config/gpio/19", HTTP_GET, []() { handleGetGPIOConfig(19); });
+  server.on("/api/config/gpio/20", HTTP_GET, []() { handleGetGPIOConfig(20); });
+  
+  server.on("/api/config/gpio/13", HTTP_POST, []() { handleSaveGPIOConfig(13); });
+  server.on("/api/config/gpio/14", HTTP_POST, []() { handleSaveGPIOConfig(14); });
+  server.on("/api/config/gpio/15", HTTP_POST, []() { handleSaveGPIOConfig(15); });
+  server.on("/api/config/gpio/16", HTTP_POST, []() { handleSaveGPIOConfig(16); });
+  server.on("/api/config/gpio/17", HTTP_POST, []() { handleSaveGPIOConfig(17); });
+  server.on("/api/config/gpio/18", HTTP_POST, []() { handleSaveGPIOConfig(18); });
+  server.on("/api/config/gpio/19", HTTP_POST, []() { handleSaveGPIOConfig(19); });
+  server.on("/api/config/gpio/20", HTTP_POST, []() { handleSaveGPIOConfig(20); });
 
   // Setup API endpoints
   setupNetworkAPI();

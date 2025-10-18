@@ -34,49 +34,40 @@ void init_ipcManager(void) {
   statusLocked = false;
 }
 
-// Debug: Test sensor reads via IPC
-unsigned long lastSensorTestTime = 0;
-uint8_t currentTestIndex = 0;
+// Continuous sensor polling for cache population
+unsigned long lastSensorPollTime = 0;
+const unsigned long SENSOR_POLL_INTERVAL = 1000; // Poll every 1 second
+bool ipcReady = false;  // Only start polling after handshake and config push complete
 
-void testSensorReads(void) {
-  static bool testActive = false;  // Disabled - using web API polling instead
-  
-  if (!testActive) return;
+/**
+ * @brief Continuously poll all IO MCU objects to keep cache fresh
+ * This ensures data is always available for:
+ * - Web UI (any tab)
+ * - MQTT publishing
+ * - Control loops
+ * - Data logging
+ */
+void pollSensors(void) {
+  // Wait for IPC handshake and configuration to complete
+  if (!ipcReady) return;
   
   unsigned long now = millis();
-  if (now - lastSensorTestTime < 2000) return;  // Test every 2 seconds
-  lastSensorTestTime = now;
+  if (now - lastSensorPollTime < SENSOR_POLL_INTERVAL) return;
+  lastSensorPollTime = now;
   
-  // Cycle through different sensor types to test
-  const char* testNames[] = {
-    "ADC 0", "ADC 1", "DAC 0", "RTD 0", "GPIO 0", 
-    "Output 0", "Stepper", "Motor 0", "Voltage 0", "Current 0", "Power 0", "Modbus 0"
-  };
-  uint8_t testIndices[] = {0, 1, 8, 10, 13, 21, 26, 27, 31, 32, 33, 37};
+  // Request all IO MCU objects (indices 0-20)
+  // ADC (0-7), DAC (8-9), RTD (10-12), GPIO (13-20)
+  objectCache.requestBulkUpdate(0, 21);
   
-  if (currentTestIndex >= sizeof(testIndices)) {
-    currentTestIndex = 0;
-    log(LOG_INFO, true, "\n=== IPC Sensor Test Cycle Complete ===\n\n");
-  }
-  
-  uint8_t index = testIndices[currentTestIndex];
-  log(LOG_INFO, true, "IPC Test: Requesting %s (index %d)...\n", 
-      testNames[currentTestIndex], index);
-  
-  // Send sensor read request
-  IPC_SensorReadReq_t request;
-  request.index = index;
-  ipc.sendPacket(IPC_MSG_SENSOR_READ_REQ, (uint8_t*)&request, sizeof(request));
-  
-  currentTestIndex++;
+  log(LOG_DEBUG, false, "Polling sensors: Requested bulk update for objects 0-20\n");
 }
 
 void manageIPC(void) {
   // Check for incoming messages
   ipc.update();
   
-  // Debug: Test sensor reads
-  testSensorReads();
+  // Continuously poll sensors to keep cache fresh
+  pollSensors();
 }
 
 /**
@@ -174,7 +165,9 @@ void handleHelloAck(uint8_t messageType, const uint8_t *payload, uint16_t length
   // Push IO configuration to IO MCU now that IPC is established
   pushIOConfigToIOmcu();
   
-  // TODO: Update connection state, start requesting index sync if needed
+  // Enable sensor polling now that IPC is ready
+  ipcReady = true;
+  log(LOG_INFO, false, "IPC: Sensor polling enabled\n");
 }
 
 /**
