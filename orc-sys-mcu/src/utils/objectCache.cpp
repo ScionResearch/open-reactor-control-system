@@ -28,8 +28,8 @@ void ObjectCache::updateObject(const IPC_SensorData_t* data) {
     obj->lastUpdate = millis();
     obj->valid = true;
     
-    log(LOG_DEBUG, false, "Cache: Updated object %d (type %d) = %.2f %s\n", 
-        data->index, data->objectType, data->value, data->unit);
+    // log(LOG_DEBUG, false, "Cache: Updated object %d (type %d) = %.2f %s\n", 
+    //     data->index, data->objectType, data->value, data->unit);
 }
 
 void ObjectCache::updateObjectName(uint8_t index, const char* name, uint8_t type) {
@@ -72,7 +72,7 @@ void ObjectCache::requestUpdate(uint8_t index) {
     request.index = index;
     ipc.sendPacket(IPC_MSG_SENSOR_READ_REQ, (uint8_t*)&request, sizeof(request));
     
-    log(LOG_DEBUG, false, "Cache: Requested update for object %d\n", index);
+    // log(LOG_DEBUG, false, "Cache: Requested update for object %d\n", index);
 }
 
 void ObjectCache::requestBulkUpdate(uint8_t startIndex, uint8_t count) {
@@ -93,8 +93,8 @@ void ObjectCache::requestBulkUpdate(uint8_t startIndex, uint8_t count) {
     
     _lastBulkRequest = millis();
     
-    log(LOG_DEBUG, false, "Cache: Requested bulk update for %d objects starting at %d\n", 
-        count, startIndex);
+    // log(LOG_DEBUG, false, "Cache: Requested bulk update for %d objects starting at %d\n", 
+    //     count, startIndex);
 }
 
 void ObjectCache::refreshStaleObjects(uint8_t startIndex, uint8_t count) {
@@ -119,8 +119,8 @@ void ObjectCache::refreshStaleObjects(uint8_t startIndex, uint8_t count) {
     }
     
     if (refreshCount > 0) {
-        log(LOG_DEBUG, false, "Cache: Refreshed %d stale objects in range %d-%d\n",
-            refreshCount, startIndex, startIndex + count - 1);
+        // log(LOG_DEBUG, false, "Cache: Refreshed %d stale objects in range %d-%d\n",
+        //     refreshCount, startIndex, startIndex + count - 1);
     }
 }
 

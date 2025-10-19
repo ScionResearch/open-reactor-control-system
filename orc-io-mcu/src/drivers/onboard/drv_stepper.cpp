@@ -124,8 +124,9 @@ bool stepper_update(bool setParams) {
         }
         stepperDriver.ready = true;
         
-        // Check if start or stop is required
+        // Check if start, stop, or RPM update is required
         if (!stepperDevice.enabled && stepperDriver.stepper->status.running) {
+            // Need to stop
             if (!stepperDriver.stepper->stop()) {
                 stepperDriver.fault = true;
                 stepperDriver.newMessage = true;
@@ -137,7 +138,9 @@ bool stepper_update(bool setParams) {
                 strcpy(stepperDevice.message, stepperDriver.message);
                 return false;
             }
+            Serial.printf("[STEPPER] Stopped motor\n");
         } else if (stepperDevice.enabled && !stepperDriver.stepper->status.running) {
+            // Need to start
             if (!stepperDriver.stepper->setRPM(stepperDevice.rpm)) {
                 stepperDriver.fault = true;
                 stepperDriver.newMessage = true;
@@ -160,6 +163,22 @@ bool stepper_update(bool setParams) {
                 strcpy(stepperDevice.message, stepperDriver.message);
                 return false;
             }
+            Serial.printf("[STEPPER] Started motor at %.1f RPM, dir=%d\n", 
+                         stepperDevice.rpm, stepperDevice.direction);
+        } else if (stepperDevice.enabled && stepperDriver.stepper->status.running) {
+            // Motor is running - update RPM if changed
+            if (!stepperDriver.stepper->setRPM(stepperDevice.rpm)) {
+                stepperDriver.fault = true;
+                stepperDriver.newMessage = true;
+                strcpy(stepperDriver.message, "Stepper RPM update failed");
+                
+                // Propagate fault
+                stepperDevice.fault = true;
+                stepperDevice.newMessage = true;
+                strcpy(stepperDevice.message, stepperDriver.message);
+                return false;
+            }
+            Serial.printf("[STEPPER] Updated RPM to %.1f while running\n", stepperDevice.rpm);
         }
     }
     // Update status

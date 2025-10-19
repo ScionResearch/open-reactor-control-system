@@ -92,10 +92,36 @@
                 </div>
             </div>
 
-            <!-- Outputs Tab (placeholder) -->
+            <!-- Outputs Tab -->
             <div id="outputs" class="tab-content">
                 <h2>Hardware Outputs</h2>
-                <p class="page-description">Coming soon...</p>
+                <p class="page-description">Onboard output channel configuration and control</p>
+                
+                <div class="outputs-grid">
+                    <!-- Digital Outputs Section -->
+                    <div class="output-section-card">
+                        <h3>Digital Outputs</h3>
+                        <div id="digital-outputs-list" class="output-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stepper Motor Section -->
+                    <div class="output-section-card">
+                        <h3>Stepper Motor</h3>
+                        <div id="stepper-motor-list" class="output-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- DC Motors Section -->
+                    <div class="output-section-card">
+                        <h3>DC Motors</h3>
+                        <div id="dc-motors-list" class="output-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Devices Tab (placeholder) -->
@@ -698,6 +724,129 @@
         </div>
     </div>
     
+    <!-- Digital Output Configuration Modal -->
+    <div id="digitalOutputConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure Output <span id="outputConfigIndex"></span></h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="outputConfigName">Name:</label>
+                    <input type="text" id="outputConfigName" maxlength="31" placeholder="Output name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="outputConfigMode">Mode:</label>
+                    <select id="outputConfigMode">
+                        <option value="0">On/Off</option>
+                        <option value="1">PWM (0-100%)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="outputShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeDigitalOutputConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveDigitalOutputConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stepper Motor Configuration Modal -->
+    <div id="stepperConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure Stepper Motor</h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="stepperConfigName">Name:</label>
+                    <input type="text" id="stepperConfigName" maxlength="31" placeholder="Motor name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="stepperStepsPerRev">Steps per Revolution:</label>
+                    <input type="number" id="stepperStepsPerRev" min="100" max="1000" value="200">
+                </div>
+                
+                <div class="form-group">
+                    <label for="stepperMaxRPM">Max RPM:</label>
+                    <input type="number" id="stepperMaxRPM" min="100" max="1000" value="500">
+                </div>
+                
+                <div class="form-group">
+                    <label for="stepperHoldCurrent">Hold Current (mA):</label>
+                    <input type="number" id="stepperHoldCurrent" min="10" max="1000" value="500">
+                </div>
+                
+                <div class="form-group">
+                    <label for="stepperRunCurrent">Run Current (mA):</label>
+                    <input type="number" id="stepperRunCurrent" min="10" max="1800" value="1000">
+                </div>
+                
+                <div class="form-group">
+                    <label for="stepperAcceleration">Acceleration (RPM/s):</label>
+                    <input type="number" id="stepperAcceleration" min="10" max="1000" value="100">
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="stepperInvertDirection">
+                        Invert Direction
+                    </label>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="stepperShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeStepperConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveStepperConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- DC Motor Configuration Modal -->
+    <div id="dcMotorConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure DC Motor <span id="dcMotorConfigIndex"></span></h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="dcMotorConfigName">Name:</label>
+                    <input type="text" id="dcMotorConfigName" maxlength="31" placeholder="Motor name">
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="dcMotorInvertDirection">
+                        Invert Direction
+                    </label>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="dcMotorShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeDCMotorConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveDCMotorConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+    
     <script src="script.js"></script>
+    <script src="outputs.js"></script>
 </body>
 </html>

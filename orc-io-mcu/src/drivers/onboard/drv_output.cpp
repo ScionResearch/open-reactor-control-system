@@ -10,6 +10,11 @@ void output_init(void) {
 
     // Setup open-drain outputs (indices 21-24)
     for (int i = 0; i < 4; i++) {
+        // Initialize output object with defaults
+        digitalOutput[i].state = false;
+        digitalOutput[i].pwmEnabled = false;  // Default to ON/OFF mode
+        digitalOutput[i].pwmDuty = 0.0f;
+        
         outputDriver.outputObj[i] = &digitalOutput[i];
         outputDriver.pin[i] = outputPins[i];
         pinMode(outputDriver.pin[i], OUTPUT);
@@ -23,6 +28,11 @@ void output_init(void) {
     }
 
     // Setup heater high current output (slow PWM, index 25)
+    // Initialize heater output object with defaults
+    heaterOutput[0].state = false;
+    heaterOutput[0].pwmEnabled = false;  // Default to ON/OFF mode
+    heaterOutput[0].pwmDuty = 0.0f;
+    
     outputDriver.outputObj[4] = &heaterOutput[0];
     outputDriver.pin[4] = PIN_HEAT_OUT;
     
@@ -65,6 +75,26 @@ void output_init(void) {
     while (TCC0->SYNCBUSY.bit.ENABLE);*/
 }
 
+void output_force_digital_mode(uint8_t outputIndex) {
+    // Force an output pin back to digital mode (disables PWM)
+    // Used when switching from PWM mode to ON/OFF mode
+    if (outputIndex >= 21 && outputIndex <= 24) {
+        int arrayIdx = outputIndex - 21;
+        pinMode(outputDriver.pin[arrayIdx], OUTPUT);
+        digitalWrite(outputDriver.pin[arrayIdx], outputDriver.outputObj[arrayIdx]->state);
+        Serial.printf("[OUTPUT] Forced output %d to digital mode, state=%d\n", 
+                     outputIndex, outputDriver.outputObj[arrayIdx]->state);
+    } else if (outputIndex == 25) {
+        // Heater output - disable TCC0 PWM
+        TCC0->CTRLA.bit.ENABLE = 0;
+        while (TCC0->SYNCBUSY.bit.ENABLE);
+        pinMode(outputDriver.pin[4], OUTPUT);
+        digitalWrite(outputDriver.pin[4], outputDriver.outputObj[4]->state);
+        Serial.printf("[OUTPUT] Forced heater output to digital mode, state=%d\n", 
+                     outputDriver.outputObj[4]->state);
+    }
+}
+
 void output_update(void) {
     // Update open-drain outputs
     for (int i = 0; i < 4; i++) {
@@ -86,15 +116,19 @@ void output_update(void) {
         }
     }
 
-    // Update heater output - 1Hz PWM only, custom implementation
-    static bool heaterEnabled = false;
+    // Update heater output - Supports both 1Hz PWM and ON/OFF modes
+    static bool heaterPWMEnabled = false;
     static uint8_t pwmDuty = 0;
+    static bool digitalState = false;
+    
     if (heaterOutput[0].pwmEnabled) {
-        if (!heaterEnabled) {
-            // Enable heater output
+        // PWM Mode
+        if (!heaterPWMEnabled) {
+            // Switching to PWM mode - enable TCC0
             TCC0->CTRLA.bit.ENABLE = 1;
             while (TCC0->SYNCBUSY.bit.ENABLE);
-            heaterEnabled = true;
+            heaterPWMEnabled = true;
+            Serial.printf("[OUTPUT] Heater switched to PWM mode\n");
         }
         if (pwmDuty != heaterOutput[0].pwmDuty) {
             if (heaterOutput[0].pwmDuty > 100) heaterOutput[0].pwmDuty = 100;
@@ -108,10 +142,21 @@ void output_update(void) {
             }
             pwmDuty = heaterOutput[0].pwmDuty;
         }
-    } else if (heaterEnabled) {
-        // Disable heater output
-        TCC0->CTRLA.bit.ENABLE = 0;
-        while (TCC0->SYNCBUSY.bit.ENABLE);
-        heaterEnabled = false;
+    } else {
+        // ON/OFF Mode (Digital)
+        if (heaterPWMEnabled) {
+            // Switching to digital mode - disable TCC0 PWM
+            TCC0->CTRLA.bit.ENABLE = 0;
+            while (TCC0->SYNCBUSY.bit.ENABLE);
+            pinMode(outputDriver.pin[4], OUTPUT);
+            heaterPWMEnabled = false;
+            Serial.printf("[OUTPUT] Heater switched to ON/OFF mode\n");
+        }
+        // Update digital state
+        if (digitalState != heaterOutput[0].state) {
+            digitalWrite(outputDriver.pin[4], heaterOutput[0].state);
+            digitalState = heaterOutput[0].state;
+            Serial.printf("[OUTPUT] Heater state: %s\n", heaterOutput[0].state ? "ON" : "OFF");
+        }
     }
 }

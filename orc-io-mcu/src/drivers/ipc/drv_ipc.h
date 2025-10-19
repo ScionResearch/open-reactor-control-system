@@ -170,12 +170,24 @@ bool ipc_sendSensorBatch(const uint16_t *indices, uint8_t count);
 bool ipc_sendFault(uint16_t index, uint8_t severity, const char *message);
 
 /**
- * @brief Send control acknowledgment
+ * @brief Send control acknowledgment (legacy)
  * @param index Object index
  * @param success Success status
  * @param message Response message
  */
 bool ipc_sendControlAck(uint16_t index, bool success, const char *message);
+
+/**
+ * @brief Send enhanced control acknowledgment with error codes
+ * @param index Object index
+ * @param objectType Object type
+ * @param command Command that was executed
+ * @param success Success status
+ * @param errorCode Error code if failed
+ * @param message Response message
+ */
+bool ipc_sendControlAck_v2(uint16_t index, uint8_t objectType, uint8_t command,
+                          bool success, uint8_t errorCode, const char *message);
 
 /**
  * @brief Send device status response
@@ -207,6 +219,10 @@ void ipc_handle_index_sync_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_sensor_read_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_write(const uint8_t *payload, uint16_t len);
+void ipc_handle_control_loop_write(const uint8_t *payload, uint16_t len);
+void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len);
+void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len);
+void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_read(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_create(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_delete(const uint8_t *payload, uint16_t len);
@@ -215,6 +231,9 @@ void ipc_handle_config_analog_input(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_analog_output(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_rtd(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_gpio(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_digital_output(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_dcmotor(const uint8_t *payload, uint16_t len);
 
 // ============================================================================
 // UTILITY FUNCTIONS

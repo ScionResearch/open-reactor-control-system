@@ -9,10 +9,11 @@ void init_ipcManager(void) {
   Serial1.setRX(PIN_SI_RX);
   Serial1.setTX(PIN_SI_TX);
   
-  // Set UART FIFO size to 4096 bytes to accommodate multiple IPC packets from bulk requests
-  // With bulk requests of 21 objects, we need room for 21 responses (~150 bytes each = 3150 bytes)
+  // Set UART FIFO size to 8192 bytes to accommodate multiple IPC packets from bulk requests
+  // With bulk requests of 31 objects (sensors + outputs), we need room for 31 responses
+  // Each response: ~150 bytes * 31 = 4650 bytes + overhead
   // Max packet size with byte stuffing: ~260 bytes raw data * 2 (worst case stuffing) = 520 bytes
-  Serial1.setFIFOSize(4096);
+  Serial1.setFIFOSize(8192);
   
   // Clear object cache to force fresh data from IO MCU
   objectCache.clear();
@@ -55,11 +56,12 @@ void pollSensors(void) {
   if (now - lastSensorPollTime < SENSOR_POLL_INTERVAL) return;
   lastSensorPollTime = now;
   
-  // Request all IO MCU objects (indices 0-20)
-  // ADC (0-7), DAC (8-9), RTD (10-12), GPIO (13-20)
-  objectCache.requestBulkUpdate(0, 21);
+  // Request all IO MCU objects (indices 0-30)
+  // Sensors: ADC (0-7), DAC (8-9), RTD (10-12), GPIO (13-20)
+  // Outputs: Digital Outputs (21-25), Stepper (26), DC Motors (27-30)
+  objectCache.requestBulkUpdate(0, 31);
   
-  log(LOG_DEBUG, false, "Polling sensors: Requested bulk update for objects 0-20\n");
+  log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-30 (sensors + outputs)\n");
 }
 
 void manageIPC(void) {
@@ -82,9 +84,9 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
   const IPC_SensorData_t *sensorData = (const IPC_SensorData_t *)payload;
   
   // DEBUG: Print received sensor data (simplified for performance)
-  log(LOG_DEBUG, false, "IPC RX: Sensor[%d] = %.2f %s%s\n", 
-      sensorData->index, sensorData->value, sensorData->unit,
-      (sensorData->flags & IPC_SENSOR_FLAG_FAULT) ? " [FAULT]" : "");
+  // log(LOG_DEBUG, false, "IPC RX: Sensor[%d] = %.2f %s%s\n", 
+  //     sensorData->index, sensorData->value, sensorData->unit,
+  //     (sensorData->flags & IPC_SENSOR_FLAG_FAULT) ? " [FAULT]" : "");
   
   // Update object cache
   objectCache.updateObject(sensorData);
@@ -221,11 +223,126 @@ void registerIpcCallbacks(void) {
   // Fault notifications
   ipc.registerHandler(IPC_MSG_FAULT_NOTIFY, handleFaultNotify);
   
+  // Control acknowledgments
+  ipc.registerHandler(IPC_MSG_CONTROL_ACK, handleControlAck);
+  
   // TODO: Add more handlers as needed:
   // - IPC_MSG_INDEX_SYNC_DATA
   // - IPC_MSG_DEVICE_STATUS
-  // - IPC_MSG_CONTROL_ACK
   // etc.
 
   log(LOG_INFO, false, "IPC message handlers registered.\n");
+}
+
+/**
+ * @brief Handler for control acknowledgment messages from IO MCU
+ */
+void handleControlAck(uint8_t messageType, const uint8_t *payload, uint16_t length) {
+  if (payload == nullptr || length != sizeof(IPC_ControlAck_t)) {
+    log(LOG_ERROR, false, "IPC: Invalid control ACK payload\n");
+    return;
+  }
+  
+  const IPC_ControlAck_t *ack = (const IPC_ControlAck_t *)payload;
+  
+  if (ack->success) {
+    log(LOG_DEBUG, false, "IPC: Control command ACK for object %d: %s\n", 
+        ack->index, ack->message);
+  } else {
+    log(LOG_WARNING, false, "IPC: Control command FAILED for object %d (error %d): %s\n",
+        ack->index, ack->errorCode, ack->message);
+  }
+  
+  // TODO: Could store last error in a status structure for API queries
+}
+
+// ============================================================================
+// OUTPUT CONTROL COMMAND SENDERS
+// ============================================================================
+
+/**
+ * @brief Send digital output control command
+ * @param index Output index (21-25)
+ * @param command DigitalOutputCommand (SET_STATE, SET_PWM, DISABLE)
+ * @param state Output state (for SET_STATE)
+ * @param pwmDuty PWM duty cycle 0-100% (for SET_PWM)
+ * @return true if command was queued
+ */
+bool sendDigitalOutputCommand(uint16_t index, uint8_t command, bool state, float pwmDuty) {
+  IPC_DigitalOutputControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));  // Zero out structure including padding
+  cmd.index = index;
+  cmd.objectType = OBJ_T_DIGITAL_OUTPUT;
+  cmd.command = command;
+  cmd.state = state ? 1 : 0;  // Convert bool to uint8_t
+  cmd.pwmDuty = pwmDuty;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_DEBUG, false, "IPC TX: DigitalOutput[%d] command=%d (size=%d)\n", index, command, sizeof(cmd));
+  } else {
+    log(LOG_WARNING, false, "IPC TX: Failed to send DigitalOutput command (queue full)\n");
+  }
+  
+  return sent;
+}
+
+/**
+ * @brief Send stepper motor control command
+ * @param command StepperCommand (SET_RPM, SET_DIR, START, STOP, UPDATE)
+ * @param rpm Target RPM
+ * @param direction Motor direction (true=forward, false=reverse)
+ * @return true if command was queued
+ */
+bool sendStepperCommand(uint8_t command, float rpm, bool direction) {
+  IPC_StepperControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));  // Zero out structure including padding
+  cmd.index = 26;
+  cmd.objectType = OBJ_T_STEPPER_MOTOR;
+  cmd.command = command;
+  cmd.rpm = rpm;
+  cmd.direction = direction;
+  cmd.enable = (command == STEPPER_CMD_START);
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_DEBUG, false, "IPC TX: Stepper command=%d, rpm=%.1f, dir=%d\n", 
+        command, rpm, direction);
+  } else {
+    log(LOG_WARNING, false, "IPC TX: Failed to send Stepper command (queue full)\n");
+  }
+  
+  return sent;
+}
+
+/**
+ * @brief Send DC motor control command
+ * @param index Motor index (27-30)
+ * @param command DCMotorCommand (SET_POWER, SET_DIR, START, STOP, UPDATE)
+ * @param power Power percentage 0-100%
+ * @param direction Motor direction (true=forward, false=reverse)
+ * @return true if command was queued
+ */
+bool sendDCMotorCommand(uint16_t index, uint8_t command, float power, bool direction) {
+  IPC_DCMotorControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));  // Zero out structure including padding
+  cmd.index = index;
+  cmd.objectType = OBJ_T_BDC_MOTOR;
+  cmd.command = command;
+  cmd.power = power;
+  cmd.direction = direction;
+  cmd.enable = (command == DCMOTOR_CMD_START);
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_DEBUG, false, "IPC TX: DCMotor[%d] command=%d, power=%.1f%%, dir=%d\n",
+        index, command, power, direction);
+  } else {
+    log(LOG_WARNING, false, "IPC TX: Failed to send DCMotor command (queue full)\n");
+  }
+  
+  return sent;
 }

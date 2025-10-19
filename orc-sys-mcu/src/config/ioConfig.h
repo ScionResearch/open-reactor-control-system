@@ -15,8 +15,9 @@
 #define MAX_DAC_OUTPUTS 2
 #define MAX_RTD_SENSORS 3
 #define MAX_GPIO 8
-#define MAX_DIGITAL_OUTPUTS 5
-#define MAX_MOTORS 4
+#define MAX_DIGITAL_OUTPUTS 5  // Indices 21-25 (open drain 1-4, high current)
+#define MAX_STEPPER_MOTORS 1   // Index 26
+#define MAX_DC_MOTORS 4        // Indices 27-30
 
 /**
  * @brief Calibration structure for analog inputs/outputs
@@ -81,20 +82,46 @@ struct GPIOConfig {
 };
 
 /**
- * @brief Configuration for digital outputs (indices 21-25)
+ * @brief Output mode for digital outputs
+ */
+enum OutputMode : uint8_t {
+    OUTPUT_MODE_ON_OFF = 0,  // Simple on/off control
+    OUTPUT_MODE_PWM = 1      // PWM control (0-100%)
+};
+
+/**
+ * @brief Configuration for open drain outputs (indices 21-24) and high current output (25)
  */
 struct DigitalOutputConfig {
     char name[32];
+    OutputMode mode;         // On/Off or PWM
     bool enabled;
+    bool showOnDashboard;
+};
+
+/**
+ * @brief Configuration for stepper motor (index 26)
+ */
+struct StepperMotorConfig {
+    char name[32];
+    uint16_t stepsPerRev;    // 100-1000, default 200
+    uint16_t maxRPM;         // 100-1000, default 500
+    uint16_t holdCurrent_mA; // 10-1000 mA
+    uint16_t runCurrent_mA;  // 10-1800 mA
+    uint16_t acceleration;   // RPM/s
+    bool invertDirection;
+    bool enabled;
+    bool showOnDashboard;
 };
 
 /**
  * @brief Configuration for DC motors (indices 27-30)
  */
-struct MotorConfig {
+struct DCMotorConfig {
     char name[32];
-    bool reverseDirection;  // Invert motor direction
+    bool invertDirection;
     bool enabled;
+    bool showOnDashboard;
 };
 
 /**
@@ -110,7 +137,8 @@ struct IOConfig {
     RTDSensorConfig rtdSensors[MAX_RTD_SENSORS];
     GPIOConfig gpio[MAX_GPIO];
     DigitalOutputConfig digitalOutputs[MAX_DIGITAL_OUTPUTS];
-    MotorConfig motors[MAX_MOTORS];
+    StepperMotorConfig stepperMotor;  // Single stepper motor
+    DCMotorConfig dcMotors[MAX_DC_MOTORS];
 };
 
 // Function prototypes

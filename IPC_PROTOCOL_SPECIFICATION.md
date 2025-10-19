@@ -215,26 +215,135 @@ struct IPC_SensorBulkReadReq_t {
 
 **Example Flow:**
 ```
-RP2040 → SAME51: SENSOR_BULK_READ_REQ (startIndex=0, count=21)
+RP2040 → SAME51: SENSOR_BULK_READ_REQ (startIndex=0, count=31)
 SAME51 → RP2040: SENSOR_DATA (index=0, ADC 1)
 SAME51 → RP2040: SENSOR_DATA (index=1, ADC 2)
 ...
 SAME51 → RP2040: SENSOR_DATA (index=20, GPIO 8)
+SAME51 → RP2040: SENSOR_DATA (index=21, Digital Output 1)
+...
+SAME51 → RP2040: SENSOR_DATA (index=30, DC Motor 4)
 ```
 
 **TX Queue Management:** 
 - IO MCU TX queue limited to 8 packets
 - Handler actively drains queue by calling `ipc_processTxQueue()` between sends
 - Waits for queue space before sending each response (prevents overflow)
-- Typical performance: 21 sensors read in ~20-30ms
+- Typical performance: 31 objects read in ~30-40ms
 
 **Benefits:**
-- Single 4-byte request vs 21 individual requests (95% reduction)
+- Single 4-byte request vs 31 individual requests (96% reduction)
 - Prevents RX buffer overflow on SYS MCU
-- Efficient bulk sensor polling for cache updates
-- Used by background polling: 21 sensors updated every 1 second
+- Efficient bulk object polling for cache updates
+- Used by background polling: 31 objects (sensors + outputs) updated every 1 second
+- Provides real-time output status (running state, power, current, etc.)
 
-### 4.4 Configuration Messages ✅ IMPLEMENTED
+### 4.4 Control Messages 🚧 IN PROGRESS
+
+#### CONTROL_WRITE (0x30) - Digital Output Control
+**Purpose:** Control digital outputs (on/off, PWM duty cycle)
+
+```cpp
+struct IPC_DigitalOutputControl_t {
+    uint16_t index;          // Output index (21-25)
+    uint8_t objectType;      // Type verification (OBJ_T_DIGITAL_OUTPUT)
+    uint8_t command;         // Command type (see below)
+    bool state;              // Output state (true=on, false=off)
+    float pwmDuty;           // PWM duty cycle (0-100%)
+    uint8_t reserved[3];     // Padding for alignment
+} __attribute__((packed));
+```
+
+**Command Types:**
+```cpp
+enum DigitalOutputCommand : uint8_t {
+    DOUT_CMD_SET_STATE = 0x01,   // Set on/off state
+    DOUT_CMD_SET_PWM   = 0x02,   // Set PWM duty cycle
+    DOUT_CMD_DISABLE   = 0x03,   // Disable output
+};
+```
+
+#### CONTROL_WRITE (0x30) - Stepper Motor Control
+**Purpose:** Control stepper motor parameters and motion
+
+```cpp
+struct IPC_StepperControl_t {
+    uint16_t index;          // Stepper index (26)
+    uint8_t objectType;      // Type verification (OBJ_T_STEPPER_MOTOR)
+    uint8_t command;         // Command type (see below)
+    float rpm;               // Target RPM
+    bool direction;          // true=forward, false=reverse
+    bool enable;             // Enable motor
+    uint8_t reserved[2];     // Padding
+} __attribute__((packed));
+```
+
+**Command Types:**
+```cpp
+enum StepperCommand : uint8_t {
+    STEPPER_CMD_SET_RPM   = 0x01,  // Set target RPM
+    STEPPER_CMD_SET_DIR   = 0x02,  // Set direction
+    STEPPER_CMD_START     = 0x03,  // Start motor
+    STEPPER_CMD_STOP      = 0x04,  // Stop motor
+    STEPPER_CMD_UPDATE    = 0x05,  // Update RPM while running
+};
+```
+
+#### CONTROL_WRITE (0x30) - DC Motor Control
+**Purpose:** Control DC motor power and direction
+
+```cpp
+struct IPC_DCMotorControl_t {
+    uint16_t index;          // Motor index (27-30)
+    uint8_t objectType;      // Type verification (OBJ_T_BDC_MOTOR)
+    uint8_t command;         // Command type (see below)
+    float power;             // Power percentage (0-100%)
+    bool direction;          // true=forward, false=reverse
+    bool enable;             // Enable motor
+    uint8_t reserved[2];     // Padding
+} __attribute__((packed));
+```
+
+**Command Types:**
+```cpp
+enum DCMotorCommand : uint8_t {
+    DCMOTOR_CMD_SET_POWER = 0x01,  // Set power percentage
+    DCMOTOR_CMD_SET_DIR   = 0x02,  // Set direction
+    DCMOTOR_CMD_START     = 0x03,  // Start motor
+    DCMOTOR_CMD_STOP      = 0x04,  // Stop motor
+    DCMOTOR_CMD_UPDATE    = 0x05,  // Update power while running
+};
+```
+
+#### CONTROL_ACK (0x31) - Command Acknowledgment
+**Purpose:** Acknowledge control command success/failure
+
+```cpp
+struct IPC_ControlAck_t {
+    uint16_t index;          // Object index
+    uint8_t objectType;      // Object type
+    uint8_t command;         // Command that was executed
+    bool success;            // true=success, false=failure
+    uint8_t errorCode;       // Error code if success=false
+    char message[100];       // Status/error message
+} __attribute__((packed));
+```
+
+**Error Codes:**
+```cpp
+enum ControlErrorCode : uint8_t {
+    CTRL_ERR_NONE           = 0x00,  // No error
+    CTRL_ERR_INVALID_INDEX  = 0x01,  // Invalid object index
+    CTRL_ERR_TYPE_MISMATCH  = 0x02,  // Object type mismatch
+    CTRL_ERR_INVALID_CMD    = 0x03,  // Invalid command
+    CTRL_ERR_OUT_OF_RANGE   = 0x04,  // Parameter out of range
+    CTRL_ERR_NOT_ENABLED    = 0x05,  // Device not enabled
+    CTRL_ERR_DRIVER_FAULT   = 0x06,  // Hardware driver fault
+    CTRL_ERR_TIMEOUT        = 0x07,  // Command timeout
+};
+```
+
+### 4.5 Configuration Messages ✅ IMPLEMENTED
 
 #### CONFIG_ANALOG_INPUT (ADC Configuration)
 ```cpp
@@ -519,19 +628,26 @@ enum IPC_ErrorCode : uint8_t {
 - [x] **Object cache system on SYS MCU**
 
 ### 9.2 🚧 In Progress
+- [x] **Output control commands (CONTROL_WRITE, CONTROL_ACK)**
+  - [x] Digital outputs (on/off, PWM)
+  - [x] Stepper motor (RPM, direction, start/stop)
+  - [x] DC motors (power, direction, start/stop)
+- [x] **Extend bulk read to include outputs (indices 0-30)**
+  - [x] Updated polling from 21 to 31 objects
+  - [x] Increased UART FIFO buffer to 8192 bytes
+- [ ] **Output configuration persistence on SYS MCU**
+- [ ] **Output control command senders on SYS MCU**
+- [ ] **Web API endpoints for output control**
 - [ ] Object index synchronization (partial - fixed objects working)
-- [ ] Configuration messages (ADC/RTD config working)
-- [ ] Control command handlers
 - [ ] Device management (create/delete)
 - [ ] Calibration protocol
 
 ### 9.3 📋 Planned Features
 - [ ] Sensor batch messages (multiple sensors per packet)
 - [ ] Automatic reconnection with state rebuild
-- [ ] Configuration persistence (RP2040 LittleFS)
 - [ ] REST API for device management
-- [ ] MQTT integration for sensor data
-- [ ] Web UI control interface
+- [ ] MQTT integration for sensor & output data
+- [ ] Control loop objects (PID, sequencers)
 
 ---
 
@@ -649,15 +765,21 @@ ipc.begin(2000000);  // 2 Mbps
 
 ---
 
-**Document Version:** 2.1  
+**Document Version:** 2.2  
 **Protocol Version:** v1.0.0  
-**Last Updated:** 2025-10-18  
-**Status:** ✅ Operational at 2 Mbps with bulk sensor reading  
+**Last Updated:** 2025-10-19  
+**Status:** ✅ Operational at 2 Mbps with bulk sensor reading + output control in progress  
 **Maintainer:** Open Reactor Control System Team
 
-**Recent Updates (v2.1):**
+**Recent Updates (v2.2):**
+- Added CONTROL_WRITE (0x30) message structures for outputs
+- Added CONTROL_ACK (0x31) acknowledgment structure
+- Defined control commands for digital outputs, stepper motor, DC motors
+- Added error codes for control command failures
+- Updated implementation status for output control feature
+
+**Previous Updates (v2.1):**
 - Added SENSOR_BULK_READ_REQ message type (0x24)
 - Implemented TX queue draining to handle bulk responses
 - Added background sensor polling architecture
 - Documented object cache system on SYS MCU
-- Updated implementation status

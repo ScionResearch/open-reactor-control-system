@@ -72,6 +72,8 @@ function openTab(evt, tabName) {
         initControlBoard();
     } else if (tabName === 'inputs') {
         initInputsTab();
+    } else if (tabName === 'outputs') {
+        initOutputsTab();
     } else if (tabName === 'sensors') {
         // Initialize sensors tab with continuous polling
         initSensorsTab();

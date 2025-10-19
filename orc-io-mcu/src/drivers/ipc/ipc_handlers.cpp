@@ -2,6 +2,7 @@
 #include "../../sys_init.h"
 #include "../onboard/drv_rtd.h"  // For RTD configuration
 #include "../onboard/drv_gpio.h" // For GPIO configuration
+#include "../onboard/drv_output.h" // For output mode switching
 
 // ============================================================================
 // MESSAGE HANDLER DISPATCHER
@@ -69,6 +70,18 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             
         case IPC_MSG_CONFIG_GPIO:
             ipc_handle_config_gpio(payload, len);
+            break;
+            
+        case IPC_MSG_CONFIG_DIGITAL_OUTPUT:
+            ipc_handle_config_digital_output(payload, len);
+            break;
+            
+        case IPC_MSG_CONFIG_STEPPER:
+            ipc_handle_config_stepper(payload, len);
+            break;
+            
+        case IPC_MSG_CONFIG_DCMOTOR:
+            ipc_handle_config_dcmotor(payload, len);
             break;
             
         default:
@@ -615,6 +628,50 @@ bool ipc_sendSensorBatch(const uint16_t *indices, uint8_t count) {
 // ============================================================================
 
 void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
+    // Determine message type by checking object type in payload
+    if (len < 4) {  // Need at least index + objectType
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "CONTROL_WRITE: Payload too small");
+        return;
+    }
+    
+    uint16_t index = *((uint16_t*)payload);
+    uint8_t objectType = *((uint8_t*)(payload + 2));
+    
+    // Validate index
+    if (index >= MAX_NUM_OBJECTS || !objIndex[index].valid) {
+        ipc_sendControlAck_v2(index, objectType, 0, false, CTRL_ERR_INVALID_INDEX, "Invalid object index");
+        return;
+    }
+    
+    // Verify type matches
+    if (objIndex[index].type != objectType) {
+        ipc_sendControlAck_v2(index, objectType, 0, false, CTRL_ERR_TYPE_MISMATCH, "Object type mismatch");
+        return;
+    }
+    
+    // Route to appropriate handler based on object type
+    switch (objectType) {
+        case OBJ_T_DIGITAL_OUTPUT:
+            ipc_handle_digital_output_control(payload, len);
+            break;
+            
+        case OBJ_T_STEPPER_MOTOR:
+            ipc_handle_stepper_control(payload, len);
+            break;
+            
+        case OBJ_T_BDC_MOTOR:
+            ipc_handle_dcmotor_control(payload, len);
+            break;
+            
+        default:
+            // For control loops (PID, etc.) - use old handler
+            ipc_handle_control_loop_write(payload, len);
+            break;
+    }
+}
+
+// Original control loop handler (for PID, sequencers, etc.)
+void ipc_handle_control_loop_write(const uint8_t *payload, uint16_t len) {
     if (len < sizeof(IPC_ControlWrite_t)) {
         ipc_sendError(IPC_ERR_PARSE_FAIL, "CONTROL_WRITE: Invalid payload size");
         return;
@@ -622,21 +679,267 @@ void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
     
     IPC_ControlWrite_t *cmd = (IPC_ControlWrite_t*)payload;
     
-    // Validate index
-    if (cmd->index >= MAX_NUM_OBJECTS || !objIndex[cmd->index].valid) {
-        ipc_sendControlAck(cmd->index, false, "Invalid index");
+    // TODO: Implement specific control loop writes
+    ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "Control loop write not implemented yet");
+}
+
+// Digital Output Control Handler
+void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_DigitalOutputControl_t)) {
+        char errMsg[100];
+        sprintf(errMsg, "Invalid size: got %d, expected %d", len, sizeof(IPC_DigitalOutputControl_t));
+        ipc_sendError(IPC_ERR_PARSE_FAIL, errMsg);
         return;
     }
     
-    // Verify type
-    if (objIndex[cmd->index].type != cmd->objectType) {
-        ipc_sendControlAck(cmd->index, false, "Type mismatch");
+    const IPC_DigitalOutputControl_t *cmd = (const IPC_DigitalOutputControl_t*)payload;
+    
+    // Validate index range (21-25)
+    if (cmd->index < 21 || cmd->index > 25) {
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false, 
+                            CTRL_ERR_INVALID_INDEX, "Index out of range for digital output");
         return;
     }
     
-    // Handle control write based on type
-    // TODO: Implement specific control writes for each type
-    ipc_sendControlAck(cmd->index, true, "OK");
+    DigitalOutput_t *output = (DigitalOutput_t*)objIndex[cmd->index].obj;
+    if (!output) {
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+                            CTRL_ERR_INVALID_INDEX, "Output object not found");
+        return;
+    }
+    
+    bool success = false;
+    char message[100] = "OK";
+    
+    switch (cmd->command) {
+        case DOUT_CMD_SET_STATE:
+            // Only works in ON/OFF mode
+            if (!output->pwmEnabled) {
+                output->state = cmd->state;
+                success = true;
+            } else {
+                strcpy(message, "Output is in PWM mode, use SET_PWM command");
+            }
+            break;
+            
+        case DOUT_CMD_SET_PWM:
+            // Only works in PWM mode
+            if (output->pwmEnabled) {
+                if (cmd->pwmDuty >= 0.0f && cmd->pwmDuty <= 100.0f) {
+                    output->pwmDuty = cmd->pwmDuty;
+                    success = true;
+                } else {
+                    strcpy(message, "PWM duty out of range (0-100%)");
+                }
+            } else {
+                strcpy(message, "Output is in ON/OFF mode, configure as PWM first");
+            }
+            break;
+            
+        case DOUT_CMD_DISABLE:
+            output->state = false;
+            output->pwmDuty = 0.0f;
+            // Don't change pwmEnabled - that's a config setting
+            success = true;
+            break;
+            
+        default:
+            strcpy(message, "Unknown command");
+            break;
+    }
+    
+    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success,
+                        success ? CTRL_ERR_NONE : CTRL_ERR_INVALID_CMD, message);
+}
+
+// Stepper Motor Control Handler  
+void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_StepperControl_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid stepper control message size");
+        return;
+    }
+    
+    const IPC_StepperControl_t *cmd = (const IPC_StepperControl_t*)payload;
+    
+    // Validate index (must be 26)
+    if (cmd->index != 26) {
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+                            CTRL_ERR_INVALID_INDEX, "Invalid stepper motor index");
+        return;
+    }
+    
+    StepperDevice_t *stepper = (StepperDevice_t*)objIndex[26].obj;
+    if (!stepper) {
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+                            CTRL_ERR_INVALID_INDEX, "Stepper object not found");
+        return;
+    }
+    
+    bool success = false;
+    char message[100] = "OK";
+    ControlErrorCode errorCode = CTRL_ERR_NONE;
+    
+    switch (cmd->command) {
+        case STEPPER_CMD_SET_RPM:
+            if (cmd->rpm >= 0.0f && cmd->rpm <= stepper->maxRPM) {
+                stepper->rpm = cmd->rpm;
+                // If motor is running, apply the new RPM immediately
+                if (stepper->enabled && stepper->running) {
+                    success = stepper_update(true);
+                    if (!success) {
+                        strcpy(message, "Failed to update RPM");
+                        errorCode = CTRL_ERR_DRIVER_FAULT;
+                    }
+                } else {
+                    // Just store for next start
+                    success = true;
+                }
+            } else {
+                snprintf(message, sizeof(message), "RPM out of range (0-%.1f)", stepper->maxRPM);
+                errorCode = CTRL_ERR_OUT_OF_RANGE;
+            }
+            break;
+            
+        case STEPPER_CMD_SET_DIR:
+            stepper->direction = cmd->direction;
+            success = stepper_update(true);  // Apply direction change
+            if (!success) {
+                strcpy(message, "Failed to set direction");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
+            }
+            break;
+            
+        case STEPPER_CMD_START:
+            stepper->rpm = cmd->rpm;
+            stepper->direction = cmd->direction;
+            stepper->enabled = true;
+            success = stepper_update(true);  // Start motor with new parameters
+            if (!success) {
+                strcpy(message, "Failed to start motor");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
+            }
+            break;
+            
+        case STEPPER_CMD_STOP:
+            stepper->enabled = false;
+            success = stepper_update(true);  // Stop motor
+            if (!success) {
+                strcpy(message, "Failed to stop motor");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
+            }
+            break;
+            
+        case STEPPER_CMD_UPDATE:
+            // Update parameters and apply if enabled (works for both running and stopped)
+            stepper->rpm = cmd->rpm;
+            stepper->direction = cmd->direction;
+            if (stepper->enabled) {
+                success = stepper_update(true);  // Apply changes
+                if (!success) {
+                    strcpy(message, "Failed to update motor");
+                    errorCode = CTRL_ERR_DRIVER_FAULT;
+                }
+            } else {
+                // Just store parameters for next start
+                success = true;
+            }
+            break;
+            
+        default:
+            strcpy(message, "Unknown command");
+            errorCode = CTRL_ERR_INVALID_CMD;
+            break;
+    }
+    
+    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+}
+
+// DC Motor Control Handler
+void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_DCMotorControl_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid DC motor control message size");
+        return;
+    }
+    
+    const IPC_DCMotorControl_t *cmd = (const IPC_DCMotorControl_t*)payload;
+    
+    // Validate index range (27-30)
+    if (cmd->index < 27 || cmd->index > 30) {
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+                            CTRL_ERR_INVALID_INDEX, "Invalid DC motor index");
+        return;
+    }
+    
+    uint8_t motorNum = cmd->index - 27;
+    MotorDevice_t *motor = (MotorDevice_t*)objIndex[cmd->index].obj;
+    if (!motor) {
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+                            CTRL_ERR_INVALID_INDEX, "Motor object not found");
+        return;
+    }
+    
+    bool success = false;
+    char message[100] = "OK";
+    ControlErrorCode errorCode = CTRL_ERR_NONE;
+    
+    switch (cmd->command) {
+        case DCMOTOR_CMD_SET_POWER:
+            if (cmd->power >= 0.0f && cmd->power <= 100.0f) {
+                motor->power = cmd->power;
+                success = true;
+            } else {
+                strcpy(message, "Power out of range (0-100%)");
+                errorCode = CTRL_ERR_OUT_OF_RANGE;
+            }
+            break;
+            
+        case DCMOTOR_CMD_SET_DIR:
+            motor->direction = cmd->direction;
+            success = true;
+            break;
+            
+        case DCMOTOR_CMD_START:
+            motor->power = cmd->power;
+            motor->direction = cmd->direction;
+            motor->enabled = true;
+            success = motor_run(motorNum, (uint8_t)cmd->power, cmd->direction);
+            if (!success) {
+                strcpy(message, "Failed to start motor");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
+            }
+            break;
+            
+        case DCMOTOR_CMD_STOP:
+            motor->enabled = false;
+            success = motor_stop(motorNum);
+            if (!success) {
+                strcpy(message, "Failed to stop motor");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
+            }
+            break;
+            
+        case DCMOTOR_CMD_UPDATE:
+            if (motor->running) {
+                motor->power = cmd->power;
+                motor->direction = cmd->direction;
+                success = motor_run(motorNum, (uint8_t)cmd->power, cmd->direction);
+                if (!success) {
+                    strcpy(message, "Failed to update motor");
+                    errorCode = CTRL_ERR_DRIVER_FAULT;
+                }
+            } else {
+                strcpy(message, "Motor not running");
+                errorCode = CTRL_ERR_NOT_ENABLED;
+            }
+            break;
+            
+        default:
+            strcpy(message, "Unknown command");
+            errorCode = CTRL_ERR_INVALID_CMD;
+            break;
+    }
+    
+    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 void ipc_handle_control_read(const uint8_t *payload, uint16_t len) {
@@ -651,14 +954,25 @@ void ipc_handle_control_read(const uint8_t *payload, uint16_t len) {
     ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "CONTROL_READ not implemented yet");
 }
 
-bool ipc_sendControlAck(uint16_t index, bool success, const char *message) {
+// Enhanced acknowledgment with error codes (for output control)
+bool ipc_sendControlAck_v2(uint16_t index, uint8_t objectType, uint8_t command,
+                          bool success, uint8_t errorCode, const char *message) {
     IPC_ControlAck_t ack;
     ack.index = index;
-    ack.success = success ? 1 : 0;
+    ack.objectType = objectType;
+    ack.command = command;
+    ack.success = success;
+    ack.errorCode = errorCode;
     strncpy(ack.message, message, sizeof(ack.message) - 1);
     ack.message[sizeof(ack.message) - 1] = '\0';
     
     return ipc_sendPacket(IPC_MSG_CONTROL_ACK, (uint8_t*)&ack, sizeof(ack));
+}
+
+// Legacy acknowledgment (for control loops - backward compatible)
+bool ipc_sendControlAck(uint16_t index, bool success, const char *message) {
+    return ipc_sendControlAck_v2(index, 0, 0, success, 
+                                success ? CTRL_ERR_NONE : CTRL_ERR_DRIVER_FAULT, message);
 }
 
 // ============================================================================
@@ -900,4 +1214,156 @@ void ipc_handle_config_gpio(const uint8_t *payload, uint16_t len) {
                           (cfg->pullMode == 2) ? "PULL-DOWN" : "HIGH-Z";
     Serial.printf("[IPC] GPIO[%d] configured: %s, pull=%s\n", 
                   cfg->index, cfg->name, pullStr);
+}
+
+/**
+ * @brief Handle digital output configuration
+ */
+void ipc_handle_config_digital_output(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_ConfigDigitalOutput_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid digital output config message size");
+        return;
+    }
+    
+    const IPC_ConfigDigitalOutput_t *cfg = (const IPC_ConfigDigitalOutput_t*)payload;
+    
+    // Validate index range (21-25 for digital outputs)
+    if (cfg->index < 21 || cfg->index > 25) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Digital output index out of range (21-25)");
+        return;
+    }
+    
+    if (cfg->index >= MAX_NUM_OBJECTS || !objIndex[cfg->index].valid) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Invalid digital output index");
+        return;
+    }
+    
+    // Update object index name
+    strncpy(objIndex[cfg->index].name, cfg->name, sizeof(objIndex[cfg->index].name) - 1);
+    objIndex[cfg->index].name[sizeof(objIndex[cfg->index].name) - 1] = '\0';
+    
+    // Get digital output object
+    DigitalOutput_t *output = (DigitalOutput_t*)objIndex[cfg->index].obj;
+    if (output) {
+        bool wasPWM = output->pwmEnabled;
+        
+        // Apply mode configuration to output object
+        output->pwmEnabled = (cfg->mode == 1);  // 1 = PWM, 0 = ON/OFF
+        
+        // Handle mode transitions
+        if (wasPWM && !output->pwmEnabled) {
+            // Switching from PWM to ON/OFF - force pin back to digital mode
+            output->state = (output->pwmDuty > 0);
+            output->pwmDuty = 0.0f;
+            output_force_digital_mode(cfg->index);
+        } else if (!wasPWM && output->pwmEnabled) {
+            // Switching from ON/OFF to PWM - re-initialize pin for PWM
+            if (cfg->index == 25) {
+                // Heater output - re-init pin MUX for TCC0
+                analogWrite(PIN_HEAT_OUT, 0);
+                Serial.printf("[OUTPUT] Heater pin re-initialized for PWM mode\n");
+            } else if (cfg->index >= 21 && cfg->index <= 24) {
+                // Regular outputs - re-init pin MUX
+                int arrayIdx = cfg->index - 21;
+                analogWrite(outputDriver.pin[arrayIdx], 0);
+                Serial.printf("[OUTPUT] Output %d pin re-initialized for PWM mode\n", cfg->index);
+            }
+            // Initialize PWM duty to 0
+            output->pwmDuty = 0.0f;
+        }
+        
+        const char* modeStr = output->pwmEnabled ? "PWM" : "ON/OFF";
+        Serial.printf("[IPC] ✓ DigitalOutput[%d]: %s, mode=%s (cfg->mode=%d, pwmEnabled=%d)\n",
+                     cfg->index, cfg->name, modeStr, cfg->mode, output->pwmEnabled);
+    } else {
+        ipc_sendError(IPC_ERR_DEVICE_FAIL, "Digital output object not initialized");
+    }
+}
+
+/**
+ * @brief Handle stepper motor configuration
+ */
+void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_ConfigStepper_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid stepper config message size");
+        return;
+    }
+    
+    const IPC_ConfigStepper_t *cfg = (const IPC_ConfigStepper_t*)payload;
+    
+    // Validate index (must be 26)
+    if (cfg->index != 26) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Stepper motor must be index 26");
+        return;
+    }
+    
+    if (!objIndex[26].valid) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Stepper motor not available");
+        return;
+    }
+    
+    // Update object index name
+    strncpy(objIndex[26].name, cfg->name, sizeof(objIndex[26].name) - 1);
+    objIndex[26].name[sizeof(objIndex[26].name) - 1] = '\0';
+    
+    // Get stepper device object
+    StepperDevice_t *stepper = (StepperDevice_t*)objIndex[26].obj;
+    if (stepper) {
+        // Apply configuration
+        stepper->stepsPerRev = cfg->stepsPerRev;
+        stepper->maxRPM = cfg->maxRPM;
+        stepper->holdCurrent = cfg->holdCurrent_mA;
+        stepper->runCurrent = cfg->runCurrent_mA;
+        stepper->acceleration = cfg->acceleration;
+        stepper->inverted = cfg->invertDirection;
+        stepper->enabled = cfg->enabled;
+        
+        // Apply to driver (this will configure TMC5130)
+        stepper_update(true);
+        
+        Serial.printf("[IPC] ✓ Stepper[26]: %s, maxRPM=%d, steps=%d, Irun=%dmA\n",
+                     cfg->name, cfg->maxRPM, cfg->stepsPerRev, cfg->runCurrent_mA);
+    } else {
+        ipc_sendError(IPC_ERR_DEVICE_FAIL, "Stepper motor object not initialized");
+    }
+}
+
+/**
+ * @brief Handle DC motor configuration
+ */
+void ipc_handle_config_dcmotor(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_ConfigDCMotor_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid DC motor config message size");
+        return;
+    }
+    
+    const IPC_ConfigDCMotor_t *cfg = (const IPC_ConfigDCMotor_t*)payload;
+    
+    // Validate index range (27-30 for DC motors)
+    if (cfg->index < 27 || cfg->index > 30) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "DC motor index out of range (27-30)");
+        return;
+    }
+    
+    if (!objIndex[cfg->index].valid) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "DC motor not available");
+        return;
+    }
+    
+    // Update object index name
+    strncpy(objIndex[cfg->index].name, cfg->name, sizeof(objIndex[cfg->index].name) - 1);
+    objIndex[cfg->index].name[sizeof(objIndex[cfg->index].name) - 1] = '\0';
+    
+    // Get motor device object
+    MotorDevice_t *motor = (MotorDevice_t*)objIndex[cfg->index].obj;
+    if (motor) {
+        // Apply configuration
+        motor->inverted = cfg->invertDirection;
+        motor->enabled = cfg->enabled;
+        
+        Serial.printf("[IPC] ✓ DCMotor[%d]: %s, invert=%s\n",
+                     cfg->index, cfg->name, cfg->invertDirection ? "YES" : "NO");
+    } else {
+        ipc_sendError(IPC_ERR_DEVICE_FAIL, "DC motor object not initialized");
+    }
 }

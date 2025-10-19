@@ -17,4 +17,5 @@ extern DigitalOutput_t heaterOutput[1];
 
 void output_init(void);
 void output_update(void);
+void output_force_digital_mode(uint8_t outputIndex);
 

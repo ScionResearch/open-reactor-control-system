@@ -81,6 +81,9 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_CONFIG_ANALOG_OUTPUT  = 0x64,  // Configure analog output (DAC)
     IPC_MSG_CONFIG_RTD            = 0x65,  // Configure RTD temperature sensor
     IPC_MSG_CONFIG_GPIO           = 0x66,  // Configure digital GPIO
+    IPC_MSG_CONFIG_DIGITAL_OUTPUT = 0x67,  // Configure digital output
+    IPC_MSG_CONFIG_STEPPER        = 0x68,  // Configure stepper motor
+    IPC_MSG_CONFIG_DCMOTOR        = 0x69,  // Configure DC motor
 };
 
 // ============================================================================
@@ -196,6 +199,7 @@ struct IPC_SensorBatch_t {
 
 // Control Data messages -------------------------------------------------
 
+// Control loop parameter types (for PID controllers, sequencers, etc.)
 enum IPC_ControlParamType : uint8_t {
     IPC_CTRL_SETPOINT       = 0x00,
     IPC_CTRL_ENABLE         = 0x01,
@@ -208,6 +212,7 @@ enum IPC_ControlParamType : uint8_t {
     IPC_CTRL_PERCENT        = 0x08,
 };
 
+// Control loop write message (for PID/sequencer parameters)
 struct IPC_ControlWrite_t {
     uint16_t index;
     uint8_t objectType;      // Type verification
@@ -215,10 +220,82 @@ struct IPC_ControlWrite_t {
     float value;             // Parameter value
 } __attribute__((packed));
 
+// Output control command types
+enum DigitalOutputCommand : uint8_t {
+    DOUT_CMD_SET_STATE = 0x01,   // Set on/off state
+    DOUT_CMD_SET_PWM   = 0x02,   // Set PWM duty cycle
+    DOUT_CMD_DISABLE   = 0x03,   // Disable output
+};
+
+enum StepperCommand : uint8_t {
+    STEPPER_CMD_SET_RPM   = 0x01,  // Set target RPM
+    STEPPER_CMD_SET_DIR   = 0x02,  // Set direction
+    STEPPER_CMD_START     = 0x03,  // Start motor
+    STEPPER_CMD_STOP      = 0x04,  // Stop motor
+    STEPPER_CMD_UPDATE    = 0x05,  // Update RPM while running
+};
+
+enum DCMotorCommand : uint8_t {
+    DCMOTOR_CMD_SET_POWER = 0x01,  // Set power percentage
+    DCMOTOR_CMD_SET_DIR   = 0x02,  // Set direction
+    DCMOTOR_CMD_START     = 0x03,  // Start motor
+    DCMOTOR_CMD_STOP      = 0x04,  // Stop motor
+    DCMOTOR_CMD_UPDATE    = 0x05,  // Update power while running
+};
+
+// Control error codes
+enum ControlErrorCode : uint8_t {
+    CTRL_ERR_NONE           = 0x00,  // No error
+    CTRL_ERR_INVALID_INDEX  = 0x01,  // Invalid object index
+    CTRL_ERR_TYPE_MISMATCH  = 0x02,  // Object type mismatch
+    CTRL_ERR_INVALID_CMD    = 0x03,  // Invalid command
+    CTRL_ERR_OUT_OF_RANGE   = 0x04,  // Parameter out of range
+    CTRL_ERR_NOT_ENABLED    = 0x05,  // Device not enabled
+    CTRL_ERR_DRIVER_FAULT   = 0x06,  // Hardware driver fault
+    CTRL_ERR_TIMEOUT        = 0x07,  // Command timeout
+};
+
+// Digital Output Control (indices 21-25)
+struct IPC_DigitalOutputControl_t {
+    uint16_t index;          // Output index (21-25)
+    uint8_t objectType;      // Type verification (OBJ_T_DIGITAL_OUTPUT)
+    uint8_t command;         // DigitalOutputCommand
+    uint8_t state;           // Output state (0=off, 1=on) - changed from bool
+    uint8_t reserved1;       // Padding
+    uint16_t reserved2;      // Padding
+    float pwmDuty;           // PWM duty cycle (0-100%)
+} __attribute__((packed));
+
+// Stepper Motor Control (index 26)
+struct IPC_StepperControl_t {
+    uint16_t index;          // Stepper index (26)
+    uint8_t objectType;      // Type verification (OBJ_T_STEPPER_MOTOR)
+    uint8_t command;         // StepperCommand
+    float rpm;               // Target RPM
+    bool direction;          // true=forward, false=reverse
+    bool enable;             // Enable motor
+    uint8_t reserved[2];     // Padding
+} __attribute__((packed));
+
+// DC Motor Control (indices 27-30)
+struct IPC_DCMotorControl_t {
+    uint16_t index;          // Motor index (27-30)
+    uint8_t objectType;      // Type verification (OBJ_T_BDC_MOTOR)
+    uint8_t command;         // DCMotorCommand
+    float power;             // Power percentage (0-100%)
+    bool direction;          // true=forward, false=reverse
+    bool enable;             // Enable motor
+    uint8_t reserved[2];     // Padding
+} __attribute__((packed));
+
+// Control Acknowledgment (for all control commands)
 struct IPC_ControlAck_t {
     uint16_t index;
-    uint8_t success;         // 0=fail, 1=success
-    char message[50];        // Error message if failed
+    uint8_t objectType;      // Object type
+    uint8_t command;         // Command that was executed
+    bool success;            // true=success, false=failure
+    uint8_t errorCode;       // ControlErrorCode if success=false
+    char message[100];       // Status/error message
 } __attribute__((packed));
 
 struct IPC_ControlRead_t {
@@ -370,6 +447,44 @@ struct IPC_ConfigGPIO_t {
     uint16_t index;          // Object index (13-20 for GPIO)
     char name[32];           // Custom name
     uint8_t pullMode;        // 0=None (High-Z), 1=Pull-up, 2=Pull-down
+    uint8_t enabled;         // Enable/disable flag
+} __attribute__((packed));
+
+/**
+ * @brief Digital Output configuration
+ * Message type: IPC_MSG_CONFIG_DIGITAL_OUTPUT
+ */
+struct IPC_ConfigDigitalOutput_t {
+    uint16_t index;          // Object index (21-25 for digital outputs)
+    char name[32];           // Custom name
+    uint8_t mode;            // 0=On/Off, 1=PWM
+    uint8_t enabled;         // Enable/disable flag
+} __attribute__((packed));
+
+/**
+ * @brief Stepper Motor configuration
+ * Message type: IPC_MSG_CONFIG_STEPPER
+ */
+struct IPC_ConfigStepper_t {
+    uint16_t index;          // Object index (26 for stepper motor)
+    char name[32];           // Custom name
+    uint16_t stepsPerRev;    // Steps per revolution (e.g., 200)
+    uint16_t maxRPM;         // Maximum RPM
+    uint16_t holdCurrent_mA; // Hold current in mA
+    uint16_t runCurrent_mA;  // Run current in mA
+    uint16_t acceleration;   // Acceleration in RPM/s
+    uint8_t invertDirection; // Invert direction flag
+    uint8_t enabled;         // Enable/disable flag
+} __attribute__((packed));
+
+/**
+ * @brief DC Motor configuration
+ * Message type: IPC_MSG_CONFIG_DCMOTOR
+ */
+struct IPC_ConfigDCMotor_t {
+    uint16_t index;          // Object index (27-30 for DC motors)
+    char name[32];           // Custom name
+    uint8_t invertDirection; // Invert direction flag
     uint8_t enabled;         // Enable/disable flag
 } __attribute__((packed));
 

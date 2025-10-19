@@ -3,6 +3,7 @@
 #include "../sys_init.h"
 #include "../utils/statusManager.h"
 #include "../utils/timeManager.h"
+#include "../utils/ipcManager.h"
 #include "../storage/sdManager.h"
 #include "../controls/controlManager.h"
 #include "../utils/objectCache.h"
@@ -970,6 +971,657 @@ void handleSaveGPIOConfig(uint8_t index) {
   }
 }
 
+// ============================================================================
+// OUTPUTS API HANDLERS
+// ============================================================================
+
+/**
+ * @brief Get all outputs status for monitoring
+ */
+void handleGetOutputs() {
+  StaticJsonDocument<2048> doc;
+  
+  // Digital Outputs (indices 21-25)
+  JsonArray digitalOutputs = doc.createNestedArray("digitalOutputs");
+  for (int i = 0; i < MAX_DIGITAL_OUTPUTS; i++) {
+    JsonObject output = digitalOutputs.createNestedObject();
+    uint16_t index = 21 + i;
+    output["index"] = index;
+    output["name"] = ioConfig.digitalOutputs[i].name;
+    output["mode"] = (uint8_t)ioConfig.digitalOutputs[i].mode;
+    output["d"] = ioConfig.digitalOutputs[i].showOnDashboard;
+    
+    // Get actual runtime state from object cache
+    ObjectCache::CachedObject* cachedObj = objectCache.getObject(index);
+    if (cachedObj && cachedObj->valid && cachedObj->lastUpdate > 0) {
+      output["value"] = cachedObj->value;  // PWM duty cycle or digital state (0-100%)
+      output["state"] = cachedObj->value > 0;  // True if output is on
+    } else {
+      output["state"] = false;
+      output["value"] = 0;
+    }
+  }
+  
+  // Stepper Motor (index 26)
+  JsonObject stepper = doc.createNestedObject("stepperMotor");
+  stepper["name"] = ioConfig.stepperMotor.name;
+  stepper["d"] = ioConfig.stepperMotor.showOnDashboard;
+  stepper["maxRPM"] = ioConfig.stepperMotor.maxRPM;
+  
+  // Get actual runtime state from object cache
+  ObjectCache::CachedObject* stepperObj = objectCache.getObject(26);
+  if (stepperObj && stepperObj->valid && stepperObj->lastUpdate > 0) {
+    stepper["rpm"] = stepperObj->value;  // Current RPM
+    stepper["running"] = stepperObj->value > 0;  // Running if RPM > 0
+    stepper["direction"] = true;  // TODO: Need separate field for direction
+  } else {
+    stepper["running"] = false;
+    stepper["rpm"] = 0;
+    stepper["direction"] = true;
+  }
+  
+  // DC Motors (indices 27-30)
+  JsonArray dcMotors = doc.createNestedArray("dcMotors");
+  for (int i = 0; i < MAX_DC_MOTORS; i++) {
+    JsonObject motor = dcMotors.createNestedObject();
+    uint16_t index = 27 + i;
+    motor["index"] = index;
+    motor["name"] = ioConfig.dcMotors[i].name;
+    motor["d"] = ioConfig.dcMotors[i].showOnDashboard;
+    
+    // Get actual runtime state from object cache
+    ObjectCache::CachedObject* motorObj = objectCache.getObject(index);
+    if (motorObj && motorObj->valid && motorObj->lastUpdate > 0) {
+      motor["power"] = motorObj->value;  // Current power %
+      motor["running"] = motorObj->value > 0;  // Running if power > 0
+      motor["direction"] = true;  // TODO: Need separate field for direction
+    } else {
+      motor["running"] = false;
+      motor["power"] = 0;
+      motor["direction"] = true;
+    }
+  }
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+// --- Digital Output Configuration Handlers ---
+
+void handleGetDigitalOutputConfig(uint8_t index) {
+  if (index < 21 || index >= 21 + MAX_DIGITAL_OUTPUTS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid output index\"}");
+    return;
+  }
+  
+  int outputIdx = index - 21;
+  StaticJsonDocument<256> doc;
+  doc["index"] = index;
+  doc["name"] = ioConfig.digitalOutputs[outputIdx].name;
+  doc["mode"] = (uint8_t)ioConfig.digitalOutputs[outputIdx].mode;
+  doc["enabled"] = ioConfig.digitalOutputs[outputIdx].enabled;
+  doc["showOnDashboard"] = ioConfig.digitalOutputs[outputIdx].showOnDashboard;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveDigitalOutputConfig(uint8_t index) {
+  if (index < 21 || index >= 21 + MAX_DIGITAL_OUTPUTS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid output index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  int outputIdx = index - 21;
+  
+  // Update configuration
+  if (doc.containsKey("name")) {
+    strlcpy(ioConfig.digitalOutputs[outputIdx].name, doc["name"] | "", 
+            sizeof(ioConfig.digitalOutputs[outputIdx].name));
+  }
+  
+  if (doc.containsKey("mode")) {
+    ioConfig.digitalOutputs[outputIdx].mode = (OutputMode)(doc["mode"] | 0);
+  }
+  
+  if (doc.containsKey("enabled")) {
+    ioConfig.digitalOutputs[outputIdx].enabled = doc["enabled"] | true;
+  }
+  
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.digitalOutputs[outputIdx].showOnDashboard = doc["showOnDashboard"] | false;
+  }
+  
+  // Save configuration to file
+  saveIOConfig();
+  
+  // Send updated config to IO MCU via IPC
+  IPC_ConfigDigitalOutput_t cfg;
+  cfg.index = index;
+  strncpy(cfg.name, ioConfig.digitalOutputs[outputIdx].name, sizeof(cfg.name) - 1);
+  cfg.name[sizeof(cfg.name) - 1] = '\0';
+  cfg.mode = (uint8_t)ioConfig.digitalOutputs[outputIdx].mode;
+  cfg.enabled = ioConfig.digitalOutputs[outputIdx].enabled;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_DIGITAL_OUTPUT, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Pushed DigitalOutput[%d] config to IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Config saved and pushed\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to push DigitalOutput[%d] config (queue full)\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"warning\":\"Saved but IPC queue full\"}");
+  }
+}
+
+// --- Digital Output Runtime Control Handlers ---
+
+void handleSetOutputState(uint8_t index) {
+  if (index < 21 || index >= 21 + MAX_DIGITAL_OUTPUTS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid output index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error || !doc.containsKey("state")) {
+    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
+    return;
+  }
+  
+  bool state = doc["state"];
+  
+  // Send SET_STATE command to IO MCU via IPC
+  bool sent = sendDigitalOutputCommand(index, DOUT_CMD_SET_STATE, state, 0);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Set output %d state: %s\n", index, state ? "ON" : "OFF");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to set output %d: IPC queue full\n", index);
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+void handleSetOutputValue(uint8_t index) {
+  if (index < 21 || index >= 21 + MAX_DIGITAL_OUTPUTS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid output index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error || !doc.containsKey("value")) {
+    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
+    return;
+  }
+  
+  float value = doc["value"] | 0.0f;
+  
+  // Validate PWM value (0-100%)
+  if (value < 0.0f || value > 100.0f) {
+    server.send(400, "application/json", "{\"error\":\"Value must be 0-100%\"}");
+    return;
+  }
+  
+  // Send SET_PWM command to IO MCU via IPC
+  bool sent = sendDigitalOutputCommand(index, DOUT_CMD_SET_PWM, false, value);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Set output %d PWM value: %.1f%%\n", index, value);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to set output %d PWM: IPC queue full\n", index);
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+// --- Stepper Motor Configuration & Control Handlers ---
+
+void handleGetStepperConfig() {
+  StaticJsonDocument<512> doc;
+  doc["name"] = ioConfig.stepperMotor.name;
+  doc["stepsPerRev"] = ioConfig.stepperMotor.stepsPerRev;
+  doc["maxRPM"] = ioConfig.stepperMotor.maxRPM;
+  doc["holdCurrent_mA"] = ioConfig.stepperMotor.holdCurrent_mA;
+  doc["runCurrent_mA"] = ioConfig.stepperMotor.runCurrent_mA;
+  doc["acceleration"] = ioConfig.stepperMotor.acceleration;
+  doc["invertDirection"] = ioConfig.stepperMotor.invertDirection;
+  doc["enabled"] = ioConfig.stepperMotor.enabled;
+  doc["showOnDashboard"] = ioConfig.stepperMotor.showOnDashboard;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveStepperConfig() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  // Update configuration
+  if (doc.containsKey("name")) {
+    strlcpy(ioConfig.stepperMotor.name, doc["name"] | "", 
+            sizeof(ioConfig.stepperMotor.name));
+  }
+  
+  if (doc.containsKey("stepsPerRev")) {
+    ioConfig.stepperMotor.stepsPerRev = doc["stepsPerRev"] | 200;
+  }
+  
+  if (doc.containsKey("maxRPM")) {
+    ioConfig.stepperMotor.maxRPM = doc["maxRPM"] | 500;
+  }
+  
+  if (doc.containsKey("holdCurrent_mA")) {
+    ioConfig.stepperMotor.holdCurrent_mA = doc["holdCurrent_mA"] | 500;
+  }
+  
+  if (doc.containsKey("runCurrent_mA")) {
+    ioConfig.stepperMotor.runCurrent_mA = doc["runCurrent_mA"] | 1000;
+  }
+  
+  if (doc.containsKey("acceleration")) {
+    ioConfig.stepperMotor.acceleration = doc["acceleration"] | 100;
+  }
+  
+  if (doc.containsKey("invertDirection")) {
+    ioConfig.stepperMotor.invertDirection = doc["invertDirection"] | false;
+  }
+  
+  if (doc.containsKey("enabled")) {
+    ioConfig.stepperMotor.enabled = doc["enabled"] | true;
+  }
+  
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.stepperMotor.showOnDashboard = doc["showOnDashboard"] | false;
+  }
+  
+  // Save configuration to file
+  saveIOConfig();
+  
+  // Send updated config to IO MCU via IPC
+  IPC_ConfigStepper_t cfg;
+  cfg.index = 26;
+  strncpy(cfg.name, ioConfig.stepperMotor.name, sizeof(cfg.name) - 1);
+  cfg.name[sizeof(cfg.name) - 1] = '\0';
+  cfg.stepsPerRev = ioConfig.stepperMotor.stepsPerRev;
+  cfg.maxRPM = ioConfig.stepperMotor.maxRPM;
+  cfg.holdCurrent_mA = ioConfig.stepperMotor.holdCurrent_mA;
+  cfg.runCurrent_mA = ioConfig.stepperMotor.runCurrent_mA;
+  cfg.acceleration = ioConfig.stepperMotor.acceleration;
+  cfg.invertDirection = ioConfig.stepperMotor.invertDirection;
+  cfg.enabled = ioConfig.stepperMotor.enabled;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_STEPPER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Pushed Stepper config to IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Config saved and pushed\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to push Stepper config (queue full)\n");
+    server.send(200, "application/json", "{\"success\":true,\"warning\":\"Saved but IPC queue full\"}");
+  }
+}
+
+void handleSetStepperRPM() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error || !doc.containsKey("rpm")) {
+    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
+    return;
+  }
+  
+  float rpm = doc["rpm"] | 0.0f;
+  
+  // Validate RPM
+  if (rpm > ioConfig.stepperMotor.maxRPM) {
+    server.send(400, "application/json", "{\"error\":\"RPM exceeds maximum\"}");
+    return;
+  }
+  
+  // Send SET_RPM command via IPC
+  bool sent = sendStepperCommand(STEPPER_CMD_SET_RPM, rpm, true);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Set stepper RPM: %.1f\n", rpm);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+void handleSetStepperDirection() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error || !doc.containsKey("forward")) {
+    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
+    return;
+  }
+  
+  bool forward = doc["forward"];
+  
+  // Send SET_DIR command via IPC
+  bool sent = sendStepperCommand(STEPPER_CMD_SET_DIR, 0, forward);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Set stepper direction: %s\n", forward ? "Forward" : "Reverse");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+void handleStartStepper() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  float rpm = doc["rpm"] | 0.0f;
+  bool forward = doc["forward"] | true;
+  
+  // Validate RPM against configured max
+  if (rpm > ioConfig.stepperMotor.maxRPM) {
+    server.send(400, "application/json", "{\"error\":\"RPM exceeds maximum\"}");
+    return;
+  }
+  
+  // Send START command via IPC
+  bool sent = sendStepperCommand(STEPPER_CMD_START, rpm, forward);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Start stepper: RPM=%.1f, Direction=%s\n", 
+        rpm, forward ? "Forward" : "Reverse");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to start stepper: IPC queue full\n");
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+void handleStopStepper() {
+  // Send STOP command via IPC
+  bool sent = sendStepperCommand(STEPPER_CMD_STOP, 0, false);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Stop stepper motor\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to stop stepper: IPC queue full\n");
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+// --- DC Motor Configuration & Control Handlers ---
+
+void handleGetDCMotorConfig(uint8_t index) {
+  if (index < 27 || index >= 27 + MAX_DC_MOTORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid motor index\"}");
+    return;
+  }
+  
+  int motorIdx = index - 27;
+  StaticJsonDocument<256> doc;
+  doc["index"] = index;
+  doc["name"] = ioConfig.dcMotors[motorIdx].name;
+  doc["invertDirection"] = ioConfig.dcMotors[motorIdx].invertDirection;
+  doc["enabled"] = ioConfig.dcMotors[motorIdx].enabled;
+  doc["showOnDashboard"] = ioConfig.dcMotors[motorIdx].showOnDashboard;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveDCMotorConfig(uint8_t index) {
+  if (index < 27 || index >= 27 + MAX_DC_MOTORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid motor index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  int motorIdx = index - 27;
+  
+  // Update configuration
+  if (doc.containsKey("name")) {
+    strlcpy(ioConfig.dcMotors[motorIdx].name, doc["name"] | "", 
+            sizeof(ioConfig.dcMotors[motorIdx].name));
+  }
+  
+  if (doc.containsKey("invertDirection")) {
+    ioConfig.dcMotors[motorIdx].invertDirection = doc["invertDirection"] | false;
+  }
+  
+  if (doc.containsKey("enabled")) {
+    ioConfig.dcMotors[motorIdx].enabled = doc["enabled"] | true;
+  }
+  
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.dcMotors[motorIdx].showOnDashboard = doc["showOnDashboard"] | false;
+  }
+  
+  // Save configuration to file
+  saveIOConfig();
+  
+  // Send updated config to IO MCU via IPC
+  IPC_ConfigDCMotor_t cfg;
+  cfg.index = index;
+  strncpy(cfg.name, ioConfig.dcMotors[motorIdx].name, sizeof(cfg.name) - 1);
+  cfg.name[sizeof(cfg.name) - 1] = '\0';
+  cfg.invertDirection = ioConfig.dcMotors[motorIdx].invertDirection;
+  cfg.enabled = ioConfig.dcMotors[motorIdx].enabled;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_DCMOTOR, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Pushed DCMotor[%d] config to IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Config saved and pushed\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to push DCMotor[%d] config (queue full)\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"warning\":\"Saved but IPC queue full\"}");
+  }
+}
+
+void handleSetDCMotorPower(uint8_t index) {
+  if (index < 27 || index >= 27 + MAX_DC_MOTORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid motor index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error || !doc.containsKey("power")) {
+    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
+    return;
+  }
+  
+  float power = doc["power"] | 0.0f;
+  
+  // Validate power (0-100%)
+  if (power < 0.0f || power > 100.0f) {
+    server.send(400, "application/json", "{\"error\":\"Power must be 0-100%\"}");
+    return;
+  }
+  
+  // Send SET_POWER command via IPC
+  bool sent = sendDCMotorCommand(index, DCMOTOR_CMD_SET_POWER, power, true);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Set DC motor %d power: %.1f%%\n", index, power);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+void handleSetDCMotorDirection(uint8_t index) {
+  if (index < 27 || index >= 27 + MAX_DC_MOTORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid motor index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error || !doc.containsKey("forward")) {
+    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
+    return;
+  }
+  
+  bool forward = doc["forward"];
+  
+  // Send SET_DIR command via IPC
+  bool sent = sendDCMotorCommand(index, DCMOTOR_CMD_SET_DIR, 0, forward);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Set DC motor %d direction: %s\n", 
+        index, forward ? "Forward" : "Reverse");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+void handleStartDCMotor(uint8_t index) {
+  if (index < 27 || index >= 27 + MAX_DC_MOTORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid motor index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  float power = doc["power"] | 0.0f;
+  bool forward = doc["forward"] | true;
+  
+  // Validate power
+  if (power < 0.0f || power > 100.0f) {
+    server.send(400, "application/json", "{\"error\":\"Power must be 0-100%\"}");
+    return;
+  }
+  
+  // Send START command via IPC
+  bool sent = sendDCMotorCommand(index, DCMOTOR_CMD_START, power, forward);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Start DC motor %d: %.1f%%, %s\n", 
+        index, power, forward ? "Forward" : "Reverse");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to start DC motor %d: IPC queue full\n", index);
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+void handleStopDCMotor(uint8_t index) {
+  if (index < 27 || index >= 27 + MAX_DC_MOTORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid motor index\"}");
+    return;
+  }
+  
+  // Send STOP command via IPC
+  bool sent = sendDCMotorCommand(index, DCMOTOR_CMD_STOP, 0, false);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Stop DC motor %d\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to stop DC motor %d: IPC queue full\n", index);
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
 void setupWebServer()
 {
   // Initialize LittleFS for serving web files
@@ -1065,6 +1717,78 @@ void setupWebServer()
   server.on("/api/config/gpio/18", HTTP_POST, []() { handleSaveGPIOConfig(18); });
   server.on("/api/config/gpio/19", HTTP_POST, []() { handleSaveGPIOConfig(19); });
   server.on("/api/config/gpio/20", HTTP_POST, []() { handleSaveGPIOConfig(20); });
+
+  // ============================================================================
+  // Outputs API Endpoints
+  // ============================================================================
+  
+  // Get all outputs status (for monitoring)
+  server.on("/api/outputs", HTTP_GET, handleGetOutputs);
+  
+  // Digital Output Configuration (indices 21-25)
+  server.on("/api/config/output/21", HTTP_GET, []() { handleGetDigitalOutputConfig(21); });
+  server.on("/api/config/output/22", HTTP_GET, []() { handleGetDigitalOutputConfig(22); });
+  server.on("/api/config/output/23", HTTP_GET, []() { handleGetDigitalOutputConfig(23); });
+  server.on("/api/config/output/24", HTTP_GET, []() { handleGetDigitalOutputConfig(24); });
+  server.on("/api/config/output/25", HTTP_GET, []() { handleGetDigitalOutputConfig(25); });
+  
+  server.on("/api/config/output/21", HTTP_POST, []() { handleSaveDigitalOutputConfig(21); });
+  server.on("/api/config/output/22", HTTP_POST, []() { handleSaveDigitalOutputConfig(22); });
+  server.on("/api/config/output/23", HTTP_POST, []() { handleSaveDigitalOutputConfig(23); });
+  server.on("/api/config/output/24", HTTP_POST, []() { handleSaveDigitalOutputConfig(24); });
+  server.on("/api/config/output/25", HTTP_POST, []() { handleSaveDigitalOutputConfig(25); });
+  
+  // Digital Output Runtime Control
+  server.on("/api/output/21/state", HTTP_POST, []() { handleSetOutputState(21); });
+  server.on("/api/output/22/state", HTTP_POST, []() { handleSetOutputState(22); });
+  server.on("/api/output/23/state", HTTP_POST, []() { handleSetOutputState(23); });
+  server.on("/api/output/24/state", HTTP_POST, []() { handleSetOutputState(24); });
+  server.on("/api/output/25/state", HTTP_POST, []() { handleSetOutputState(25); });
+  
+  server.on("/api/output/21/value", HTTP_POST, []() { handleSetOutputValue(21); });
+  server.on("/api/output/22/value", HTTP_POST, []() { handleSetOutputValue(22); });
+  server.on("/api/output/23/value", HTTP_POST, []() { handleSetOutputValue(23); });
+  server.on("/api/output/24/value", HTTP_POST, []() { handleSetOutputValue(24); });
+  server.on("/api/output/25/value", HTTP_POST, []() { handleSetOutputValue(25); });
+  
+  // Stepper Motor Configuration & Control
+  server.on("/api/config/stepper", HTTP_GET, handleGetStepperConfig);
+  server.on("/api/config/stepper", HTTP_POST, handleSaveStepperConfig);
+  server.on("/api/stepper/rpm", HTTP_POST, handleSetStepperRPM);
+  server.on("/api/stepper/direction", HTTP_POST, handleSetStepperDirection);
+  server.on("/api/stepper/start", HTTP_POST, handleStartStepper);
+  server.on("/api/stepper/stop", HTTP_POST, handleStopStepper);
+  
+  // DC Motor Configuration & Control (indices 27-30)
+  server.on("/api/config/dcmotor/27", HTTP_GET, []() { handleGetDCMotorConfig(27); });
+  server.on("/api/config/dcmotor/28", HTTP_GET, []() { handleGetDCMotorConfig(28); });
+  server.on("/api/config/dcmotor/29", HTTP_GET, []() { handleGetDCMotorConfig(29); });
+  server.on("/api/config/dcmotor/30", HTTP_GET, []() { handleGetDCMotorConfig(30); });
+  
+  server.on("/api/config/dcmotor/27", HTTP_POST, []() { handleSaveDCMotorConfig(27); });
+  server.on("/api/config/dcmotor/28", HTTP_POST, []() { handleSaveDCMotorConfig(28); });
+  server.on("/api/config/dcmotor/29", HTTP_POST, []() { handleSaveDCMotorConfig(29); });
+  server.on("/api/config/dcmotor/30", HTTP_POST, []() { handleSaveDCMotorConfig(30); });
+  
+  server.on("/api/dcmotor/27/power", HTTP_POST, []() { handleSetDCMotorPower(27); });
+  server.on("/api/dcmotor/28/power", HTTP_POST, []() { handleSetDCMotorPower(28); });
+  server.on("/api/dcmotor/29/power", HTTP_POST, []() { handleSetDCMotorPower(29); });
+  server.on("/api/dcmotor/30/power", HTTP_POST, []() { handleSetDCMotorPower(30); });
+  
+  server.on("/api/dcmotor/27/direction", HTTP_POST, []() { handleSetDCMotorDirection(27); });
+  server.on("/api/dcmotor/28/direction", HTTP_POST, []() { handleSetDCMotorDirection(28); });
+  server.on("/api/dcmotor/29/direction", HTTP_POST, []() { handleSetDCMotorDirection(29); });
+  server.on("/api/dcmotor/30/direction", HTTP_POST, []() { handleSetDCMotorDirection(30); });
+  
+  server.on("/api/dcmotor/27/start", HTTP_POST, []() { handleStartDCMotor(27); });
+  server.on("/api/dcmotor/28/start", HTTP_POST, []() { handleStartDCMotor(28); });
+  server.on("/api/dcmotor/29/start", HTTP_POST, []() { handleStartDCMotor(29); });
+  server.on("/api/dcmotor/30/start", HTTP_POST, []() { handleStartDCMotor(30); });
+  
+  server.on("/api/dcmotor/27/stop", HTTP_POST, []() { handleStopDCMotor(27); });
+  server.on("/api/dcmotor/28/stop", HTTP_POST, []() { handleStopDCMotor(28); });
+  server.on("/api/dcmotor/29/stop", HTTP_POST, []() { handleStopDCMotor(29); });
+  server.on("/api/dcmotor/30/stop", HTTP_POST, []() { handleStopDCMotor(30); });
 
   // Setup API endpoints
   setupNetworkAPI();
