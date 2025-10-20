@@ -1012,8 +1012,8 @@ void handleGetOutputs() {
   ObjectCache::CachedObject* stepperObj = objectCache.getObject(26);
   if (stepperObj && stepperObj->valid && stepperObj->lastUpdate > 0) {
     stepper["rpm"] = stepperObj->value;  // Current RPM
-    stepper["running"] = stepperObj->value > 0;  // Running if RPM > 0
-    stepper["direction"] = true;  // TODO: Need separate field for direction
+    stepper["running"] = (stepperObj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+    stepper["direction"] = (stepperObj->flags & IPC_SENSOR_FLAG_DIRECTION) ? true : false;
   } else {
     stepper["running"] = false;
     stepper["rpm"] = 0;
@@ -1033,8 +1033,8 @@ void handleGetOutputs() {
     ObjectCache::CachedObject* motorObj = objectCache.getObject(index);
     if (motorObj && motorObj->valid && motorObj->lastUpdate > 0) {
       motor["power"] = motorObj->value;  // Current power %
-      motor["running"] = motorObj->value > 0;  // Running if power > 0
-      motor["direction"] = true;  // TODO: Need separate field for direction
+      motor["running"] = (motorObj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+      motor["direction"] = (motorObj->flags & IPC_SENSOR_FLAG_DIRECTION) ? true : false;
     } else {
       motor["running"] = false;
       motor["power"] = 0;
@@ -1251,11 +1251,11 @@ void handleSaveStepperConfig() {
   }
   
   if (doc.containsKey("holdCurrent_mA")) {
-    ioConfig.stepperMotor.holdCurrent_mA = doc["holdCurrent_mA"] | 500;
+    ioConfig.stepperMotor.holdCurrent_mA = doc["holdCurrent_mA"] | 50;   // Safe default: 50mA
   }
   
   if (doc.containsKey("runCurrent_mA")) {
-    ioConfig.stepperMotor.runCurrent_mA = doc["runCurrent_mA"] | 1000;
+    ioConfig.stepperMotor.runCurrent_mA = doc["runCurrent_mA"] | 100;    // Safe default: 100mA
   }
   
   if (doc.containsKey("acceleration")) {
@@ -1384,15 +1384,24 @@ void handleStartStepper() {
     return;
   }
   
-  // Send START command via IPC
-  bool sent = sendStepperCommand(STEPPER_CMD_START, rpm, forward);
+  // Check if motor is currently running from cache
+  ObjectCache::CachedObject* stepperObj = objectCache.getObject(26);
+  bool isRunning = false;
+  if (stepperObj && stepperObj->valid) {
+    isRunning = (stepperObj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+  }
+  
+  // If already running, use UPDATE command, otherwise START
+  uint8_t command = isRunning ? STEPPER_CMD_UPDATE : STEPPER_CMD_START;
+  bool sent = sendStepperCommand(command, rpm, forward);
   
   if (sent) {
-    log(LOG_INFO, false, "Start stepper: RPM=%.1f, Direction=%s\n", 
-        rpm, forward ? "Forward" : "Reverse");
+    log(LOG_INFO, false, "%s stepper: RPM=%.1f, Direction=%s\n", 
+        isRunning ? "Update" : "Start", rpm, forward ? "Forward" : "Reverse");
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
   } else {
-    log(LOG_WARNING, false, "Failed to start stepper: IPC queue full\n");
+    log(LOG_WARNING, false, "Failed to %s stepper: IPC queue full\n", 
+        isRunning ? "update" : "start");
     server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
   }
 }

@@ -61,7 +61,7 @@ void pollSensors(void) {
   // Outputs: Digital Outputs (21-25), Stepper (26), DC Motors (27-30)
   objectCache.requestBulkUpdate(0, 31);
   
-  log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-30 (sensors + outputs)\n");
+  //log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-30 (sensors + outputs)\n");
 }
 
 void manageIPC(void) {
@@ -102,7 +102,7 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
  * @brief Handler for PING messages
  */
 void handlePing(uint8_t messageType, const uint8_t *payload, uint16_t length) {
-  log(LOG_DEBUG, false, "IPC: Received PING from SAME51, sending PONG\n");
+  //log(LOG_DEBUG, false, "IPC: Received PING from SAME51, sending PONG\n");
   // Respond with PONG
   ipc.sendPong();
 }

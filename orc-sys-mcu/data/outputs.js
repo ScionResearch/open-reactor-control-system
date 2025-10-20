@@ -7,6 +7,7 @@ let activeControls = new Set(); // Track controls being manipulated
 let lastOutputModes = new Map(); // Track output modes to detect changes
 let pendingCommands = new Map(); // Track pending commands {index: setValue}
 let stepperInputFocused = false; // Track if stepper RPM input has focus
+let dcMotorSlidersFocused = new Map(); // Track which DC motor sliders have focus {index: boolean}
 
 function initOutputsTab() {
     // Stop any existing interval
@@ -233,7 +234,10 @@ function renderStepperMotor(stepper) {
                 <div class="output-header-left">
                     <span class="output-name">${stepper.name || 'Stepper Motor'}</span>
                     <span class="output-status-badge ${stepper.running ? 'running' : 'stopped'}">
-                        ${stepper.running ? 'RUNNING' : 'STOPPED'}
+                        ${stepper.running ? 'ENABLED' : 'DISABLED'}
+                    </span>
+                    <span class="output-status-badge" style="background-color: #6c757d; margin-left: 4px;">
+                        ${stepper.direction ? '→ FORWARD' : '← REVERSE'}
                     </span>
                 </div>
                 <div class="output-header-right">
@@ -280,13 +284,13 @@ function renderStepperMotor(stepper) {
                 <!-- Start/Stop Buttons -->
                 <div class="control-group">
                     <div class="button-group">
-                        <button class="output-btn output-btn-success output-btn-wide" onclick="startStepper()">
+                        <button class="output-btn output-btn-success output-btn-wide" onclick="startStepper()" ${stepper.running ? 'disabled' : ''}>
                             <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M8,5.14V19.14L19,12.14L8,5.14Z" /></svg>
-                            ${stepper.running ? 'Update' : 'Start'}
+                            Enable
                         </button>
-                        <button class="output-btn output-btn-danger output-btn-wide" onclick="stopStepper()">
+                        <button class="output-btn output-btn-danger output-btn-wide" onclick="stopStepper()" ${!stepper.running ? 'disabled' : ''}>
                             <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M18,18H6V6H18V18Z" /></svg>
-                            Stop
+                            Disable
                         </button>
                     </div>
                 </div>
@@ -307,11 +311,16 @@ function renderStepperMotor(stepper) {
             label.textContent = `Target RPM (Max: ${stepper.maxRPM || 500})`;
         }
         
-        // Update status badge
-        const statusBadge = container.querySelector('.output-status-badge');
-        if (statusBadge) {
-            statusBadge.className = `output-status-badge ${stepper.running ? 'running' : 'stopped'}`;
-            statusBadge.textContent = stepper.running ? 'RUNNING' : 'STOPPED';
+        // Update status badges (running and direction)
+        const statusBadges = container.querySelectorAll('.output-status-badge');
+        if (statusBadges.length >= 1) {
+            // First badge: running status
+            statusBadges[0].className = `output-status-badge ${stepper.running ? 'running' : 'stopped'}`;
+            statusBadges[0].textContent = stepper.running ? 'ENABLED' : 'DISABLED';
+        }
+        if (statusBadges.length >= 2) {
+            // Second badge: direction
+            statusBadges[1].textContent = stepper.direction ? '→ FORWARD' : '← REVERSE';
         }
         
         // Update direction buttons
@@ -321,16 +330,13 @@ function renderStepperMotor(stepper) {
             buttons[1].className = `output-btn ${!stepper.direction ? 'output-btn-primary' : 'output-btn-secondary'}`;
         }
         
-        // Update start/stop buttons if needed
+        // Update enable/disable buttons
         const controlButtons = container.querySelectorAll('.control-group:last-child .button-group button');
         if (controlButtons.length >= 2) {
-            if (stepper.running) {
-                controlButtons[0].disabled = true;
-                controlButtons[1].disabled = false;
-            } else {
-                controlButtons[0].disabled = false;
-                controlButtons[1].disabled = true;
-            }
+            // Enable button: disabled when motor is enabled
+            controlButtons[0].disabled = stepper.running;
+            // Disable button: disabled when motor is disabled
+            controlButtons[1].disabled = !stepper.running;
         }
         
         // Update name
@@ -361,84 +367,169 @@ function renderDCMotors(motors) {
         return;
     }
     
-    container.innerHTML = motors.map(motor => `
-        <div class="output-item">
-            <div class="output-header">
-                <div class="output-header-left">
-                    <span class="output-name">${motor.name || `DC Motor ${motor.index - 26}`}</span>
-                    <span class="output-status-badge ${motor.running ? 'running' : 'stopped'}">
-                        ${motor.running ? 'RUNNING' : 'STOPPED'}
-                    </span>
+    // Check if initial render is needed (no motor items exist)
+    const needsFullRender = container.querySelectorAll('.output-item').length !== motors.length;
+    
+    if (needsFullRender) {
+        // Full render on first load
+        container.innerHTML = motors.map(motor => `
+            <div class="output-item" data-motor-index="${motor.index}">
+                <div class="output-header">
+                    <div class="output-header-left">
+                        <span class="output-name">${motor.name || `DC Motor ${motor.index - 26}`}</span>
+                        <span class="output-status-badge ${motor.running ? 'running' : 'stopped'}">
+                            ${motor.running ? 'RUNNING' : 'STOPPED'}
+                        </span>
+                        <span class="output-status-badge" style="background-color: #6c757d; margin-left: 4px;">
+                            ${motor.direction ? '→ FORWARD' : '← REVERSE'}
+                        </span>
+                    </div>
+                    <div class="output-header-right">
+                        <span class="dashboard-icon ${motor.d ? 'active' : 'inactive'}" 
+                              title="${motor.d ? 'Shown on Dashboard' : 'Hidden from Dashboard'}">
+                            <svg viewBox="0 0 24 24"><path d="M21,16V4H3V16H21M21,2A2,2 0 0,1 23,4V16A2,2 0 0,1 21,18H14V20H16V22H8V20H10V18H3C1.89,18 1,17.1 1,16V4C1,2.89 1.89,2 3,2H21M5,6H14V11H5V6M15,6H19V8H15V6M19,9V14H15V9H19M5,12H9V14H5V12M10,12H14V14H10V12Z" /></svg>
+                        </span>
+                        <button class="icon-btn" onclick="openDCMotorConfigModal(${motor.index})" title="Configure">
+                            <svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>
+                        </button>
+                    </div>
                 </div>
-                <div class="output-header-right">
-                    <span class="dashboard-icon ${motor.d ? 'active' : 'inactive'}" 
-                          title="${motor.d ? 'Shown on Dashboard' : 'Hidden from Dashboard'}">
-                        <svg viewBox="0 0 24 24"><path d="M21,16V4H3V16H21M21,2A2,2 0 0,1 23,4V16A2,2 0 0,1 21,18H14V20H16V22H8V20H10V18H3C1.89,18 1,17.1 1,16V4C1,2.89 1.89,2 3,2H21M5,6H14V11H5V6M15,6H19V8H15V6M19,9V14H15V9H19M5,12H9V14H5V12M10,12H14V14H10V12Z" /></svg>
-                    </span>
-                    <button class="icon-btn" onclick="openDCMotorConfigModal(${motor.index})" title="Configure">
-                        <svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>
-                    </button>
+                
+                <div class="dc-motor-controls">
+                    <!-- Power Control -->
+                    <div class="control-group">
+                        <label class="control-label">Set Power:</label>
+                        <div class="control-slider-group-full">
+                            <input type="range" min="0" max="100" value="${motor.power || 0}" 
+                                   id="motor-slider-${motor.index}"
+                                   onfocus="dcMotorSlidersFocused.set(${motor.index}, true)"
+                                   onblur="dcMotorSlidersFocused.set(${motor.index}, false)"
+                                   oninput="updateMotorPowerDisplay(${motor.index}, this.value)"
+                                   onchange="setDCMotorPower(${motor.index}, this.value)">
+                            <span class="value-display" id="motor-power-display-${motor.index}">${motor.power || 0}%</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Status Display -->
+                    <div class="motor-info-row">
+                        <div class="motor-info-item">
+                            <span class="motor-info-label">Actual Power</span>
+                            <span class="motor-info-value" id="motor-actual-power-${motor.index}">${motor.power || 0}%</span>
+                        </div>
+                        <div class="motor-info-item">
+                            <span class="motor-info-label">Current</span>
+                            <span class="motor-info-value" id="motor-current-${motor.index}">${(motor.current || 0).toFixed(2)}A</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Direction Buttons -->
+                    <div class="control-group">
+                        <label class="control-label">Direction</label>
+                        <div class="button-group" id="motor-direction-buttons-${motor.index}">
+                            <button class="output-btn ${motor.direction ? 'output-btn-primary' : 'output-btn-secondary'}" 
+                                    onclick="setDCMotorDirection(${motor.index}, true)">
+                                <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" /></svg>
+                                Forward
+                            </button>
+                            <button class="output-btn ${!motor.direction ? 'output-btn-primary' : 'output-btn-secondary'}" 
+                                    onclick="setDCMotorDirection(${motor.index}, false)">
+                                <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z" /></svg>
+                                Reverse
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Start/Stop Buttons -->
+                    <div class="control-group">
+                        <div class="button-group" id="motor-control-buttons-${motor.index}">
+                            <button class="output-btn output-btn-success output-btn-wide" 
+                                    onclick="startDCMotor(${motor.index})" 
+                                    ${motor.running ? 'disabled' : ''}>
+                                <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M8,5.14V19.14L19,12.14L8,5.14Z" /></svg>
+                                Start
+                            </button>
+                            <button class="output-btn output-btn-danger output-btn-wide" 
+                                    onclick="stopDCMotor(${motor.index})"
+                                    ${!motor.running ? 'disabled' : ''}>
+                                <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M18,18H6V6H18V18Z" /></svg>
+                                Stop
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
+        `).join('');
+    } else {
+        // Selective update - only update values for each motor
+        motors.forEach(motor => {
+            const motorItem = container.querySelector(`[data-motor-index="${motor.index}"]`);
+            if (!motorItem) return;
             
-            <div class="dc-motor-controls">
-                <!-- Power Control -->
-                <div class="control-group">
-                    <label class="control-label">Set Power:</label>
-                    <div class="control-slider-group-full">
-                        <input type="range" min="0" max="100" value="${motor.power || 0}" 
-                               id="motor-slider-${motor.index}"
-                               oninput="updateMotorPowerDisplay(${motor.index}, this.value)"
-                               onchange="setDCMotorPower(${motor.index}, this.value)">
-                        <span class="value-display" id="motor-power-display-${motor.index}">${motor.power || 0}%</span>
-                    </div>
-                </div>
-                
-                <!-- Status Display -->
-                <div class="motor-info-row">
-                    <div class="motor-info-item">
-                        <span class="motor-info-label">Actual Power</span>
-                        <span class="motor-info-value">${motor.power || 0}%</span>
-                    </div>
-                    <div class="motor-info-item">
-                        <span class="motor-info-label">Current</span>
-                        <span class="motor-info-value">${(motor.current || 0).toFixed(2)}A</span>
-                    </div>
-                </div>
-                
-                <!-- Direction Buttons -->
-                <div class="control-group">
-                    <label class="control-label">Direction</label>
-                    <div class="button-group">
-                        <button class="output-btn ${motor.direction ? 'output-btn-primary' : 'output-btn-secondary'}" 
-                                onclick="setDCMotorDirection(${motor.index}, true)">
-                            <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" /></svg>
-                            Forward
-                        </button>
-                        <button class="output-btn ${!motor.direction ? 'output-btn-primary' : 'output-btn-secondary'}" 
-                                onclick="setDCMotorDirection(${motor.index}, false)">
-                            <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z" /></svg>
-                            Reverse
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- Start/Stop Buttons -->
-                <div class="control-group">
-                    <div class="button-group">
-                        <button class="output-btn output-btn-success output-btn-wide" onclick="startDCMotor(${motor.index})">
-                            <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M8,5.14V19.14L19,12.14L8,5.14Z" /></svg>
-                            Start
-                        </button>
-                        <button class="output-btn output-btn-danger output-btn-wide" onclick="stopDCMotor(${motor.index})">
-                            <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;"><path fill="currentColor" d="M18,18H6V6H18V18Z" /></svg>
-                            Stop
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `).join('');
+            // Update slider value only if not focused
+            const slider = document.getElementById(`motor-slider-${motor.index}`);
+            if (slider && !dcMotorSlidersFocused.get(motor.index)) {
+                slider.value = motor.power || 0;
+            }
+            
+            // Update slider display
+            const display = document.getElementById(`motor-power-display-${motor.index}`);
+            if (display && !dcMotorSlidersFocused.get(motor.index)) {
+                display.textContent = `${motor.power || 0}%`;
+            }
+            
+            // Update actual power display
+            const actualPower = document.getElementById(`motor-actual-power-${motor.index}`);
+            if (actualPower) {
+                actualPower.textContent = `${motor.power || 0}%`;
+            }
+            
+            // Update current display
+            const current = document.getElementById(`motor-current-${motor.index}`);
+            if (current) {
+                current.textContent = `${(motor.current || 0).toFixed(2)}A`;
+            }
+            
+            // Update status badges (running and direction)
+            const statusBadges = motorItem.querySelectorAll('.output-status-badge');
+            if (statusBadges.length >= 1) {
+                // First badge: running status
+                statusBadges[0].className = `output-status-badge ${motor.running ? 'running' : 'stopped'}`;
+                statusBadges[0].textContent = motor.running ? 'RUNNING' : 'STOPPED';
+            }
+            if (statusBadges.length >= 2) {
+                // Second badge: direction
+                statusBadges[1].textContent = motor.direction ? '→ FORWARD' : '← REVERSE';
+            }
+            
+            // Update direction buttons
+            const dirButtons = motorItem.querySelectorAll('#motor-direction-buttons-' + motor.index + ' button');
+            if (dirButtons.length >= 2) {
+                dirButtons[0].className = `output-btn ${motor.direction ? 'output-btn-primary' : 'output-btn-secondary'}`;
+                dirButtons[1].className = `output-btn ${!motor.direction ? 'output-btn-primary' : 'output-btn-secondary'}`;
+            }
+            
+            // Update start/stop buttons
+            const controlButtons = motorItem.querySelectorAll('#motor-control-buttons-' + motor.index + ' button');
+            if (controlButtons.length >= 2) {
+                // Start button: disabled when motor is running
+                controlButtons[0].disabled = motor.running;
+                // Stop button: disabled when motor is stopped
+                controlButtons[1].disabled = !motor.running;
+            }
+            
+            // Update name
+            const nameSpan = motorItem.querySelector('.output-name');
+            if (nameSpan) {
+                nameSpan.textContent = motor.name || `DC Motor ${motor.index - 26}`;
+            }
+            
+            // Update dashboard icon
+            const dashIcon = motorItem.querySelector('.dashboard-icon');
+            if (dashIcon) {
+                dashIcon.className = `dashboard-icon ${motor.d ? 'active' : 'inactive'}`;
+            }
+        });
+    }
 }
 
 // ============================================================================
@@ -557,6 +648,7 @@ async function setStepperDirection(forward) {
 
 async function startStepper() {
     const rpm = document.getElementById('stepperRPM').value;
+    console.log(`[STEPPER] Start/Update clicked: RPM=${rpm}, direction=${stepperDirection ? 'Forward' : 'Reverse'}`);
     try {
         const response = await fetch('/api/stepper/start', {
             method: 'POST',
@@ -567,11 +659,12 @@ async function startStepper() {
             })
         });
         if (!response.ok) throw new Error('Failed to start stepper');
-        showToast('success', 'Success', 'Stepper motor started');
+        console.log('[STEPPER] Command sent successfully');
+        showToast('success', 'Success', 'Stepper command sent');
         fetchAndRenderOutputs();
     } catch (error) {
-        console.error('Error starting stepper:', error);
-        showToast('error', 'Error', 'Failed to start motor');
+        console.error('[STEPPER] Error:', error);
+        showToast('error', 'Error', 'Failed to send command');
     }
 }
 
@@ -621,28 +714,48 @@ async function setDCMotorDirection(index, forward) {
 
 async function startDCMotor(index) {
     try {
+        // Get current power setting from slider
+        const slider = document.getElementById(`motor-slider-${index}`);
+        const power = slider ? parseFloat(slider.value) : 0;
+        
+        // Get current direction from data (find motor in last fetched data)
+        // For now, we'll read from the UI button states
+        const dirButtons = document.querySelectorAll(`#motor-direction-buttons-${index} button`);
+        const forward = dirButtons.length >= 2 ? 
+            dirButtons[0].classList.contains('output-btn-primary') : true;
+        
+        console.log(`[DC MOTOR] Start clicked: index=${index}, power=${power}%, direction=${forward ? 'Forward' : 'Reverse'}`);
+        
         const response = await fetch(`/api/dcmotor/${index}/start`, {
-            method: 'POST'
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                power: power,
+                forward: forward
+            })
         });
         if (!response.ok) throw new Error('Failed to start motor');
+        console.log('[DC MOTOR] Start command sent successfully');
         showToast('success', 'Success', 'Motor started');
         fetchAndRenderOutputs();
     } catch (error) {
-        console.error('Error starting DC motor:', error);
+        console.error('[DC MOTOR] Start error:', error);
         showToast('error', 'Error', 'Failed to start motor');
     }
 }
 
 async function stopDCMotor(index) {
     try {
+        console.log(`[DC MOTOR] Stop clicked: index=${index}`);
         const response = await fetch(`/api/dcmotor/${index}/stop`, {
             method: 'POST'
         });
         if (!response.ok) throw new Error('Failed to stop motor');
+        console.log('[DC MOTOR] Stop command sent successfully');
         showToast('success', 'Success', 'Motor stopped');
         fetchAndRenderOutputs();
     } catch (error) {
-        console.error('Error stopping DC motor:', error);
+        console.error('[DC MOTOR] Stop error:', error);
         showToast('error', 'Error', 'Failed to stop motor');
     }
 }

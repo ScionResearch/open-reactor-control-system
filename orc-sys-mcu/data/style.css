@@ -85,6 +85,14 @@ h1 { color: var(--accent-color); }
     transition: transform 0.2s;
 }
 .control-group button:hover { transform: scale(1.05); }
+.control-group button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+}
+.control-group button:disabled:hover {
+    transform: none !important;
+}
 /* Toggle Switch CSS */
 .switch { position: relative; display: inline-block; width: 60px; height: 34px; align-self: flex-start; }
 .switch input { opacity: 0; width: 0; height: 0; }
@@ -807,6 +815,15 @@ input:checked + .slider:before { transform: translateX(26px); }
 
 .modal-confirm:hover {
     background-color: #d32f2f;
+}
+
+.modal-buttons button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.modal-buttons button:disabled:hover {
+    background-color: inherit;
 }
 
 /* Status message styles (for backward compatibility) */
@@ -1765,6 +1782,41 @@ input:checked + .slider:before { transform: translateX(26px); }
     .output-btn:active {
         transform: translateY(0);
         box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    
+    /* Disabled button styling - applies to all output-btn variants */
+    .output-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    
+    .output-btn:disabled:hover {
+        transform: none !important;
+        box-shadow: none !important;
+        /* Prevent background color change on hover */
+        background-color: inherit;
+    }
+    
+    .output-btn-primary:disabled,
+    .output-btn-primary:disabled:hover {
+        background-color: #3498db;
+    }
+    
+    .output-btn-secondary:disabled,
+    .output-btn-secondary:disabled:hover {
+        background-color: #95a5a6;
+    }
+    
+    .output-btn-success:disabled,
+    .output-btn-success:disabled:hover {
+        background-color: #27ae60;
+    }
+    
+    .output-btn-danger:disabled,
+    .output-btn-danger:disabled:hover {
+        background-color: #e74c3c;
     }
     
     /* Range slider styling */

@@ -345,18 +345,18 @@ void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len) {
             waitCount++;
         }
         
-        if (waitCount > 0) {
+        /*if (waitCount > 0) {
             Serial.printf("[IPC] DEBUG: Waited %d*100us for queue space (queueCount=%d)\n", 
                          waitCount, ipc_txQueueCount());
-        }
+        }*/
         
         if (ipc_sendSensorData(index)) {
             sentCount++;
         }
     }
     
-    Serial.printf("[IPC] ✓ Sent bulk read response: %d-%d (%d requested, %d sent)\n",
-                 req->startIndex, req->startIndex + count - 1, count, sentCount);
+    /*Serial.printf("[IPC] ✓ Sent bulk read response: %d-%d (%d requested, %d sent)\n",
+                 req->startIndex, req->startIndex + count - 1, count, sentCount);*/
 }
 
 bool ipc_sendSensorData(uint16_t index) {
@@ -515,6 +515,8 @@ bool ipc_sendSensorData(uint16_t index) {
             data.value = stepper->rpm;
             strncpy(data.unit, stepper->unit, sizeof(data.unit) - 1);
             if (stepper->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (stepper->running) data.flags |= IPC_SENSOR_FLAG_RUNNING;
+            if (stepper->direction) data.flags |= IPC_SENSOR_FLAG_DIRECTION;
             if (stepper->newMessage) {
                 data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
                 strncpy(data.message, stepper->message, sizeof(data.message) - 1);
@@ -527,6 +529,8 @@ bool ipc_sendSensorData(uint16_t index) {
             data.value = motor->power;
             strncpy(data.unit, motor->unit, sizeof(data.unit) - 1);
             if (motor->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (motor->running) data.flags |= IPC_SENSOR_FLAG_RUNNING;
+            if (motor->direction) data.flags |= IPC_SENSOR_FLAG_DIRECTION;
             if (motor->newMessage) {
                 data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
                 strncpy(data.message, motor->message, sizeof(data.message) - 1);
@@ -590,7 +594,7 @@ bool ipc_sendSensorData(uint16_t index) {
     
     bool sent = ipc_sendPacket(IPC_MSG_SENSOR_DATA, (uint8_t*)&data, sizeof(data));
     if (sent) {
-        Serial.printf("[IPC] ✓ Sent %s: %.2f %s\n", objIndex[index].name, data.value, data.unit);
+        //Serial.printf("[IPC] ✓ Sent %s: %.2f %s\n", objIndex[index].name, data.value, data.unit);
     } else {
         Serial.printf("[IPC] DEBUG: Failed to send packet for index %d - TX queue full?\n", index);
     }
@@ -761,6 +765,9 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
     
     const IPC_StepperControl_t *cmd = (const IPC_StepperControl_t*)payload;
     
+    Serial.printf("[IPC] Stepper control: cmd=%d, rpm=%.1f, dir=%d\n", 
+                 cmd->command, cmd->rpm, cmd->direction);
+    
     // Validate index (must be 26)
     if (cmd->index != 26) {
         ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
@@ -802,10 +809,23 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
             
         case STEPPER_CMD_SET_DIR:
             stepper->direction = cmd->direction;
-            success = stepper_update(true);  // Apply direction change
-            if (!success) {
-                strcpy(message, "Failed to set direction");
-                errorCode = CTRL_ERR_DRIVER_FAULT;
+            // Only apply direction if motor is currently enabled (running or ready to run)
+            // If motor is running, this will update direction dynamically
+            // If motor is stopped, direction is just stored for next start
+            if (stepper->enabled) {
+                success = stepper_update(true);
+                if (!success) {
+                    strcpy(message, "Failed to apply direction");
+                    errorCode = CTRL_ERR_DRIVER_FAULT;
+
+                    // Debug
+                    if (stepperDevice.fault) Serial.printf("[STEPPER] Direction apply failed: %s\n", stepperDevice.message);
+                }
+            } else {
+                // Just store direction for next start
+                success = true;
+                Serial.printf("[STEPPER] Direction stored: %s (motor stopped)\n", 
+                             stepper->direction ? "Forward" : "Reverse");
             }
             break;
             
@@ -886,7 +906,20 @@ void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
         case DCMOTOR_CMD_SET_POWER:
             if (cmd->power >= 0.0f && cmd->power <= 100.0f) {
                 motor->power = cmd->power;
-                success = true;
+                // If motor is running, apply the new power immediately
+                if (motor->enabled && motor->running) {
+                    success = motor_run(motorNum, (uint8_t)cmd->power, motor->direction);
+                    if (!success) {
+                        strcpy(message, "Failed to update power");
+                        errorCode = CTRL_ERR_DRIVER_FAULT;
+                    } else {
+                        Serial.printf("[DC MOTOR] Updated power to %.1f%% while running\n", cmd->power);
+                    }
+                } else {
+                    // Just store for next start
+                    success = true;
+                    Serial.printf("[DC MOTOR] Power stored: %.1f%% (motor stopped)\n", cmd->power);
+                }
             } else {
                 strcpy(message, "Power out of range (0-100%)");
                 errorCode = CTRL_ERR_OUT_OF_RANGE;
@@ -895,7 +928,19 @@ void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
             
         case DCMOTOR_CMD_SET_DIR:
             motor->direction = cmd->direction;
-            success = true;
+            // If motor is running, apply the direction change immediately
+            if (motor->enabled && motor->running) {
+                success = motor_run(motorNum, (uint8_t)motor->power, cmd->direction);
+                if (!success) {
+                    strcpy(message, "Failed to update direction");
+                    errorCode = CTRL_ERR_DRIVER_FAULT;
+                }
+            } else {
+                // Just store for next start
+                success = true;
+                Serial.printf("[DC MOTOR] Direction stored: %s (motor stopped)\n", 
+                             cmd->direction ? "Forward" : "Reverse");
+            }
             break;
             
         case DCMOTOR_CMD_START:
@@ -1309,6 +1354,9 @@ void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len) {
     // Get stepper device object
     StepperDevice_t *stepper = (StepperDevice_t*)objIndex[26].obj;
     if (stepper) {
+        // Save current enabled state to prevent inadvertent motor start
+        bool wasEnabled = stepper->enabled;
+        
         // Apply configuration
         stepper->stepsPerRev = cfg->stepsPerRev;
         stepper->maxRPM = cfg->maxRPM;
@@ -1316,13 +1364,19 @@ void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len) {
         stepper->runCurrent = cfg->runCurrent_mA;
         stepper->acceleration = cfg->acceleration;
         stepper->inverted = cfg->invertDirection;
-        stepper->enabled = cfg->enabled;
+        // DON'T update enabled state from config - preserve current runtime state
+        // stepper->enabled = cfg->enabled;  // Removed to prevent inadvertent enable
         
-        // Apply to driver (this will configure TMC5130)
-        stepper_update(true);
-        
-        Serial.printf("[IPC] ✓ Stepper[26]: %s, maxRPM=%d, steps=%d, Irun=%dmA\n",
-                     cfg->name, cfg->maxRPM, cfg->stepsPerRev, cfg->runCurrent_mA);
+        // Apply to driver only if motor is currently enabled
+        // This prevents the motor from starting just because config was updated
+        if (wasEnabled) {
+            stepper_update(true);
+            Serial.printf("[IPC] ✓ Stepper[26]: %s, maxRPM=%d, steps=%d, Irun=%dmA (updated while enabled)\n",
+                         cfg->name, cfg->maxRPM, cfg->stepsPerRev, cfg->runCurrent_mA);
+        } else {
+            Serial.printf("[IPC] ✓ Stepper[26]: %s, maxRPM=%d, steps=%d, Irun=%dmA (config saved, motor disabled)\n",
+                         cfg->name, cfg->maxRPM, cfg->stepsPerRev, cfg->runCurrent_mA);
+        }
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "Stepper motor object not initialized");
     }

@@ -15,7 +15,7 @@ void schedulerHeatbeat(void) {
 void printStuff(void) {  
   // Print CPU usage summary
   //Serial.println("\n=== CPU Usage Report ===");
-  Serial.printf("Total CPU Usage: %0.2f%%\n", tasks.getTotalCpuUsagePercent());
+  //Serial.printf("Total CPU Usage: %0.2f%%\n", tasks.getTotalCpuUsagePercent());
   //Serial.println("Task information ↓↓↓\n");
   
   /*if (analog_input_task) {
@@ -94,7 +94,7 @@ void printStuff(void) {
     Serial.println("MFC task not created.");
   }*/
 
-  if (ipc_task) {
+  /*if (ipc_task) {
     Serial.printf("IPC task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 
                   ipc_task->getLastExecTime(), ipc_task->getMinExecTime(), 
                   ipc_task->getMaxExecTime(), ipc_task->getAverageExecTime(),
@@ -103,7 +103,7 @@ void printStuff(void) {
                   ipc_isConnected() ? "YES" : "NO",
                   ipcDriver.rxPacketCount, ipcDriver.txPacketCount,
                   ipcDriver.rxErrorCount, ipcDriver.crcErrorCount);
-  } else Serial.println("IPC task not created.");
+  } else Serial.println("IPC task not created.");*/
 
   /*if (printStuff_task) {
     Serial.printf("Print stuff task µs last: %d, min: %d, max: %d, avg: %0.2f, CPU: %0.2f%%\n", 

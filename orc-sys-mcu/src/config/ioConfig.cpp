@@ -85,8 +85,8 @@ void setDefaultIOConfig() {
             sizeof(ioConfig.stepperMotor.name));
     ioConfig.stepperMotor.stepsPerRev = 200;
     ioConfig.stepperMotor.maxRPM = 500;
-    ioConfig.stepperMotor.holdCurrent_mA = 500;
-    ioConfig.stepperMotor.runCurrent_mA = 1000;
+    ioConfig.stepperMotor.holdCurrent_mA = 50;   // Safe default: 50mA hold current
+    ioConfig.stepperMotor.runCurrent_mA = 100;   // Safe default: 100mA run current
     ioConfig.stepperMotor.acceleration = 100;
     ioConfig.stepperMotor.invertDirection = false;
     ioConfig.stepperMotor.enabled = true;
@@ -257,8 +257,8 @@ bool loadIOConfig() {
                 sizeof(ioConfig.stepperMotor.name));
         ioConfig.stepperMotor.stepsPerRev = stepper["stepsPerRev"] | 200;
         ioConfig.stepperMotor.maxRPM = stepper["maxRPM"] | 500;
-        ioConfig.stepperMotor.holdCurrent_mA = stepper["holdCurrent_mA"] | 500;
-        ioConfig.stepperMotor.runCurrent_mA = stepper["runCurrent_mA"] | 1000;
+        ioConfig.stepperMotor.holdCurrent_mA = stepper["holdCurrent_mA"] | 50;   // Safe default: 50mA
+        ioConfig.stepperMotor.runCurrent_mA = stepper["runCurrent_mA"] | 100;    // Safe default: 100mA
         ioConfig.stepperMotor.acceleration = stepper["acceleration"] | 100;
         ioConfig.stepperMotor.invertDirection = stepper["invertDirection"] | false;
         ioConfig.stepperMotor.enabled = stepper["enabled"] | true;
