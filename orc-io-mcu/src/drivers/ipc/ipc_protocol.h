@@ -179,11 +179,16 @@ struct IPC_SensorBulkReadReq_t {
 struct IPC_SensorData_t {
     uint16_t index;
     uint8_t objectType;      // Type verification
-    uint8_t flags;           // Bit 0: fault, Bit 1: newMessage, Bit 2-7: reserved
+    uint8_t flags;           // Bit 0: fault, Bit 1: newMessage, Bit 2: running, Bit 3: direction
     float value;             // Primary sensor value
-    char unit[8];            // Unit string
+    char unit[8];            // Unit string (for primary value)
     uint32_t timestamp;      // Optional timestamp (0 if not used)
     char message[100];       // Optional message (if newMessage flag set)
+    
+    // Multi-value extension (for complex objects with multiple readings)
+    uint8_t valueCount;      // Number of additional values (0 = only primary value)
+    float additionalValues[4];     // Up to 4 additional values
+    char additionalUnits[4][8];    // Units for each additional value
 } __attribute__((packed));
 
 struct IPC_SensorBatchEntry_t {

@@ -535,6 +535,11 @@ bool ipc_sendSensorData(uint16_t index) {
                 data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
                 strncpy(data.message, motor->message, sizeof(data.message) - 1);
             }
+            
+            // Add motor current as additional value
+            data.valueCount = 1;
+            data.additionalValues[0] = (float)motor->runCurrent / 1000.0f;  // Convert mA to A
+            strncpy(data.additionalUnits[0], "A", sizeof(data.additionalUnits[0]) - 1);
             break;
         }
         

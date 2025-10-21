@@ -28,6 +28,16 @@ void ObjectCache::updateObject(const IPC_SensorData_t* data) {
     obj->lastUpdate = millis();
     obj->valid = true;
     
+    // Copy additional values if present
+    obj->valueCount = data->valueCount;
+    if (data->valueCount > 0 && data->valueCount <= 4) {
+        for (uint8_t i = 0; i < data->valueCount; i++) {
+            obj->additionalValues[i] = data->additionalValues[i];
+            strncpy(obj->additionalUnits[i], data->additionalUnits[i], sizeof(obj->additionalUnits[i]) - 1);
+            obj->additionalUnits[i][sizeof(obj->additionalUnits[i]) - 1] = '\0';
+        }
+    }
+    
     // log(LOG_DEBUG, false, "Cache: Updated object %d (type %d) = %.2f %s\n", 
     //     data->index, data->objectType, data->value, data->unit);
 }

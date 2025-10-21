@@ -18,13 +18,18 @@ public:
     struct CachedObject {
         uint8_t index;                  // Object index (0-79)
         uint8_t objectType;             // OBJ_T_xxx enum
-        float value;                    // Current value
-        char unit[8];                   // Unit string
+        float value;                    // Primary value
+        char unit[8];                   // Unit string (for primary value)
         char name[40];                  // Object name
         uint8_t flags;                  // IPC_SENSOR_FLAG_xxx
         char message[100];              // Fault/status message
         unsigned long lastUpdate;       // millis() of last update
         bool valid;                     // Has been initialized
+        
+        // Multi-value extension
+        uint8_t valueCount;             // Number of additional values (0 = only primary)
+        float additionalValues[4];      // Additional values
+        char additionalUnits[4][8];     // Units for additional values
     };
     
     ObjectCache();

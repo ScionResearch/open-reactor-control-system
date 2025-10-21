@@ -317,7 +317,7 @@ void setup() {
   RTDsensor_task = tasks.addTask(RTD_manage, 200, true, false);
   
   // Add onboard device tasks
-  ScheduledTask* motor_task = tasks.addTask([]() { motor_update(); }, 100, true, false);
+  ScheduledTask* motor_task = tasks.addTask([]() { motor_update(); }, 10, true, false);
   ScheduledTask* pwrSensor_task = tasks.addTask([]() { pwrSensor_update(); }, 1000, true, false);
   
   // Add peripheral device tasks using lambda functions

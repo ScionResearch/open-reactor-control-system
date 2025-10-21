@@ -93,15 +93,13 @@ uint8_t DRV8235::read_status(void) {
 void DRV8235::manage(void) {
     if (!_fault_cb_set) read_status();   // Read status manually if the fault pin interrupt is not used
     if (_currentPin < 0) return;
-    static uint16_t sample[100] = {0};
-    static uint8_t ptr = 0;
 
-    if (ptr >= 100) ptr = 0;
-    sample[ptr] = analogRead(_currentPin);
+    _current_sample[_current_sample_ptr] = analogRead(_currentPin);
     float movingAverage = 0;
-    for (uint8_t i = 0; i < 100; i++) movingAverage += sample[i];
+    for (uint8_t i = 0; i < 100; i++) movingAverage += _current_sample[i];
     _motor_current = static_cast<uint16_t>(movingAverage * (2000.0 / 409600.0));
-    ptr++;
+    _current_sample_ptr++;
+    if (_current_sample_ptr >= 100) _current_sample_ptr = 0;  // Wrap around
 }
 
 uint16_t DRV8235::motorCurrent(void) {

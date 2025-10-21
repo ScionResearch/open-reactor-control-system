@@ -172,4 +172,8 @@ class DRV8235
         bool _fault_cb_set = false;
 
         bool drv8235_debug = true;
+
+        // Current measurement moving average (per instance)
+        uint16_t _current_sample[100] = {0};
+        uint8_t _current_sample_ptr = 0;
 };

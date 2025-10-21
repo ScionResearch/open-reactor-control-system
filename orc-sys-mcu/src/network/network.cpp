@@ -1035,10 +1035,18 @@ void handleGetOutputs() {
       motor["power"] = motorObj->value;  // Current power %
       motor["running"] = (motorObj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
       motor["direction"] = (motorObj->flags & IPC_SENSOR_FLAG_DIRECTION) ? true : false;
+      
+      // Add current reading from additional values (if available)
+      if (motorObj->valueCount > 0) {
+        motor["current"] = motorObj->additionalValues[0];  // Motor current in Amps
+      } else {
+        motor["current"] = 0.0f;
+      }
     } else {
       motor["running"] = false;
       motor["power"] = 0;
       motor["direction"] = true;
+      motor["current"] = 0.0f;
     }
   }
   
