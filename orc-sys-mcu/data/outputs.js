@@ -8,6 +8,7 @@ let lastOutputModes = new Map(); // Track output modes to detect changes
 let pendingCommands = new Map(); // Track pending commands {index: setValue}
 let stepperInputFocused = false; // Track if stepper RPM input has focus
 let dcMotorSlidersFocused = new Map(); // Track which DC motor sliders have focus {index: boolean}
+let dacSlidersFocused = new Map(); // Track which DAC sliders have focus {index: boolean}
 
 function initOutputsTab() {
     // Stop any existing interval
@@ -39,12 +40,14 @@ async function fetchAndRenderOutputs() {
         console.log('Outputs data received:', data);
         
         // Render each section
+        renderDACOutputs(data.dacOutputs || []);
         renderDigitalOutputs(data.digitalOutputs || []);
         renderStepperMotor(data.stepperMotor);
         renderDCMotors(data.dcMotors || []);
         
     } catch (error) {
         console.error('Error fetching outputs:', error);
+        showOutputError('dac-outputs-list');
         showOutputError('digital-outputs-list');
         showOutputError('stepper-motor-list');
         showOutputError('dc-motors-list');
@@ -55,6 +58,124 @@ function showOutputError(containerId) {
     const container = document.getElementById(containerId);
     if (container) {
         container.innerHTML = '<div class="empty-message">Error loading data</div>';
+    }
+}
+
+// ============================================================================
+// DAC ANALOG OUTPUTS
+// ============================================================================
+
+function renderDACOutputs(dacOutputs) {
+    const container = document.getElementById('dac-outputs-list');
+    if (!container) return;
+    
+    if (dacOutputs.length === 0) {
+        container.innerHTML = '<div class="empty-message">No DAC outputs configured</div>';
+        return;
+    }
+    
+    // Check if initial render needed
+    const needsFullRender = !container.querySelector('.output-item');
+    
+    if (needsFullRender) {
+        // Full render
+        container.innerHTML = dacOutputs.map(dac => `
+            <div class="output-item" id="dac-item-${dac.index}">
+                <div class="output-header">
+                    <span class="output-name">${dac.name}</span>
+                    <span class="output-index">Index: ${dac.index}</span>
+                </div>
+                <div class="output-controls">
+                    <div class="control-group">
+                        <label class="control-label">Set Value:</label>
+                        <div class="control-slider-group-full">
+                            <input type="range" 
+                                   id="dac-slider-${dac.index}" 
+                                   min="0" 
+                                   max="10240" 
+                                   step="50" 
+                                   value="${dac.value}"
+                                   onfocus="dacSlidersFocused.set(${dac.index}, true)"
+                                   onblur="dacSlidersFocused.set(${dac.index}, false)"
+                                   oninput="updateDACDisplay(${dac.index}, this.value)"
+                                   onchange="setDACOutputValue(${dac.index}, parseFloat(this.value))">
+                            <span class="value-display" id="dac-display-${dac.index}">${dac.value.toFixed(0)} ${dac.unit}</span>
+                        </div>
+                    </div>
+                    <div class="status-info">
+                        <span class="status-label">Actual:</span>
+                        <span id="dac-actual-${dac.index}" class="status-value-compact status-synced">${dac.value.toFixed(0)} ${dac.unit}</span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        // Selective update - only update values, not controls
+        dacOutputs.forEach(dac => {
+            const slider = document.getElementById(`dac-slider-${dac.index}`);
+            const display = document.getElementById(`dac-display-${dac.index}`);
+            const actual = document.getElementById(`dac-actual-${dac.index}`);
+            
+            // Don't update slider if user is interacting with it
+            if (slider && !dacSlidersFocused.get(dac.index)) {
+                slider.value = dac.value;
+                if (display) {
+                    display.textContent = dac.value.toFixed(0);
+                }
+            }
+            
+            // Update actual value display
+            if (actual) {
+                actual.textContent = `${dac.value.toFixed(0)} ${dac.unit}`;
+                
+                // Update status styling
+                const sliderValue = slider ? parseFloat(slider.value) : dac.value;
+                const pending = pendingCommands.has(`dac-${dac.index}`);
+                const synced = Math.abs(sliderValue - dac.value) < 10; // Within 10 mV
+                
+                actual.classList.toggle('status-synced', synced && !pending);
+                actual.classList.toggle('status-pending', pending);
+            }
+        });
+    }
+}
+
+function updateDACDisplay(index, value) {
+    const display = document.getElementById(`dac-display-${index}`);
+    if (display) {
+        display.textContent = parseFloat(value).toFixed(0);
+    }
+}
+
+async function setDACOutputValue(index, value) {
+    console.log(`[DAC] Set output ${index} to ${value} mV`);
+    
+    // Mark as pending
+    pendingCommands.set(`dac-${index}`, value);
+    
+    try {
+        const response = await fetch(`/api/dac/${index}/value`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: value })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to set DAC value');
+        }
+        
+        console.log(`[DAC] Command sent for output ${index}`);
+        
+        // Remove from pending after a short delay (command has been sent)
+        setTimeout(() => {
+            pendingCommands.delete(`dac-${index}`);
+        }, 500);
+        
+    } catch (error) {
+        console.error('Error setting DAC output:', error);
+        showToast(`Error: ${error.message}`, 'error');
+        pendingCommands.delete(`dac-${index}`);
     }
 }
 

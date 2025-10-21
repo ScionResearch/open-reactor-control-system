@@ -18,6 +18,7 @@ void handleControlAck(uint8_t messageType, const uint8_t *payload, uint16_t leng
 
 // Output control command senders
 bool sendDigitalOutputCommand(uint16_t index, uint8_t command, bool state, float pwmDuty);
+bool sendAnalogOutputCommand(uint16_t index, uint8_t command, float value);
 bool sendStepperCommand(uint8_t command, float rpm, bool direction);
 bool sendDCMotorCommand(uint16_t index, uint8_t command, float power, bool direction);
 

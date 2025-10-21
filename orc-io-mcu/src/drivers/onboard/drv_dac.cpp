@@ -78,3 +78,17 @@ bool DAC_writeOutputs(void) {
     if (fault_occured) return false;
     return true;
 }
+
+void DAC_update(void) {
+    static float dacVal[2] = {0, 0};
+    if (dacDriver.outputObj[0]->value != dacVal[0] || dacDriver.outputObj[1]->value != dacVal[1]) {
+        if (!DAC_writeOutputs()) {
+            dacDriver.fault = true;
+            dacDriver.newMessage = true;
+            sprintf(dacDriver.message, "Failed to write DAC outputs");
+            return;
+        }
+        dacVal[0] = dacDriver.outputObj[0]->value;
+        dacVal[1] = dacDriver.outputObj[1]->value;
+    }
+}

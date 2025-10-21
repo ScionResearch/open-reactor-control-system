@@ -248,6 +248,11 @@ enum DCMotorCommand : uint8_t {
     DCMOTOR_CMD_UPDATE    = 0x05,  // Update power while running
 };
 
+enum AnalogOutputCommand : uint8_t {
+    AOUT_CMD_SET_VALUE = 0x01,  // Set output value in mV (0-10240)
+    AOUT_CMD_DISABLE   = 0x02,  // Disable output (set to 0)
+};
+
 // Control error codes
 enum ControlErrorCode : uint8_t {
     CTRL_ERR_NONE           = 0x00,  // No error
@@ -291,6 +296,14 @@ struct IPC_DCMotorControl_t {
     bool direction;          // true=forward, false=reverse
     bool enable;             // Enable motor
     uint8_t reserved[2];     // Padding
+} __attribute__((packed));
+
+// Analog Output (DAC) Control (indices 8-9)
+struct IPC_AnalogOutputControl_t {
+    uint16_t index;          // DAC index (8-9)
+    uint8_t objectType;      // Type verification (OBJ_T_ANALOG_OUTPUT)
+    uint8_t command;         // AnalogOutputCommand
+    float value;             // Output value in mV (0-10240)
 } __attribute__((packed));
 
 // Control Acknowledgment (for all control commands)

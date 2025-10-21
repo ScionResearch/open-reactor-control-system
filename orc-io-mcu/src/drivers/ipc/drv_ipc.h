@@ -221,6 +221,7 @@ void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_write(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_loop_write(const uint8_t *payload, uint16_t len);
 void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len);
+void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_read(const uint8_t *payload, uint16_t len);

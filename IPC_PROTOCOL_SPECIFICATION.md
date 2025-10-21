@@ -1,6 +1,6 @@
 # Inter-Processor Communication (IPC) Protocol Specification
-**Version:** 2.1  
-**Date:** 2025-10-18  
+**Version:** 2.3  
+**Date:** 2025-10-21  
 **Status:** ✅ Implemented & Operational
 
 ---
@@ -193,13 +193,36 @@ struct IPC_IndexSync_t {
 struct IPC_SensorData_t {
     uint16_t index;          // Object index
     uint8_t objectType;      // Type verification
-    uint8_t flags;           // Bit 0: fault, Bit 1: newMessage
+    uint8_t flags;           // Bit 0: fault, Bit 1: newMessage, Bit 2: running, Bit 3: direction
     float value;             // Primary sensor value
-    char unit[8];            // Unit string
+    char unit[8];            // Unit string (for primary value)
     uint32_t timestamp;      // Optional (0 if unused)
     char message[100];       // Optional message
+    
+    // Multi-value extension (v2.3+)
+    uint8_t valueCount;      // Number of additional values (0 = only primary value)
+    float additionalValues[4];     // Up to 4 additional values
+    char additionalUnits[4][8];    // Units for each additional value
 } __attribute__((packed));
 ```
+
+**Multi-Value Support (v2.3):**
+- Complex objects can now transmit multiple related values in a single message
+- `valueCount = 0`: Traditional single-value mode (backward compatible)
+- `valueCount > 0`: Additional values available in `additionalValues[]` array
+- Each additional value has its own unit string in `additionalUnits[]`
+
+**Example Use Cases:**
+- **DC Motors:** Primary = power (%), Additional[0] = current (A)
+- **Power Sensors:** Primary = voltage (V), Additional[0] = current (A), Additional[1] = power (W)
+- **Hamilton Probes:** Primary = pH/DO, Additional[0] = temperature (°C)
+- **Stepper Motor:** Primary = RPM, Additional[0] = current (A)
+
+**Benefits:**
+- Single IPC message instead of multiple sensor objects
+- Atomically consistent (all values from same measurement cycle)
+- More efficient use of object index space
+- Reduced IPC traffic
 
 #### SENSOR_BULK_READ_REQ (0x24) ✅ NEW
 **Purpose:** Request multiple sensor readings in one operation
@@ -765,13 +788,20 @@ ipc.begin(2000000);  // 2 Mbps
 
 ---
 
-**Document Version:** 2.2  
+**Document Version:** 2.3  
 **Protocol Version:** v1.0.0  
-**Last Updated:** 2025-10-19  
-**Status:** ✅ Operational at 2 Mbps with bulk sensor reading + output control in progress  
+**Last Updated:** 2025-10-21  
+**Status:** ✅ Operational at 2 Mbps with multi-value sensor data + output control  
 **Maintainer:** Open Reactor Control System Team
 
-**Recent Updates (v2.2):**
+**Recent Updates (v2.3):**
+- Added multi-value sensor data extension to `IPC_SensorData_t`
+- Implemented `valueCount`, `additionalValues[]`, and `additionalUnits[]` fields
+- DC motors now transmit power (%) + current (A) in single message
+- Backward compatible with single-value objects
+- Fixed DRV8235 library bug (static buffer sharing across motor instances)
+
+**Previous Updates (v2.2):**
 - Added CONTROL_WRITE (0x30) message structures for outputs
 - Added CONTROL_ACK (0x31) acknowledgment structure
 - Defined control commands for digital outputs, stepper motor, DC motors

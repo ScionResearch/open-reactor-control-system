@@ -310,6 +310,7 @@ void setup() {
 
   Serial.println("Adding tasks to scheduler");
   analog_input_task = tasks.addTask(ADC_update, 10, true, false);
+  analog_output_task = tasks.addTask(DAC_update, 100, true, false);
   output_task = tasks.addTask(output_update, 100, true, false);
   gpio_task = tasks.addTask(gpio_update, 100, true, true);
   modbus_task = tasks.addTask(modbus_manage, 10, true, true);

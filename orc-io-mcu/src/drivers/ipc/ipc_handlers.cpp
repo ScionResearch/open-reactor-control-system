@@ -643,6 +643,7 @@ void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
         return;
     }
     
+    // All control structures have: index(uint16) at offset 0, objectType(uint8) at offset 2
     uint16_t index = *((uint16_t*)payload);
     uint8_t objectType = *((uint8_t*)(payload + 2));
     
@@ -662,6 +663,10 @@ void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
     switch (objectType) {
         case OBJ_T_DIGITAL_OUTPUT:
             ipc_handle_digital_output_control(payload, len);
+            break;
+            
+        case OBJ_T_ANALOG_OUTPUT:
+            ipc_handle_analog_output_control(payload, len);
             break;
             
         case OBJ_T_STEPPER_MOTOR:
@@ -750,6 +755,68 @@ void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len) {
             output->pwmDuty = 0.0f;
             // Don't change pwmEnabled - that's a config setting
             success = true;
+            break;
+            
+        default:
+            strcpy(message, "Unknown command");
+            break;
+    }
+    
+    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success,
+                        success ? CTRL_ERR_NONE : CTRL_ERR_INVALID_CMD, message);
+}
+
+// Analog Output (DAC) Control Handler
+void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_AnalogOutputControl_t)) {
+        char errMsg[100];
+        sprintf(errMsg, "Invalid size: got %d, expected %d", len, sizeof(IPC_AnalogOutputControl_t));
+        ipc_sendError(IPC_ERR_PARSE_FAIL, errMsg);
+        return;
+    }
+    
+    const IPC_AnalogOutputControl_t *cmd = (const IPC_AnalogOutputControl_t*)payload;
+    
+    Serial.printf("[DAC] Control command: index=%d, type=%d, cmd=%d, value=%.1f\n",
+                 cmd->index, cmd->objectType, cmd->command, cmd->value);
+    
+    // Validate index range (8-9)
+    if (cmd->index < 8 || cmd->index > 9) {
+        Serial.printf("[DAC] ERROR: Index %d out of range\n", cmd->index);
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false, 
+                            CTRL_ERR_INVALID_INDEX, "Index out of range for analog output");
+        return;
+    }
+    
+    AnalogOutput_t *output = (AnalogOutput_t*)objIndex[cmd->index].obj;
+    Serial.printf("[DAC] Object lookup: index=%d, obj=%p, valid=%d\n", 
+                 cmd->index, output, objIndex[cmd->index].valid);
+    if (!output) {
+        Serial.printf("[DAC] ERROR: Object not found at index %d\n", cmd->index);
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+                            CTRL_ERR_INVALID_INDEX, "Output object not found");
+        return;
+    }
+    
+    bool success = false;
+    char message[100] = "OK";
+    
+    switch (cmd->command) {
+        case AOUT_CMD_SET_VALUE:
+            // Validate value range (0-10240 mV)
+            if (cmd->value >= 0.0f && cmd->value <= 10240.0f) {
+                output->value = cmd->value;
+                success = true;
+                Serial.printf("[DAC] Set output %d to %.1f mV\n", cmd->index, cmd->value);
+            } else {
+                strcpy(message, "Value out of range (0-10240 mV)");
+            }
+            break;
+            
+        case AOUT_CMD_DISABLE:
+            output->value = 0.0f;
+            success = true;
+            Serial.printf("[DAC] Disabled output %d\n", cmd->index);
             break;
             
         default:

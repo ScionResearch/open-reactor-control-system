@@ -25,3 +25,4 @@ extern DACDriver_t dacDriver;
 
 bool DAC_init(void);
 bool DAC_writeOutputs(void);
+void DAC_update(void);

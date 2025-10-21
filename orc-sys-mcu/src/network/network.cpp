@@ -981,6 +981,25 @@ void handleSaveGPIOConfig(uint8_t index) {
 void handleGetOutputs() {
   StaticJsonDocument<2048> doc;
   
+  // DAC Analog Outputs (indices 8-9)
+  JsonArray dacOutputs = doc.createNestedArray("dacOutputs");
+  for (int i = 0; i < MAX_DAC_OUTPUTS; i++) {
+    JsonObject dac = dacOutputs.createNestedObject();
+    uint16_t index = 8 + i;
+    dac["index"] = index;
+    dac["name"] = ioConfig.dacOutputs[i].name;
+    dac["unit"] = ioConfig.dacOutputs[i].unit;
+    dac["d"] = ioConfig.dacOutputs[i].showOnDashboard;
+    
+    // Get actual runtime state from object cache
+    ObjectCache::CachedObject* dacObj = objectCache.getObject(index);
+    if (dacObj && dacObj->valid && dacObj->lastUpdate > 0) {
+      dac["value"] = dacObj->value;  // Current output value in mV (0-10240)
+    } else {
+      dac["value"] = 0.0f;
+    }
+  }
+  
   // Digital Outputs (indices 21-25)
   JsonArray digitalOutputs = doc.createNestedArray("digitalOutputs");
   for (int i = 0; i < MAX_DIGITAL_OUTPUTS; i++) {
@@ -1207,6 +1226,47 @@ void handleSetOutputValue(uint8_t index) {
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
   } else {
     log(LOG_WARNING, false, "Failed to set output %d PWM: IPC queue full\n", index);
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+// --- Analog Output (DAC) Control Handlers ---
+
+void handleSetAnalogOutputValue(uint8_t index) {
+  if (index < 8 || index > 9) {
+    server.send(400, "application/json", "{\"error\":\"Invalid DAC index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error || !doc.containsKey("value")) {
+    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
+    return;
+  }
+  
+  float value = doc["value"] | 0.0f;
+  
+  // Validate value range (0-10240 mV)
+  if (value < 0.0f || value > 10240.0f) {
+    server.send(400, "application/json", "{\"error\":\"Value must be 0-10240 mV\"}");
+    return;
+  }
+  
+  // Send SET_VALUE command to IO MCU via IPC
+  bool sent = sendAnalogOutputCommand(index, AOUT_CMD_SET_VALUE, value);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Set DAC %d value: %.1f mV\n", index, value);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Command sent\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to set DAC %d: IPC queue full\n", index);
     server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
   }
 }
@@ -1767,6 +1827,10 @@ void setupWebServer()
   server.on("/api/output/23/value", HTTP_POST, []() { handleSetOutputValue(23); });
   server.on("/api/output/24/value", HTTP_POST, []() { handleSetOutputValue(24); });
   server.on("/api/output/25/value", HTTP_POST, []() { handleSetOutputValue(25); });
+  
+  // Analog Output (DAC) Runtime Control
+  server.on("/api/dac/8/value", HTTP_POST, []() { handleSetAnalogOutputValue(8); });
+  server.on("/api/dac/9/value", HTTP_POST, []() { handleSetAnalogOutputValue(9); });
   
   // Stepper Motor Configuration & Control
   server.on("/api/config/stepper", HTTP_GET, handleGetStepperConfig);

@@ -289,6 +289,33 @@ bool sendDigitalOutputCommand(uint16_t index, uint8_t command, bool state, float
 }
 
 /**
+ * @brief Send analog output (DAC) control command
+ * @param index Analog output index (8-9)
+ * @param command AnalogOutputCommand (SET_VALUE, DISABLE)
+ * @param value Output value in mV (0-10240)
+ * @return true if command was queued
+ */
+bool sendAnalogOutputCommand(uint16_t index, uint8_t command, float value) {
+  IPC_AnalogOutputControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));  // Zero out structure including padding
+  cmd.index = index;
+  cmd.objectType = OBJ_T_ANALOG_OUTPUT;
+  cmd.command = command;
+  cmd.value = value;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_DEBUG, false, "IPC TX: AnalogOutput[%d] command=%d, value=%.1f mV (size=%d)\n", 
+        index, command, value, sizeof(cmd));
+  } else {
+    log(LOG_WARNING, false, "IPC TX: Failed to send AnalogOutput command (queue full)\n");
+  }
+  
+  return sent;
+}
+
+/**
  * @brief Send stepper motor control command
  * @param command StepperCommand (SET_RPM, SET_DIR, START, STOP, UPDATE)
  * @param rpm Target RPM

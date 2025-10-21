@@ -273,6 +273,11 @@ enum DCMotorCommand : uint8_t {
     DCMOTOR_CMD_UPDATE    = 0x05,
 };
 
+enum AnalogOutputCommand : uint8_t {
+    AOUT_CMD_SET_VALUE = 0x01,  // Set output value in mV (0-10240)
+    AOUT_CMD_DISABLE   = 0x02,  // Disable output (set to 0)
+};
+
 enum ControlErrorCode : uint8_t {
     CTRL_ERR_NONE           = 0x00,
     CTRL_ERR_INVALID_INDEX  = 0x01,
@@ -293,7 +298,7 @@ struct IPC_ControlWrite_t {
 } __attribute__((packed));
 
 // Digital Output Control
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Output index (21-25)
     uint8_t objectType;      // OBJ_T_DIGITAL_OUTPUT
     uint8_t command;         // DigitalOutputCommand
@@ -301,10 +306,10 @@ typedef struct {
     uint8_t reserved1;       // Padding
     uint16_t reserved2;      // Padding
     float pwmDuty;           // PWM duty 0-100%
-} IPC_DigitalOutputControl_t __attribute__((packed));
+} IPC_DigitalOutputControl_t;
 
 // Stepper Motor Control
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Stepper index (26)
     uint8_t objectType;      // OBJ_T_STEPPER_MOTOR
     uint8_t command;         // StepperCommand
@@ -312,10 +317,10 @@ typedef struct {
     bool direction;          // Direction
     bool enable;             // Enable
     uint8_t reserved[2];     // Padding
-} IPC_StepperControl_t __attribute__((packed));
+} IPC_StepperControl_t;
 
 // DC Motor Control
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Motor index (27-30)
     uint8_t objectType;      // OBJ_T_BDC_MOTOR
     uint8_t command;         // DCMotorCommand
@@ -323,7 +328,15 @@ typedef struct {
     bool direction;          // Direction
     bool enable;             // Enable
     uint8_t reserved[2];     // Padding
-} IPC_DCMotorControl_t __attribute__((packed));
+} IPC_DCMotorControl_t;
+
+// Analog Output (DAC) Control
+typedef struct __attribute__((packed)) {
+    uint16_t index;          // DAC index (8-9)
+    uint8_t objectType;      // OBJ_T_ANALOG_OUTPUT
+    uint8_t command;         // AnalogOutputCommand
+    float value;             // Output value in mV (0-10240)
+} IPC_AnalogOutputControl_t;
 
 // Control Acknowledgment
 struct IPC_ControlAck_t {
@@ -567,31 +580,31 @@ struct WasteControl {
  * @brief Analog Input (ADC) configuration
  * Message type: IPC_MSG_CONFIG_ANALOG_INPUT
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Object index (0-7 for ADC inputs)
     uint8_t _padding[2];     // Alignment padding
     char unit[8];            // Unit string (e.g., "mV", "V", "A")
     float calScale;          // Calibration scale factor
     float calOffset;         // Calibration offset
-} IPC_ConfigAnalogInput_t __attribute__((packed));
+} IPC_ConfigAnalogInput_t;
 
 /**
  * @brief Analog Output (DAC) configuration
  * Message type: IPC_MSG_CONFIG_ANALOG_OUTPUT
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Object index (8-9 for DAC outputs)
     uint8_t _padding[2];     // Alignment padding
     char unit[8];            // Unit string (e.g., "mV", "V", "mA")
     float calScale;          // Calibration scale factor
     float calOffset;         // Calibration offset
-} IPC_ConfigAnalogOutput_t __attribute__((packed));
+} IPC_ConfigAnalogOutput_t;
 
 /**
  * @brief RTD Temperature Sensor configuration
  * Message type: IPC_MSG_CONFIG_RTD
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Object index (10-12 for RTD sensors)
     uint8_t wireConfig;      // 2, 3, or 4 wire configuration
     uint8_t _padding;        // Alignment padding
@@ -600,35 +613,35 @@ typedef struct {
     float calOffset;         // Calibration offset
     uint16_t nominalOhms;    // 100 (PT100) or 1000 (PT1000)
     uint8_t _padding2[2];    // Alignment padding
-} IPC_ConfigRTD_t __attribute__((packed));
+} IPC_ConfigRTD_t;
 
 /**
  * @brief GPIO configuration
  * Message type: IPC_MSG_CONFIG_GPIO
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Object index (13-20 for GPIO)
     char name[32];           // Custom name
     uint8_t pullMode;        // 0=None, 1=Pull-up, 2=Pull-down
     uint8_t enabled;         // Enable/disable flag
-} IPC_ConfigGPIO_t __attribute__((packed));
+} IPC_ConfigGPIO_t;
 
 /**
  * @brief Digital Output configuration
  * Message type: IPC_MSG_CONFIG_DIGITAL_OUTPUT
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Object index (21-25 for digital outputs)
     char name[32];           // Custom name
     uint8_t mode;            // 0=On/Off, 1=PWM
     uint8_t enabled;         // Enable/disable flag
-} IPC_ConfigDigitalOutput_t __attribute__((packed));
+} IPC_ConfigDigitalOutput_t;
 
 /**
  * @brief Stepper Motor configuration
  * Message type: IPC_MSG_CONFIG_STEPPER
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Object index (26 for stepper motor)
     char name[32];           // Custom name
     uint16_t stepsPerRev;    // Steps per revolution (e.g., 200)
@@ -638,18 +651,18 @@ typedef struct {
     uint16_t acceleration;   // Acceleration in RPM/s
     uint8_t invertDirection; // Invert direction flag
     uint8_t enabled;         // Enable/disable flag
-} IPC_ConfigStepper_t __attribute__((packed));
+} IPC_ConfigStepper_t;
 
 /**
  * @brief DC Motor configuration
  * Message type: IPC_MSG_CONFIG_DCMOTOR
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t index;          // Object index (27-30 for DC motors)
     char name[32];           // Custom name
     uint8_t invertDirection; // Invert direction flag
     uint8_t enabled;         // Enable/disable flag
-} IPC_ConfigDCMotor_t __attribute__((packed));
+} IPC_ConfigDCMotor_t;
 
 // Legacy message structure (for backward compatibility)
 struct Message {
