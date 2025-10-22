@@ -16,11 +16,10 @@
             <button class="tab-link active" onclick="openTab(event, 'dashboard')">Dashboard</button>
             <button class="tab-link" onclick="openTab(event, 'inputs')">Inputs</button>
             <button class="tab-link" onclick="openTab(event, 'outputs')">Outputs</button>
-            <button class="tab-link" onclick="openTab(event, 'devices')">Devices</button>
             <button class="tab-link" onclick="openTab(event, 'comports')">Com Ports</button>
+            <button class="tab-link" onclick="openTab(event, 'devices')">Devices</button>
             <button class="tab-link" onclick="openTab(event, 'sensors')">Sensors</button>
             <button class="tab-link" onclick="openTab(event, 'controllers')">Controllers</button>
-            <button class="tab-link" onclick="openTab(event, 'control')">Control</button>
             <button class="tab-link" onclick="openTab(event, 'filemanager')">File Manager</button>
             <button class="tab-link" onclick="openTab(event, 'system')">System</button>
             <button class="tab-link" onclick="openTab(event, 'settings')">Settings</button>
@@ -97,15 +96,24 @@
                 </div>
             </div>
 
+            <!-- Com Ports Tab -->
+            <div id="comports" class="tab-content">
+                <h2>Serial Communication Ports</h2>
+                <p class="page-description">RS-232 and RS-485 port configuration and status</p>
+                
+                <div class="comports-container">
+                    <div class="comports-section-card">
+                        <h3>COM Ports</h3>
+                        <div id="comports-list" class="comports-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Devices Tab (placeholder) -->
             <div id="devices" class="tab-content">
                 <h2>Peripheral Devices</h2>
-                <p class="page-description">Coming soon...</p>
-            </div>
-
-            <!-- Com Ports Tab (placeholder) -->
-            <div id="comports" class="tab-content">
-                <h2>Serial Communication Ports</h2>
                 <p class="page-description">Coming soon...</p>
             </div>
 
@@ -877,7 +885,64 @@
         </div>
     </div>
     
+    <!-- COM Port Configuration Modal -->
+    <div id="comportConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure <span id="comportConfigTitle"></span></h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="comportConfigName">Name:</label>
+                    <input type="text" id="comportConfigName" maxlength="31" placeholder="Port name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="comportConfigBaud">Baud Rate:</label>
+                    <select id="comportConfigBaud">
+                        <option value="1200">1200</option>
+                        <option value="2400">2400</option>
+                        <option value="4800">4800</option>
+                        <option value="9600">9600</option>
+                        <option value="19200">19200</option>
+                        <option value="38400">38400</option>
+                        <option value="57600">57600</option>
+                        <option value="115200">115200</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="comportConfigParity">Parity:</label>
+                    <select id="comportConfigParity">
+                        <option value="0">None</option>
+                        <option value="1">Odd</option>
+                        <option value="2">Even</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="comportConfigStopBits">Stop Bits:</label>
+                    <select id="comportConfigStopBits">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                    </select>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="comportShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeComPortConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveComPortConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+    
     <script src="script.js"></script>
+    <script src="comports.js"></script>
     <script src="outputs.js"></script>
 </body>
 </html>

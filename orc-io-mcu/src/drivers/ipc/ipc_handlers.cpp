@@ -84,6 +84,10 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             ipc_handle_config_dcmotor(payload, len);
             break;
             
+        case IPC_MSG_CONFIG_COMPORT:
+            ipc_handle_config_comport(payload, len);
+            break;
+            
         default:
             // Unknown message type
             ipc_sendError(IPC_ERR_INVALID_MSG, "Unknown message type");
@@ -1491,5 +1495,48 @@ void ipc_handle_config_dcmotor(const uint8_t *payload, uint16_t len) {
                      cfg->index, cfg->name, cfg->invertDirection ? "YES" : "NO");
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "DC motor object not initialized");
+    }
+}
+
+/**
+ * @brief Handle COM port configuration
+ */
+void ipc_handle_config_comport(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_ConfigComPort_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid COM port config message size");
+        return;
+    }
+    
+    const IPC_ConfigComPort_t *cfg = (const IPC_ConfigComPort_t*)payload;
+    
+    // Validate index range (0-3 for COM ports)
+    if (cfg->index >= 4) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "COM port index out of range (0-3)");
+        return;
+    }
+    
+    // Get modbus driver for this port
+    if (cfg->index >= 4) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Invalid modbus driver index");
+        return;
+    }
+    
+    // Apply configuration to port
+    if (modbusDriver[cfg->index].portObj) {
+        modbusDriver[cfg->index].portObj->baudRate = cfg->baudRate;
+        modbusDriver[cfg->index].portObj->dataBits = cfg->dataBits;
+        modbusDriver[cfg->index].portObj->stopBits = cfg->stopBits;
+        modbusDriver[cfg->index].portObj->parity = cfg->parity;
+        
+        // Flag that configuration has changed
+        modbusDriver[cfg->index].configChanged = true;
+        
+        Serial.printf("[IPC] ✓ COM Port[%d]: baud=%d, parity=%d, stop=%.1f\n",
+                     cfg->index, cfg->baudRate, cfg->parity, cfg->stopBits);
+        
+        // Note: The actual serial port reconfiguration will happen in modbus_manage()
+        // when it detects the configChanged flag
+    } else {
+        ipc_sendError(IPC_ERR_DEVICE_FAIL, "COM port object not initialized");
     }
 }

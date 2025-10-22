@@ -235,6 +235,7 @@ void ipc_handle_config_gpio(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_digital_output(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_dcmotor(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_comport(const uint8_t *payload, uint16_t len);
 
 // ============================================================================
 // UTILITY FUNCTIONS

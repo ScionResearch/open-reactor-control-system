@@ -125,6 +125,22 @@ struct DCMotorConfig {
 };
 
 /**
+ * @brief Configuration for COM ports (serial communication)
+ * Ports: 0-1 = RS-232, 2-3 = RS-485
+ */
+#define MAX_COM_PORTS 4
+
+struct ComPortConfig {
+    char name[32];
+    uint32_t baudRate;       // 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200
+    uint8_t dataBits;        // Fixed to 8 for Modbus
+    float stopBits;          // 1 or 2
+    uint8_t parity;          // 0=none, 1=odd, 2=even
+    bool enabled;
+    bool showOnDashboard;
+};
+
+/**
  * @brief Main IO configuration structure
  */
 struct IOConfig {
@@ -139,6 +155,7 @@ struct IOConfig {
     DigitalOutputConfig digitalOutputs[MAX_DIGITAL_OUTPUTS];
     StepperMotorConfig stepperMotor;  // Single stepper motor
     DCMotorConfig dcMotors[MAX_DC_MOTORS];
+    ComPortConfig comPorts[MAX_COM_PORTS];  // RS-232 (0-1) and RS-485 (2-3)
 };
 
 // Function prototypes

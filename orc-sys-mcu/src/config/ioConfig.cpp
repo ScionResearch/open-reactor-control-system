@@ -102,6 +102,20 @@ void setDefaultIOConfig() {
         ioConfig.dcMotors[i].enabled = true;
         ioConfig.dcMotors[i].showOnDashboard = false;
     }
+    
+    // ========================================================================
+    // COM Ports (0-1: RS-232, 2-3: RS-485)
+    // ========================================================================
+    const char* portNames[] = {"RS-232 Port 1", "RS-232 Port 2", "RS-485 Port 1", "RS-485 Port 2"};
+    for (int i = 0; i < MAX_COM_PORTS; i++) {
+        strlcpy(ioConfig.comPorts[i].name, portNames[i], sizeof(ioConfig.comPorts[i].name));
+        ioConfig.comPorts[i].baudRate = 9600;
+        ioConfig.comPorts[i].dataBits = 8;
+        ioConfig.comPorts[i].stopBits = 1.0;
+        ioConfig.comPorts[i].parity = 2;  // Even parity (standard for Modbus)
+        ioConfig.comPorts[i].enabled = true;
+        ioConfig.comPorts[i].showOnDashboard = false;
+    }
 }
 
 /**
@@ -280,6 +294,24 @@ bool loadIOConfig() {
         }
     }
     
+    // ========================================================================
+    // Parse COM Ports
+    // ========================================================================
+    JsonArray comPortArray = doc["com_ports"];
+    if (comPortArray) {
+        for (int i = 0; i < MAX_COM_PORTS && i < comPortArray.size(); i++) {
+            JsonObject port = comPortArray[i];
+            strlcpy(ioConfig.comPorts[i].name, port["name"] | "", 
+                    sizeof(ioConfig.comPorts[i].name));
+            ioConfig.comPorts[i].baudRate = port["baudRate"] | 9600;
+            ioConfig.comPorts[i].dataBits = port["dataBits"] | 8;
+            ioConfig.comPorts[i].stopBits = port["stopBits"] | 1.0;
+            ioConfig.comPorts[i].parity = port["parity"] | 2;
+            ioConfig.comPorts[i].enabled = port["enabled"] | true;
+            ioConfig.comPorts[i].showOnDashboard = port["showOnDashboard"] | false;
+        }
+    }
+    
     log(LOG_INFO, true, "IO configuration loaded successfully\n");
     return true;
 }
@@ -396,6 +428,21 @@ void saveIOConfig() {
         motor["invertDirection"] = ioConfig.dcMotors[i].invertDirection;
         motor["enabled"] = ioConfig.dcMotors[i].enabled;
         motor["showOnDashboard"] = ioConfig.dcMotors[i].showOnDashboard;
+    }
+    
+    // ========================================================================
+    // Serialize COM Ports
+    // ========================================================================
+    JsonArray comPortArray = doc.createNestedArray("com_ports");
+    for (int i = 0; i < MAX_COM_PORTS; i++) {
+        JsonObject port = comPortArray.createNestedObject();
+        port["name"] = ioConfig.comPorts[i].name;
+        port["baudRate"] = ioConfig.comPorts[i].baudRate;
+        port["dataBits"] = ioConfig.comPorts[i].dataBits;
+        port["stopBits"] = ioConfig.comPorts[i].stopBits;
+        port["parity"] = ioConfig.comPorts[i].parity;
+        port["enabled"] = ioConfig.comPorts[i].enabled;
+        port["showOnDashboard"] = ioConfig.comPorts[i].showOnDashboard;
     }
     
     // Open file for writing
@@ -714,5 +761,41 @@ void pushIOConfigToIOmcu() {
         delay(10);
     }
     
-    log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs)\n", sentCount);
+    // ========================================================================
+    // Push COM Port configurations (indices 0-3)
+    // ========================================================================
+    for (int i = 0; i < MAX_COM_PORTS; i++) {
+        if (!ioConfig.comPorts[i].enabled) continue;
+        
+        IPC_ConfigComPort_t cfg;
+        cfg.index = i;
+        cfg.baudRate = ioConfig.comPorts[i].baudRate;
+        cfg.dataBits = ioConfig.comPorts[i].dataBits;
+        cfg.stopBits = ioConfig.comPorts[i].stopBits;
+        cfg.parity = ioConfig.comPorts[i].parity;
+        
+        // Retry up to 10 times if queue is full
+        bool sent = false;
+        for (int retry = 0; retry < 10; retry++) {
+            if (ipc.sendPacket(IPC_MSG_CONFIG_COMPORT, (uint8_t*)&cfg, sizeof(cfg))) {
+                sent = true;
+                sentCount++;
+                const char* parityStr = (cfg.parity == 0) ? "N" :
+                                       (cfg.parity == 1) ? "O" : "E";
+                log(LOG_DEBUG, false, "  → COM Port[%d]: %lu baud, %d%s%.0f\n",
+                    i, cfg.baudRate, cfg.dataBits, parityStr, cfg.stopBits);
+                break;
+            }
+            ipc.update();
+            delay(10);
+        }
+        
+        if (!sent) {
+            log(LOG_WARNING, false, "  ✗ Failed to send COM Port[%d] config after retries\n", i);
+        }
+        
+        delay(10);
+    }
+    
+    log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports)\n", sentCount);
 }

@@ -87,6 +87,7 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_CONFIG_DIGITAL_OUTPUT = 0x67,  // Configure digital output
     IPC_MSG_CONFIG_STEPPER        = 0x68,  // Configure stepper motor
     IPC_MSG_CONFIG_DCMOTOR        = 0x69,  // Configure DC motor
+    IPC_MSG_CONFIG_COMPORT        = 0x6A,  // Configure COM port (serial)
 };
 
 // ============================================================================
@@ -663,6 +664,18 @@ typedef struct __attribute__((packed)) {
     uint8_t invertDirection; // Invert direction flag
     uint8_t enabled;         // Enable/disable flag
 } IPC_ConfigDCMotor_t;
+
+/**
+ * @brief COM Port configuration
+ * Message type: IPC_MSG_CONFIG_COMPORT
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t index;           // COM port index (0-3: RS232-1,2 / RS485-1,2)
+    uint32_t baudRate;       // Baud rate (1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200)
+    uint8_t dataBits;        // Data bits (fixed to 8 for Modbus)
+    float stopBits;          // Stop bits (1.0 or 2.0)
+    uint8_t parity;          // Parity: 0=none, 1=odd, 2=even
+} IPC_ConfigComPort_t;
 
 // Legacy message structure (for backward compatibility)
 struct Message {

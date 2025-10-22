@@ -1075,6 +1075,140 @@ void handleSaveGPIOConfig(uint8_t index) {
   }
 }
 
+// --- COM Port Configuration API Handlers ---
+
+void handleGetComPortConfig(uint8_t index) {
+  if (index >= MAX_COM_PORTS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid COM port index\"}");
+    return;
+  }
+  
+  StaticJsonDocument<256> doc;
+  doc["index"] = index;
+  doc["name"] = ioConfig.comPorts[index].name;
+  doc["baudRate"] = ioConfig.comPorts[index].baudRate;
+  doc["dataBits"] = ioConfig.comPorts[index].dataBits;
+  doc["stopBits"] = ioConfig.comPorts[index].stopBits;
+  doc["parity"] = ioConfig.comPorts[index].parity;
+  doc["showOnDashboard"] = ioConfig.comPorts[index].showOnDashboard;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveComPortConfig(uint8_t index) {
+  log(LOG_DEBUG, false, "handleSaveComPortConfig: START index=%d\n", index);
+  
+  if (index >= MAX_COM_PORTS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid COM port index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveComPortConfig: Parsing JSON\n");
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    log(LOG_DEBUG, false, "handleSaveComPortConfig: JSON parse error\n");
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveComPortConfig: Updating config\n");
+  
+  // Update name
+  if (doc.containsKey("name")) {
+    strncpy(ioConfig.comPorts[index].name, doc["name"], sizeof(ioConfig.comPorts[index].name) - 1);
+    ioConfig.comPorts[index].name[sizeof(ioConfig.comPorts[index].name) - 1] = '\0';
+  }
+  
+  // Update baud rate
+  if (doc.containsKey("baudRate")) {
+    ioConfig.comPorts[index].baudRate = doc["baudRate"];
+  }
+  
+  // Update data bits
+  if (doc.containsKey("dataBits")) {
+    ioConfig.comPorts[index].dataBits = doc["dataBits"];
+  }
+  
+  // Update stop bits
+  if (doc.containsKey("stopBits")) {
+    ioConfig.comPorts[index].stopBits = doc["stopBits"];
+  }
+  
+  // Update parity
+  if (doc.containsKey("parity")) {
+    ioConfig.comPorts[index].parity = doc["parity"];
+  }
+  
+  // Update showOnDashboard flag
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.comPorts[index].showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveComPortConfig: Calling saveIOConfig\n");
+  
+  // Save configuration to flash
+  saveIOConfig();
+  
+  log(LOG_DEBUG, false, "handleSaveComPortConfig: saveIOConfig complete, preparing IPC\n");
+  
+  // Send updated config to IO MCU
+  IPC_ConfigComPort_t cfg;
+  cfg.index = index;
+  cfg.baudRate = ioConfig.comPorts[index].baudRate;
+  cfg.dataBits = ioConfig.comPorts[index].dataBits;
+  cfg.stopBits = ioConfig.comPorts[index].stopBits;
+  cfg.parity = ioConfig.comPorts[index].parity;
+  
+  log(LOG_DEBUG, false, "handleSaveComPortConfig: Sending IPC packet\n");
+  
+  if (ipc.sendPacket(IPC_MSG_CONFIG_COMPORT, (uint8_t*)&cfg, sizeof(cfg))) {
+    log(LOG_INFO, false, "Updated COM port %d config: baud=%d, parity=%d, stop=%.1f\n",
+        index, cfg.baudRate, cfg.parity, cfg.stopBits);
+    log(LOG_DEBUG, false, "handleSaveComPortConfig: Sending response\n");
+    server.send(200, "application/json", "{\"success\":true}");
+    log(LOG_DEBUG, false, "handleSaveComPortConfig: COMPLETE\n");
+  } else {
+    log(LOG_WARNING, false, "Failed to send COM port %d config to IO MCU\n", index);
+    server.send(500, "application/json", "{\"success\":false,\"error\":\"Failed to update IO MCU\"}");
+  }
+}
+
+// --- COM Ports Status API Handler ---
+
+void handleGetComPorts() {
+  StaticJsonDocument<1024> doc;
+  
+  JsonArray ports = doc.createNestedArray("ports");
+  for (int i = 0; i < MAX_COM_PORTS; i++) {
+    JsonObject port = ports.createNestedObject();
+    port["index"] = i;
+    port["name"] = ioConfig.comPorts[i].name;
+    port["baud"] = ioConfig.comPorts[i].baudRate;
+    port["dataBits"] = ioConfig.comPorts[i].dataBits;
+    port["parity"] = ioConfig.comPorts[i].parity;
+    port["stopBits"] = ioConfig.comPorts[i].stopBits;
+    port["d"] = ioConfig.comPorts[i].showOnDashboard;
+    
+    // Get runtime status from object cache (if implemented)
+    // For now, check if port has communication errors
+    // This will be populated from IO MCU status updates
+    port["error"] = false;  // TODO: Get actual status from object cache
+  }
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
 // ============================================================================
 // OUTPUTS API HANDLERS
 // ============================================================================
@@ -1905,6 +2039,20 @@ void setupWebServer()
   server.on("/api/config/gpio/18", HTTP_POST, []() { handleSaveGPIOConfig(18); });
   server.on("/api/config/gpio/19", HTTP_POST, []() { handleSaveGPIOConfig(19); });
   server.on("/api/config/gpio/20", HTTP_POST, []() { handleSaveGPIOConfig(20); });
+
+  // COM Port Configuration endpoints (indices 0-3)
+  server.on("/api/config/comport/0", HTTP_GET, []() { handleGetComPortConfig(0); });
+  server.on("/api/config/comport/1", HTTP_GET, []() { handleGetComPortConfig(1); });
+  server.on("/api/config/comport/2", HTTP_GET, []() { handleGetComPortConfig(2); });
+  server.on("/api/config/comport/3", HTTP_GET, []() { handleGetComPortConfig(3); });
+  
+  server.on("/api/config/comport/0", HTTP_POST, []() { handleSaveComPortConfig(0); });
+  server.on("/api/config/comport/1", HTTP_POST, []() { handleSaveComPortConfig(1); });
+  server.on("/api/config/comport/2", HTTP_POST, []() { handleSaveComPortConfig(2); });
+  server.on("/api/config/comport/3", HTTP_POST, []() { handleSaveComPortConfig(3); });
+  
+  // Get all COM ports status
+  server.on("/api/comports", HTTP_GET, handleGetComPorts);
 
   // ============================================================================
   // Outputs API Endpoints

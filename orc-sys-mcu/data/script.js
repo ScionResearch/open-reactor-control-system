@@ -74,6 +74,8 @@ function openTab(evt, tabName) {
         initInputsTab();
     } else if (tabName === 'outputs') {
         initOutputsTab();
+    } else if (tabName === 'comports') {
+        initComPortsTab();
     } else if (tabName === 'sensors') {
         // Initialize sensors tab with continuous polling
         initSensorsTab();
@@ -768,8 +770,6 @@ async function loadControlSettings() {
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
-    // Switch to light theme by default
-    document.body.classList.add('theme-light');
     loadInitialSettings();  // Load initial NTP and timezone settings
     loadNetworkSettings();  // Load initial network settings
     loadMqttSettings();     // Load initial MQTT settings
