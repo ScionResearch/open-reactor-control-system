@@ -63,9 +63,12 @@ bool DAC_writeOutputs(void) {
         if (dacDriver.outputObj[i]->enabled) {
             if (dacDriver.outputObj[i]->value > 10240) dacDriver.outputObj[i]->value = 10240;
             else if (dacDriver.outputObj[i]->value < 0) dacDriver.outputObj[i]->value = 0;
-            dacVal[i] = dacDriver.outputObj[i]->value/mV_PER_LSB;
-            dacVal[i] *= dacDriver.outputObj[i]->cal->scale;
-            dacVal[i] += dacDriver.outputObj[i]->cal->offset;
+
+            dacVal[i] = dacDriver.outputObj[i]->value;  // copy mV value
+            dacVal[i] /= dacDriver.outputObj[i]->cal->scale;  // scale
+            dacVal[i] -= dacDriver.outputObj[i]->cal->offset;  // offset (in mV)
+            dacVal[i] /= mV_PER_LSB;  // convert to DAC value
+            
             if (!dacDriver.dac->writeDAC(i, (uint16_t)dacVal[i])) {
                 fault_occured = true;
                 dacDriver.outputObj[i]->fault = true;

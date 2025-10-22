@@ -237,23 +237,17 @@ void setup() {
   Serial.println("Initialising outputs");
   output_init();
 
-  Serial.println("Setting PWM values");
-  outputDriver.outputObj[0]->pwmEnabled = true;
-  outputDriver.outputObj[0]->pwmDuty = 50;
-  outputDriver.outputObj[0]->state = false;
-  outputDriver.outputObj[1]->pwmEnabled = true;
-  outputDriver.outputObj[1]->pwmDuty = 75;
-  outputDriver.outputObj[1]->state = false;
-  outputDriver.outputObj[2]->pwmEnabled = true;
-  outputDriver.outputObj[2]->pwmDuty = 25;
-  outputDriver.outputObj[2]->state = false;
-  outputDriver.outputObj[3]->pwmEnabled = true;
-  outputDriver.outputObj[3]->pwmDuty = 0;
-  outputDriver.outputObj[3]->state = false;
+  Serial.println("Setting output initial states");
+  for (int i = 0; i < 4; i++) {
+    outputDriver.outputObj[i]->pwmEnabled = false;
+    outputDriver.outputObj[i]->pwmDuty = 0;
+    outputDriver.outputObj[i]->state = false;
+  }
 
-  Serial.println("Setting heater output");
-  heaterOutput[0].pwmEnabled = true;
-  heaterOutput[0].pwmDuty = 20;
+  Serial.println("Setting heater output initial state");
+  heaterOutput[0].pwmEnabled = false;
+  heaterOutput[0].pwmDuty = 0;
+  heaterOutput[0].state = false;
 
   Serial.println("Initialising GPIO pins");
   gpio_init();

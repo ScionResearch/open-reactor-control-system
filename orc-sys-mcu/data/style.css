@@ -1142,6 +1142,7 @@ input:checked + .slider:before { transform: translateX(26px); }
     color: #0066cc;
     padding: 12px 15px;
     border-radius: 4px;
+    margin-top: 15px;
     margin-bottom: 15px;
     border-left: 4px solid #0066cc;
 }

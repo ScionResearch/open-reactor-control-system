@@ -751,6 +751,110 @@ void handleSaveADCConfig(uint8_t index) {
   }
 }
 
+// --- DAC Configuration API Handlers ---
+
+void handleGetDACConfig(uint8_t index) {
+  if (index < 8 || index > 9) {
+    server.send(400, "application/json", "{\"error\":\"Invalid DAC index\"}");
+    return;
+  }
+  
+  uint8_t dacIndex = index - 8;  // Convert to 0-1
+  
+  StaticJsonDocument<256> doc;
+  doc["index"] = index;
+  doc["name"] = ioConfig.dacOutputs[dacIndex].name;
+  doc["unit"] = ioConfig.dacOutputs[dacIndex].unit;
+  doc["enabled"] = ioConfig.dacOutputs[dacIndex].enabled;
+  doc["showOnDashboard"] = ioConfig.dacOutputs[dacIndex].showOnDashboard;
+  
+  JsonObject cal = doc.createNestedObject("cal");
+  cal["scale"] = ioConfig.dacOutputs[dacIndex].cal.scale;
+  cal["offset"] = ioConfig.dacOutputs[dacIndex].cal.offset;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveDACConfig(uint8_t index) {
+  log(LOG_DEBUG, false, "handleSaveDACConfig: START index=%d\n", index);
+  
+  if (index < 8 || index > 9) {
+    server.send(400, "application/json", "{\"error\":\"Invalid DAC index\"}");
+    return;
+  }
+  
+  uint8_t dacIndex = index - 8;  // Convert to 0-1
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveDACConfig: Parsing JSON\n");
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    log(LOG_DEBUG, false, "handleSaveDACConfig: JSON parse error\n");
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveDACConfig: Updating config\n");
+  
+  // Update name
+  if (doc.containsKey("name")) {
+    strncpy(ioConfig.dacOutputs[dacIndex].name, doc["name"], sizeof(ioConfig.dacOutputs[dacIndex].name) - 1);
+    ioConfig.dacOutputs[dacIndex].name[sizeof(ioConfig.dacOutputs[dacIndex].name) - 1] = '\0';
+  }
+  
+  // Update calibration values
+  if (doc.containsKey("cal")) {
+    JsonObject cal = doc["cal"];
+    if (cal.containsKey("scale")) {
+      ioConfig.dacOutputs[dacIndex].cal.scale = cal["scale"];
+    }
+    if (cal.containsKey("offset")) {
+      ioConfig.dacOutputs[dacIndex].cal.offset = cal["offset"];
+    }
+  }
+  
+  // Update showOnDashboard flag
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.dacOutputs[dacIndex].showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveDACConfig: Calling saveIOConfig\n");
+  
+  // Save configuration to flash
+  saveIOConfig();
+  
+  log(LOG_DEBUG, false, "handleSaveDACConfig: saveIOConfig complete, preparing IPC\n");
+  
+  // Send updated calibration to IO MCU
+  IPC_ConfigAnalogOutput_t cfg;
+  cfg.index = index;
+  strncpy(cfg.unit, ioConfig.dacOutputs[dacIndex].unit, sizeof(cfg.unit) - 1);
+  cfg.unit[sizeof(cfg.unit) - 1] = '\0';
+  cfg.calScale = ioConfig.dacOutputs[dacIndex].cal.scale;
+  cfg.calOffset = ioConfig.dacOutputs[dacIndex].cal.offset;
+  
+  log(LOG_DEBUG, false, "handleSaveDACConfig: Sending IPC packet\n");
+  
+  if (ipc.sendPacket(IPC_MSG_CONFIG_ANALOG_OUTPUT, (uint8_t*)&cfg, sizeof(cfg))) {
+    log(LOG_INFO, false, "Updated DAC[%d] config: %s, unit=%s, scale=%.4f, offset=%.4f\n",
+        index, ioConfig.dacOutputs[dacIndex].name, cfg.unit, cfg.calScale, cfg.calOffset);
+    log(LOG_DEBUG, false, "handleSaveDACConfig: Sending response\n");
+    server.send(200, "application/json", "{\"success\":true}");
+    log(LOG_DEBUG, false, "handleSaveDACConfig: COMPLETE\n");
+  } else {
+    log(LOG_WARNING, false, "Failed to send DAC[%d] config to IO MCU\n", index);
+    server.send(500, "application/json", "{\"success\":false,\"error\":\"Failed to update IO MCU\"}");
+  }
+}
+
 // --- RTD Configuration API Handlers ---
 
 void handleGetRTDConfig(uint8_t index) {
@@ -1766,6 +1870,13 @@ void setupWebServer()
   server.on("/api/config/adc/5", HTTP_POST, []() { handleSaveADCConfig(5); });
   server.on("/api/config/adc/6", HTTP_POST, []() { handleSaveADCConfig(6); });
   server.on("/api/config/adc/7", HTTP_POST, []() { handleSaveADCConfig(7); });
+  
+  // DAC Configuration endpoints (indices 8-9)
+  server.on("/api/dac/8/config", HTTP_GET, []() { handleGetDACConfig(8); });
+  server.on("/api/dac/9/config", HTTP_GET, []() { handleGetDACConfig(9); });
+  
+  server.on("/api/dac/8/config", HTTP_POST, []() { handleSaveDACConfig(8); });
+  server.on("/api/dac/9/config", HTTP_POST, []() { handleSaveDACConfig(9); });
   
   // RTD Configuration endpoints (indices 10-12)
   server.on("/api/config/rtd/10", HTTP_GET, []() { handleGetRTDConfig(10); });

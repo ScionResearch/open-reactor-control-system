@@ -30,42 +30,7 @@
             <!-- Dashboard Tab -->
             <div id="dashboard" class="tab-content active">
                 <h2>Live Status & Controls</h2>
-                <div class="dashboard-grid">
-                    <!-- Temperature Card -->
-                    <div class="card">
-                        <h3>Temperature</h3>
-                        <p class="sensor-reading"><span id="temp-reading">--</span> °C</p>
-                        <div class="control-group">
-                            <label for="temp-setpoint">Setpoint (°C)</label>
-                            <input type="number" id="temp-setpoint" step="0.1">
-                            <label class="switch">
-                                <input type="checkbox" id="temp-enabled">
-                                <span class="slider"></span>
-                            </label>
-                            <button onclick="saveControl('temperature')">Save</button>
-                        </div>
-                    </div>
-                    <!-- pH Card -->
-                    <div class="card">
-                        <h3>pH</h3>
-                        <p class="sensor-reading"><span id="ph-reading">--</span></p>
-                         <div class="control-group">
-                            <label for="ph-setpoint">Setpoint</label>
-                            <input type="number" id="ph-setpoint" step="0.01">
-                             <label class="switch">
-                                <input type="checkbox" id="ph-enabled">
-                                <span class="slider"></span>
-                            </label>
-                            <button onclick="saveControl('ph')">Save</button>
-                        </div>
-                    </div>
-                    <!-- Dissolved Oxygen Card -->
-                     <div class="card">
-                        <h3>Dissolved Oxygen</h3>
-                        <p class="sensor-reading"><span id="do-reading">--</span> %</p>
-                    </div>
-                    <!-- Add more cards for other sensors here -->
-                </div>
+                <!-- Add dashboard content here -->
             </div>
 
             <!-- Inputs Tab -->
@@ -164,39 +129,6 @@
             <div id="controllers" class="tab-content">
                 <h2>Control Loops</h2>
                 <p class="page-description">Coming soon...</p>
-            </div>
-            
-            <!-- Control Tab -->
-
-            <div id="control" class="tab-content">
-                <h2>Reactor Control</h2>
-                <div class="control-toolbar">
-                    <div class="left">
-                        <button id="customizeControlBtn" class="btn">Customize</button>
-                    </div>
-                    <div class="right">
-                        <input type="text" id="controlSearch" placeholder="Filter parameters..." />
-                    </div>
-                </div>
-                <div id="controlBoard" class="control-board" aria-live="polite"></div>
-
-                <!-- Control Customize Modal -->
-                <div id="controlCustomizeModal" class="modal-overlay">
-                    <div class="control-customize-modal">
-                        <h3>Manage Parameters</h3>
-                        <p class="modal-subtitle">Toggle visibility and reorder by dragging cards on the main view.</p>
-                        <div class="control-customize-actions">
-                            <button id="selectAllParams" class="btn btn-secondary">Select All</button>
-                            <button id="clearAllParams" class="btn btn-secondary">Clear All</button>
-                            <button id="resetLayout" class="btn btn-secondary">Reset Layout</button>
-                        </div>
-                        <div id="paramVisibilityList" class="param-visibility-list"></div>
-                        <div class="modal-buttons">
-                            <button id="closeCustomize" class="modal-cancel">Close</button>
-                            <button id="saveCustomize" class="modal-confirm">Save</button>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- File Manager Tab -->
@@ -578,6 +510,97 @@
             <div class="modal-buttons">
                 <button class="modal-cancel" onclick="closeADCConfigModal()">Cancel</button>
                 <button class="modal-confirm" onclick="saveADCConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- DAC Configuration Modal -->
+    <div id="dacConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure Analog Output <span id="dacConfigIndex"></span></h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="dacConfigName">Name:</label>
+                    <input type="text" id="dacConfigName" maxlength="31" placeholder="Output name">
+                </div>
+                
+                <div class="form-section">
+                    <h4>Calibration</h4>
+                    <p class="cal-description" style="margin-bottom: 15px;">Units are fixed at mV (0-10240)</p>
+                    <div class="calibration-tabs">
+                        <button class="cal-tab-btn active" data-tab="two-point-dac">Two-Point Calibration</button>
+                        <button class="cal-tab-btn" data-tab="direct-dac">Direct Entry</button>
+                    </div>
+                    
+                    <!-- Two-Point Calibration -->
+                    <div id="twoPointCalDAC" class="cal-tab-content active">
+                        <p class="cal-description">Enter two calibration points: current displayed value vs actual measured value</p>
+                        <div class="cal-point">
+                            <h5>Point 1 (Low)</h5>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="calP1RawDAC">Displayed Value (mV):</label>
+                                    <input type="number" id="calP1RawDAC" step="0.01" placeholder="e.g., 1500">
+                                </div>
+                                <div class="form-group">
+                                    <label for="calP1RealDAC">Measured Value (mV):</label>
+                                    <input type="number" id="calP1RealDAC" step="0.01" placeholder="e.g., 1250">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cal-point">
+                            <h5>Point 2 (High)</h5>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="calP2RawDAC">Displayed Value (mV):</label>
+                                    <input type="number" id="calP2RawDAC" step="0.01" placeholder="e.g., 2500">
+                                </div>
+                                <div class="form-group">
+                                    <label for="calP2RealDAC">Measured Value (mV):</label>
+                                    <input type="number" id="calP2RealDAC" step="0.01" placeholder="e.g., 2100">
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="calculateTwoPointCalDAC()">Calculate</button>
+                    </div>
+                    
+                    <!-- Direct Entry -->
+                    <div id="directCalDAC" class="cal-tab-content">
+                        <p class="cal-description">Directly enter scale and offset values</p>
+                        <div class="form-group">
+                            <label for="calScaleDAC">Scale:</label>
+                            <input type="number" id="calScaleDAC" step="0.0001" placeholder="1.0">
+                        </div>
+                        <div class="form-group">
+                            <label for="calOffsetDAC">Offset:</label>
+                            <input type="number" id="calOffsetDAC" step="0.01" placeholder="0.0">
+                        </div>
+                    </div>
+                    
+                    <div class="cal-result">
+                        <div class="form-group">
+                            <label>Calculated Scale:</label>
+                            <span id="resultScaleDAC" class="result-value">--</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Calculated Offset:</label>
+                            <span id="resultOffsetDAC" class="result-value">--</span>
+                        </div>
+                        <button class="btn btn-secondary" onclick="resetCalibrationDAC()" style="margin-top: 10px;">Reset to Default (1.0, 0.0)</button>
+                    </div>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="dacShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeDACConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveDACConfig()">Save</button>
             </div>
         </div>
     </div>

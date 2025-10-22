@@ -2162,6 +2162,158 @@ function calculateTwoPointCal() {
 }
 
 /* ============================================================================
+   DAC Output Configuration Modal Functions
+   ============================================================================ */
+
+let currentDACIndex = null;
+let dacConfigData = null;
+
+async function showDACConfig(index) {
+    currentDACIndex = index;
+    
+    try {
+        const response = await fetch(`/api/dac/${index}/config`);
+        if (!response.ok) throw new Error('Failed to load DAC config');
+        
+        dacConfigData = await response.json();
+        
+        // Populate form fields
+        document.getElementById('dacConfigIndex').textContent = `[${index}]`;
+        document.getElementById('dacConfigName').value = dacConfigData.name || '';
+        document.getElementById('calScaleDAC').value = dacConfigData.cal.scale || 1.0;
+        document.getElementById('calOffsetDAC').value = dacConfigData.cal.offset || 0.0;
+        document.getElementById('resultScaleDAC').textContent = dacConfigData.cal.scale.toFixed(4);
+        document.getElementById('resultOffsetDAC').textContent = dacConfigData.cal.offset.toFixed(2);
+        document.getElementById('dacShowOnDashboard').checked = dacConfigData.showOnDashboard || false;
+        
+        // Show modal
+        document.getElementById('dacConfigModal').classList.add('active');
+        
+    } catch (error) {
+        console.error('Error loading DAC config:', error);
+        showToast('error', 'Error', 'Failed to load DAC configuration');
+    }
+}
+
+function closeDACConfigModal() {
+    document.getElementById('dacConfigModal').classList.remove('active');
+    currentDACIndex = null;
+    dacConfigData = null;
+    
+    // Clear form fields
+    document.getElementById('dacConfigName').value = '';
+    document.getElementById('calP1RawDAC').value = '';
+    document.getElementById('calP1RealDAC').value = '';
+    document.getElementById('calP2RawDAC').value = '';
+    document.getElementById('calP2RealDAC').value = '';
+    document.getElementById('calScaleDAC').value = '';
+    document.getElementById('calOffsetDAC').value = '';
+    document.getElementById('resultScaleDAC').textContent = '--';
+    document.getElementById('resultOffsetDAC').textContent = '--';
+}
+
+async function saveDACConfig() {
+    if (currentDACIndex === null) return;
+    
+    // Get values from form
+    const name = document.getElementById('dacConfigName').value;
+    const scale = parseFloat(document.getElementById('calScaleDAC').value) || 1.0;
+    const offset = parseFloat(document.getElementById('calOffsetDAC').value) || 0.0;
+    
+    const configData = {
+        index: currentDACIndex,
+        name: name,
+        cal: {
+            scale: scale,
+            offset: offset
+        },
+        showOnDashboard: document.getElementById('dacShowOnDashboard').checked
+    };
+    
+    try {
+        const response = await fetch(`/api/dac/${currentDACIndex}/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to save config');
+        }
+        
+        showToast('success', 'Success', 'DAC output configuration saved');
+        closeDACConfigModal();
+        
+        // Refresh outputs to show new name/calibration
+        fetchAndRenderOutputs();
+    } catch (error) {
+        console.error('Error saving DAC config:', error);
+        showToast('error', 'Error', error.message || 'Failed to save configuration');
+    }
+}
+
+function resetCalibrationDAC() {
+    // Reset to default calibration
+    document.getElementById('calScaleDAC').value = '1.0';
+    document.getElementById('calOffsetDAC').value = '0.0';
+    document.getElementById('resultScaleDAC').textContent = '1.0000';
+    document.getElementById('resultOffsetDAC').textContent = '0.00';
+    
+    // Clear two-point calibration fields
+    document.getElementById('calP1RawDAC').value = '';
+    document.getElementById('calP1RealDAC').value = '';
+    document.getElementById('calP2RawDAC').value = '';
+    document.getElementById('calP2RealDAC').value = '';
+    
+    showToast('info', 'Reset', 'Calibration reset to default values');
+}
+
+function calculateTwoPointCalDAC() {
+    const p1Displayed = parseFloat(document.getElementById('calP1RawDAC').value);
+    const p1Actual = parseFloat(document.getElementById('calP1RealDAC').value);
+    const p2Displayed = parseFloat(document.getElementById('calP2RawDAC').value);
+    const p2Actual = parseFloat(document.getElementById('calP2RealDAC').value);
+    
+    if (isNaN(p1Displayed) || isNaN(p1Actual) || isNaN(p2Displayed) || isNaN(p2Actual)) {
+        showToast('error', 'Error', 'Please fill in all calibration points');
+        return;
+    }
+    
+    if (p1Displayed === p2Displayed) {
+        showToast('error', 'Error', 'Displayed values must be different');
+        return;
+    }
+    
+    // Get current calibration to reverse transformations
+    const currentScale = dacConfigData.cal.scale || 1.0;
+    const currentOffset = dacConfigData.cal.offset || 0.0;
+    
+    // Step 1: Reverse current calibration to get raw values
+    // displayed = scale * raw + offset  -->  raw = (displayed - offset) / scale
+    const p1Raw = (p1Displayed - currentOffset) / currentScale;
+    const p2Raw = (p2Displayed - currentOffset) / currentScale;
+    
+    if (p1Raw === p2Raw) {
+        showToast('error', 'Error', 'Invalid calibration points (same raw values)');
+        return;
+    }
+    
+    // Step 2: Calculate NEW calibration from raw to actual
+    // actual = newScale * raw + newOffset
+    const scale = (p2Actual - p1Actual) / (p2Raw - p1Raw);
+    const offset = p1Actual - (scale * p1Raw);
+    
+    // Update form fields
+    document.getElementById('calScaleDAC').value = scale.toFixed(6);
+    document.getElementById('calOffsetDAC').value = offset.toFixed(4);
+    document.getElementById('resultScaleDAC').textContent = scale.toFixed(4);
+    document.getElementById('resultOffsetDAC').textContent = offset.toFixed(2);
+    
+    showToast('success', 'Success', 'Calibration calculated successfully');
+}
+
+/* ============================================================================
    RTD Configuration Modal Functions
    ============================================================================ */
 
@@ -2436,6 +2588,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('twoPointCal').classList.add('active');
             } else if (tab === 'direct') {
                 document.getElementById('directCal').classList.add('active');
+            } else if (tab === 'two-point-dac') {
+                document.getElementById('twoPointCalDAC').classList.add('active');
+            } else if (tab === 'direct-dac') {
+                document.getElementById('directCalDAC').classList.add('active');
             } else if (tab === 'two-point-rtd') {
                 document.getElementById('twoPointCalRTD').classList.add('active');
             } else if (tab === 'direct-rtd') {
@@ -2453,6 +2609,17 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('calOffset').addEventListener('input', function() {
         const offset = parseFloat(this.value) || 0;
         document.getElementById('resultOffset').textContent = offset.toFixed(2);
+    });
+    
+    // DAC direct entry listeners
+    document.getElementById('calScaleDAC').addEventListener('input', function() {
+        const scale = parseFloat(this.value) || 0;
+        document.getElementById('resultScaleDAC').textContent = scale.toFixed(4);
+    });
+    
+    document.getElementById('calOffsetDAC').addEventListener('input', function() {
+        const offset = parseFloat(this.value) || 0;
+        document.getElementById('resultOffsetDAC').textContent = offset.toFixed(2);
     });
     
     // RTD direct entry listeners
