@@ -54,7 +54,7 @@ class TMC5130 {
 
         // Read write functions
         uint8_t readRegister(uint8_t reg, uint32_t *data);
-        uint8_t writeRegister(uint8_t reg, uint32_t data);
+        bool writeRegister(uint8_t reg, uint32_t data);
 
         // Structs
         struct config_t {

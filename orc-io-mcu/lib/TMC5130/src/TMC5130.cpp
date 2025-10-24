@@ -223,10 +223,9 @@ uint8_t TMC5130::readRegister(uint8_t reg, uint32_t *data) {
     return status;
 }
 
-uint8_t TMC5130::writeRegister(uint8_t reg, uint32_t data) {
-    if (!_initialised) return 0;
+bool TMC5130::writeRegister(uint8_t reg, uint32_t data) {
+    if (!_initialised) return false;
     reg |= 0x80; // Set write bit
-    uint8_t status = 0;
     uint8_t buf[4];
     buf[0] = data >> 24;
     buf[1] = data >> 16;
@@ -237,12 +236,12 @@ uint8_t TMC5130::writeRegister(uint8_t reg, uint32_t data) {
 
     // Send write datagram (40-bit)
     digitalWrite(_cs_pin, LOW);
-    status = _spi->transfer(reg);
+    _spi->transfer(reg);
     _spi->transfer(buf, 4);
     digitalWrite(_cs_pin, HIGH);
     delayMicroseconds(10);
     _spi->endTransaction();
-    return status;
+    return true;  // Return success - status byte of 0 is normal, not an error
 }
 
 // Private functions

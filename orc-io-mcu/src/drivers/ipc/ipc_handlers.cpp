@@ -1371,7 +1371,7 @@ void ipc_handle_config_digital_output(const uint8_t *payload, uint16_t len) {
         // Apply mode configuration to output object
         output->pwmEnabled = (cfg->mode == 1);  // 1 = PWM, 0 = ON/OFF
         
-        // Handle mode transitions
+        // Handle mode transitions or initial configuration
         if (wasPWM && !output->pwmEnabled) {
             // Switching from PWM to ON/OFF - force pin back to digital mode
             output->state = (output->pwmDuty > 0);
@@ -1391,6 +1391,11 @@ void ipc_handle_config_digital_output(const uint8_t *payload, uint16_t len) {
             }
             // Initialize PWM duty to 0
             output->pwmDuty = 0.0f;
+        } else if (!wasPWM && !output->pwmEnabled) {
+            // Both old and new mode are ON/OFF - ensure pin is in digital mode
+            // This handles initial config where analogWrite() may have been called during init
+            output_force_digital_mode(cfg->index);
+            Serial.printf("[OUTPUT] Ensured output %d is in digital mode for ON/OFF operation\n", cfg->index);
         }
         
         const char* modeStr = output->pwmEnabled ? "PWM" : "ON/OFF";

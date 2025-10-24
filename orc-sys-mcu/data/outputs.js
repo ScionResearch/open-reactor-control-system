@@ -359,8 +359,9 @@ function renderStepperMotor(stepper) {
                     <span class="output-status-badge ${stepper.running ? 'running' : 'stopped'}">
                         ${stepper.running ? 'ENABLED' : 'DISABLED'}
                     </span>
-                    <span class="output-status-badge" style="background-color: #6c757d; margin-left: 4px;">
-                        ${stepper.direction ? '→ FORWARD' : '← REVERSE'}
+                    <span class="output-status-badge" style="background-color: #6c757d; color: white; margin-left: 4px;">
+                        <i class="mdi ${stepper.direction ? 'mdi-axis-z-rotate-counterclockwise' : 'mdi-axis-z-rotate-clockwise'}"></i>
+                        ${stepper.direction ? 'FORWARD' : 'REVERSE'}
                     </span>
                 </div>
                 <div class="output-header-right">
@@ -389,7 +390,6 @@ function renderStepperMotor(stepper) {
                 
                 <!-- Direction Buttons -->
                 <div class="control-group">
-                    <label class="control-label">Direction</label>
                     <div class="button-group">
                         <button class="output-btn ${stepper.direction ? 'output-btn-primary' : 'output-btn-secondary'}" 
                                 onclick="setStepperDirection(true)">
@@ -443,7 +443,8 @@ function renderStepperMotor(stepper) {
         }
         if (statusBadges.length >= 2) {
             // Second badge: direction
-            statusBadges[1].textContent = stepper.direction ? '→ FORWARD' : '← REVERSE';
+            statusBadges[1].style.color = 'white';
+            statusBadges[1].innerHTML = `<i class="mdi ${stepper.direction ? 'mdi-axis-z-rotate-counterclockwise' : 'mdi-axis-z-rotate-clockwise'}"></i> ${stepper.direction ? 'FORWARD' : 'REVERSE'}`;
         }
         
         // Update direction buttons
@@ -503,8 +504,9 @@ function renderDCMotors(motors) {
                         <span class="output-status-badge ${motor.running ? 'running' : 'stopped'}">
                             ${motor.running ? 'RUNNING' : 'STOPPED'}
                         </span>
-                        <span class="output-status-badge" style="background-color: #6c757d; margin-left: 4px;">
-                            ${motor.direction ? '→ FORWARD' : '← REVERSE'}
+                        <span class="output-status-badge" style="background-color: #6c757d; color: white; margin-left: 4px;">
+                            <i class="mdi ${motor.direction ? 'mdi-axis-z-rotate-counterclockwise' : 'mdi-axis-z-rotate-clockwise'}"></i>
+                            ${motor.direction ? 'FORWARD' : 'REVERSE'}
                         </span>
                     </div>
                     <div class="output-header-right">
@@ -534,20 +536,16 @@ function renderDCMotors(motors) {
                     </div>
                     
                     <!-- Status Display -->
-                    <div class="motor-info-row">
-                        <div class="motor-info-item">
-                            <span class="motor-info-label">Actual Power</span>
-                            <span class="motor-info-value" id="motor-actual-power-${motor.index}">${motor.power || 0}%</span>
-                        </div>
-                        <div class="motor-info-item">
-                            <span class="motor-info-label">Current</span>
-                            <span class="motor-info-value" id="motor-current-${motor.index}">${(motor.current || 0).toFixed(2)}A</span>
-                        </div>
+                    <div class="status-info">
+                        <span class="status-label">Power:</span>
+                        <span id="motor-actual-power-${motor.index}" class="status-value-compact status-synced">${motor.power || 0}%</span>
+                        <span class="status-separator">•</span>
+                        <span class="status-label">Current:</span>
+                        <span id="motor-current-${motor.index}" class="status-value-compact status-synced">${(motor.current || 0).toFixed(2)}A</span>
                     </div>
                     
                     <!-- Direction Buttons -->
                     <div class="control-group">
-                        <label class="control-label">Direction</label>
                         <div class="button-group" id="motor-direction-buttons-${motor.index}">
                             <button class="output-btn ${motor.direction ? 'output-btn-primary' : 'output-btn-secondary'}" 
                                     onclick="setDCMotorDirection(${motor.index}, true)">
@@ -621,7 +619,8 @@ function renderDCMotors(motors) {
             }
             if (statusBadges.length >= 2) {
                 // Second badge: direction
-                statusBadges[1].textContent = motor.direction ? '→ FORWARD' : '← REVERSE';
+                statusBadges[1].style.color = 'white';
+                statusBadges[1].innerHTML = `<i class="mdi ${motor.direction ? 'mdi-axis-z-rotate-counterclockwise' : 'mdi-axis-z-rotate-clockwise'}"></i> ${motor.direction ? 'FORWARD' : 'REVERSE'}`;
             }
             
             // Update direction buttons
