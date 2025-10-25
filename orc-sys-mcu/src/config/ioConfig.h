@@ -18,6 +18,7 @@
 #define MAX_DIGITAL_OUTPUTS 5  // Indices 21-25 (open drain 1-4, high current)
 #define MAX_STEPPER_MOTORS 1   // Index 26
 #define MAX_DC_MOTORS 4        // Indices 27-30
+#define MAX_ENERGY_SENSORS 2   // Indices 31-32 (Main, Heater)
 
 /**
  * @brief Calibration structure for analog inputs/outputs
@@ -125,6 +126,15 @@ struct DCMotorConfig {
 };
 
 /**
+ * @brief Configuration for Energy Monitors (indices 31-32)
+ * INA260 sensors measuring voltage, current, and power
+ */
+struct EnergySensorConfig {
+    char name[32];
+    bool showOnDashboard;
+};
+
+/**
  * @brief Configuration for COM ports (serial communication)
  * Ports: 0-1 = RS-232, 2-3 = RS-485
  */
@@ -155,6 +165,7 @@ struct IOConfig {
     DigitalOutputConfig digitalOutputs[MAX_DIGITAL_OUTPUTS];
     StepperMotorConfig stepperMotor;  // Single stepper motor
     DCMotorConfig dcMotors[MAX_DC_MOTORS];
+    EnergySensorConfig energySensors[MAX_ENERGY_SENSORS];  // Indices 31-32
     ComPortConfig comPorts[MAX_COM_PORTS];  // RS-232 (0-1) and RS-485 (2-3)
 };
 

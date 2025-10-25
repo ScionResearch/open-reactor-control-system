@@ -1,6 +1,6 @@
 # Inter-Processor Communication (IPC) Protocol Specification
-**Version:** 2.3  
-**Date:** 2025-10-21  
+**Version:** 2.4  
+**Date:** 2025-10-25  
 **Status:** ✅ Implemented & Operational
 
 ---
@@ -214,7 +214,7 @@ struct IPC_SensorData_t {
 
 **Example Use Cases:**
 - **DC Motors:** Primary = power (%), Additional[0] = current (A)
-- **Power Sensors:** Primary = voltage (V), Additional[0] = current (A), Additional[1] = power (W)
+- **Energy Monitors:** Primary = voltage (V), Additional[0] = current (A), Additional[1] = power (W)
 - **Hamilton Probes:** Primary = pH/DO, Additional[0] = temperature (°C)
 - **Stepper Motor:** Primary = RPM, Additional[0] = current (A)
 
@@ -424,19 +424,18 @@ The object index provides a unified addressing scheme for all sensors, actuators
 - **26:** Stepper Motor - TMC5130 driver
 - **27-30:** DC Motors (4 channels) - DRV8235 drivers
 
-#### **Power Monitoring (31-36)**
-- **31:** Main Power Voltage (V) - INA260 sensor 1
-- **32:** Main Power Current (A) - INA260 sensor 1
-- **33:** Main Power (W) - INA260 sensor 1
-- **34:** Heater Power Voltage (V) - INA260 sensor 2
-- **35:** Heater Power Current (A) - INA260 sensor 2
-- **36:** Heater Power (W) - INA260 sensor 2
+#### **Energy Monitoring (31-32)**
+- **31:** Main Power Monitor - INA260 sensor 1 (voltage V, current A, power W)
+- **32:** Heater Power Monitor - INA260 sensor 2 (voltage V, current A, power W)
 
-#### **Communication Ports (37-40)**
-- **37:** Modbus Port 1 (RS-232) - Serial2
-- **38:** Modbus Port 2 (RS-232) - Serial3
-- **39:** Modbus Port 3 (RS-485) - Serial4
-- **40:** Modbus Port 4 (RS-485) - Serial5
+#### **Communication Ports (33-36)**
+- **33:** Modbus Port 1 (RS-232) - Serial2
+- **34:** Modbus Port 2 (RS-232) - Serial3
+- **35:** Modbus Port 3 (RS-485) - Serial4
+- **36:** Modbus Port 4 (RS-485) - Serial5
+
+#### **Reserved (37-40)** 🚧 Future Expansion
+- **37-40:** Reserved for future control or sensor objects
 
 #### **Control Objects (41-59)** 🚧 Reserved for Future Implementation
 - **41-43:** Temperature Control (3 loops) - PID controllers
@@ -467,15 +466,18 @@ OBJ_T_ANALOG_OUTPUT             // Indices 8-9
 OBJ_T_TEMPERATURE_SENSOR        // Indices 10-12, 60+
 OBJ_T_DIGITAL_INPUT             // Indices 13-20
 OBJ_T_DIGITAL_OUTPUT            // Indices 21-25
-OBJ_T_POWER_SENSOR              // Indices 31-36 (V/A/W split)
+OBJ_T_ENERGY_SENSOR             // Indices 31-32 (multi-value: V, A, W)
+OBJ_T_VOLTAGE_SENSOR            // Reserved for future use
+OBJ_T_CURRENT_SENSOR            // Reserved for future use
+OBJ_T_POWER_SENSOR              // Reserved for future use
 
 // Motion
 OBJ_T_STEPPER_MOTOR             // Index 26
 OBJ_T_BDC_MOTOR                 // Indices 27-30
 
 // Communication
-OBJ_T_SERIAL_RS232_PORT         // Indices 37-38
-OBJ_T_SERIAL_RS485_PORT         // Indices 39-40
+OBJ_T_SERIAL_RS232_PORT         // Indices 33-34
+OBJ_T_SERIAL_RS485_PORT         // Indices 35-36
 
 // Controls (future)
 OBJ_T_TEMPERATURE_CONTROL       // Indices 41-43
@@ -507,9 +509,7 @@ Standard unit strings for sensor data:
 | Temperature | `°C` | Celsius (configurable to °F/K) |
 | Digital I/O | ` ` | Empty (boolean state) |
 | Digital Output | ` ` | Empty (boolean state) |
-| Power Voltage | `V` | Volts |
-| Power Current | `A` | Amperes |
-| Power | `W` | Watts |
+| Energy Monitor | `V` | Primary: Volts, Additional: A, W |
 | Stepper Motor | `rpm` | Revolutions per minute |
 | DC Motor | `%` | Power percentage |
 | Modbus Port | ` ` | Empty (status/config) |
@@ -788,13 +788,20 @@ ipc.begin(2000000);  // 2 Mbps
 
 ---
 
-**Document Version:** 2.3  
+**Document Version:** 2.4  
 **Protocol Version:** v1.0.0  
-**Last Updated:** 2025-10-21  
+**Last Updated:** 2025-10-25  
 **Status:** ✅ Operational at 2 Mbps with multi-value sensor data + output control  
 **Maintainer:** Open Reactor Control System Team
 
-**Recent Updates (v2.3):**
+**Recent Updates (v2.4):**
+- Consolidated power sensors from 6 objects to 2 energy monitors (indices 31-32)
+- Added `OBJ_T_ENERGY_SENSOR` type with multi-value support (voltage, current, power)
+- Shifted COM ports from indices 37-40 to 33-36
+- Reserved indices 37-40 for future expansion
+- Deprecated individual voltage/current/power sensor types (kept for future use)
+
+**Previous Updates (v2.3):**
 - Added multi-value sensor data extension to `IPC_SensorData_t`
 - Implemented `valueCount`, `additionalValues[]`, and `additionalUnits[]` fields
 - DC motors now transmit power (%) + current (A) in single message

@@ -583,6 +583,31 @@ bool ipc_sendSensorData(uint16_t index) {
             break;
         }
         
+        case OBJ_T_ENERGY_SENSOR: {
+            EnergySensor_t *sensor = (EnergySensor_t*)obj;
+            // Primary value: Voltage (V)
+            data.value = sensor->voltage;
+            strncpy(data.unit, sensor->unit, sizeof(data.unit) - 1);
+            
+            // Additional values: Current (A) and Power (W)
+            data.valueCount = 2;
+            data.additionalValues[0] = sensor->current;
+            strncpy(data.additionalUnits[0], "A", sizeof(data.additionalUnits[0]) - 1);
+            data.additionalValues[1] = sensor->power;
+            strncpy(data.additionalUnits[1], "W", sizeof(data.additionalUnits[1]) - 1);
+            
+            // DEBUG: Log energy sensor transmission (temporary)
+            // Serial.printf("[IPC] Energy[%d]: %.2fV, %.3fA, %.2fW\n", 
+            //              index, sensor->voltage, sensor->current, sensor->power);
+            
+            if (sensor->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (sensor->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, sensor->message, sizeof(data.message) - 1);
+            }
+            break;
+        }
+        
         case OBJ_T_SERIAL_RS232_PORT:
         case OBJ_T_SERIAL_RS485_PORT: {
             SerialCom_t *port = (SerialCom_t*)obj;
@@ -695,9 +720,9 @@ void ipc_handle_control_loop_write(const uint8_t *payload, uint16_t len) {
         return;
     }
     
-    IPC_ControlWrite_t *cmd = (IPC_ControlWrite_t*)payload;
-    
     // TODO: Implement specific control loop writes
+    // IPC_ControlWrite_t *cmd = (IPC_ControlWrite_t*)payload;
+    (void)payload; // Suppress unused warning
     ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "Control loop write not implemented yet");
 }
 
@@ -1069,9 +1094,9 @@ void ipc_handle_control_read(const uint8_t *payload, uint16_t len) {
         return;
     }
     
-    IPC_ControlRead_t *cmd = (IPC_ControlRead_t*)payload;
-    
     // TODO: Implement control read functionality
+    // IPC_ControlRead_t *cmd = (IPC_ControlRead_t*)payload;
+    (void)payload; // Suppress unused warning
     ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "CONTROL_READ not implemented yet");
 }
 
@@ -1106,10 +1131,10 @@ void ipc_handle_device_create(const uint8_t *payload, uint16_t len) {
         return;
     }
     
-    IPC_DeviceCreate_t *cmd = (IPC_DeviceCreate_t*)payload;
-    
     // TODO: Implement device creation logic
     // This will involve creating peripheral device instances dynamically
+    // IPC_DeviceCreate_t *cmd = (IPC_DeviceCreate_t*)payload;
+    (void)payload; // Suppress unused warning
     ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "DEVICE_CREATE not implemented yet");
 }
 
@@ -1119,9 +1144,9 @@ void ipc_handle_device_delete(const uint8_t *payload, uint16_t len) {
         return;
     }
     
-    IPC_DeviceDelete_t *cmd = (IPC_DeviceDelete_t*)payload;
-    
     // TODO: Implement device deletion logic
+    // IPC_DeviceDelete_t *cmd = (IPC_DeviceDelete_t*)payload;
+    (void)payload; // Suppress unused warning
     ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "DEVICE_DELETE not implemented yet");
 }
 
@@ -1171,9 +1196,9 @@ void ipc_handle_config_write(const uint8_t *payload, uint16_t len) {
         return;
     }
     
-    IPC_ConfigWrite_t *cmd = (IPC_ConfigWrite_t*)payload;
-    
     // TODO: Implement configuration write logic
+    // IPC_ConfigWrite_t *cmd = (IPC_ConfigWrite_t*)payload;
+    (void)payload; // Suppress unused warning
     ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "CONFIG_WRITE not implemented yet");
 }
 

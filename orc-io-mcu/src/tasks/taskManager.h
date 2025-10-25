@@ -12,10 +12,9 @@ extern ScheduledTask *modbus_task;
 extern ScheduledTask *ipc_task;
 extern ScheduledTask *phProbe_task;
 extern ScheduledTask *mfc_task;
-extern ScheduledTask *levelProbe_task;
-extern ScheduledTask *PARsensor_task;
+extern ScheduledTask *pwrSensor_task;
+extern ScheduledTask *motor_task;
 extern ScheduledTask *printStuff_task;
 extern ScheduledTask *RTDsensor_task;
 extern ScheduledTask *SchedulerAlive_task;
-
 extern ScheduledTask *TEST_TASK;

@@ -131,6 +131,14 @@
                             <div class="loading">Loading...</div>
                         </div>
                     </div>
+                    
+                    <!-- Energy Sensors Section -->
+                    <div class="input-section-card">
+                        <h3>Energy Monitors</h3>
+                        <div id="energy-list" class="input-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -760,6 +768,31 @@
             <div class="modal-buttons">
                 <button class="modal-cancel" onclick="closeGPIOConfigModal()">Cancel</button>
                 <button class="modal-confirm" onclick="saveGPIOConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Energy Sensor Configuration Modal -->
+    <div id="energySensorConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure Energy Monitor <span id="energySensorConfigIndex"></span></h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="energySensorConfigName">Name:</label>
+                    <input type="text" id="energySensorConfigName" maxlength="31" placeholder="Energy monitor name">
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="energySensorShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeEnergySensorConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveEnergySensorConfig()">Save</button>
             </div>
         </div>
     </div>

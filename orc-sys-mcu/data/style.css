@@ -1326,6 +1326,28 @@ input:checked + .slider:before { transform: translateX(26px); }
         border: 2px solid #f5c6cb;
     }
     
+    /* Energy sensor specific styles */
+    .energy-values {
+        margin-top: 12px;
+        padding-left: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .energy-value-row {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+    }
+    
+    .energy-label {
+        font-size: 0.95em;
+        color: #7f8c8d;
+        font-weight: 500;
+        min-width: 70px;
+    }
+    
     /* Info box for configuration modals */
     .info-box {
         background-color: #e7f3ff;

@@ -64,11 +64,11 @@ void setupEthernet()
   }
   
   // Load IO configuration (Core 0 only accesses LittleFS)
+  // Note: loadIOConfig() now initializes defaults first, then overwrites with file data
   if (!loadIOConfig())
   {
-    // Set default configuration if load fails or file doesn't exist
-    log(LOG_INFO, false, "IO config not found, creating defaults\n");
-    setDefaultIOConfig();
+    // File doesn't exist or couldn't be parsed - save the defaults that were initialized
+    log(LOG_INFO, false, "IO config not found or invalid, saving defaults\n");
     saveIOConfig();
   }
   
@@ -574,7 +574,7 @@ void handleGetSensors() {
 void handleGetInputs() {
   // Compact JSON response for inputs tab
   // Data is served from cache, which is continuously updated by pollSensors()
-  StaticJsonDocument<2048> doc;  // Increased from 1536 to fit all inputs
+  StaticJsonDocument<6144> doc;  // Increased for energy sensors (31-32) with multi-value data
   
   // Analog Inputs (ADC) - Indices 0-7
   JsonArray adc = doc.createNestedArray("adc");
@@ -631,6 +631,28 @@ void handleGetInputs() {
     }
   }
   
+  // Energy Sensors - Indices 31-32
+  JsonArray energy = doc.createNestedArray("energy");
+  for (uint8_t i = 31; i < 33; i++) {
+    ObjectCache::CachedObject* obj = objectCache.getObject(i);
+    if (obj && obj->valid) {
+      JsonObject o = energy.createNestedObject();
+      o["i"] = i;
+      o["n"] = ioConfig.energySensors[i - 31].name;  // Custom name from config
+      o["v"] = obj->value;  // Voltage (V)
+      // Multi-value data: current (A) and power (W)
+      if (obj->valueCount >= 2) {
+        o["c"] = obj->additionalValues[0];  // Current (A)
+        o["p"] = obj->additionalValues[1];  // Power (W)
+      } else {
+        o["c"] = 0.0f;
+        o["p"] = 0.0f;
+      }
+      o["d"] = ioConfig.energySensors[i - 31].showOnDashboard;  // Dashboard flag
+      if (obj->flags & IPC_SENSOR_FLAG_FAULT) o["f"] = 1;
+    }
+  }
+  
   String response;
   serializeJson(doc, response);
   
@@ -640,7 +662,7 @@ void handleGetInputs() {
   }
   
   // Debug: Log the JSON response size
-  log(LOG_DEBUG, false, "API /api/inputs response (%d bytes): %s\n", response.length(), response.c_str());
+  log(LOG_DEBUG, false, "API /api/inputs response (%d bytes)\n", response.length());
   
   server.send(200, "application/json", response);
 }
@@ -1073,6 +1095,78 @@ void handleSaveGPIOConfig(uint8_t index) {
     log(LOG_WARNING, false, "Failed to send GPIO[%d] config to IO MCU\n", index);
     server.send(500, "application/json", "{\"success\":false,\"error\":\"Failed to update IO MCU\"}");
   }
+}
+
+// --- Energy Sensor Configuration API Handlers ---
+
+void handleGetEnergySensorConfig(uint8_t index) {
+  // Energy sensor indices are 31-32, convert to array index 0-1
+  if (index < 31 || index >= 31 + MAX_ENERGY_SENSORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid energy sensor index\"}");
+    return;
+  }
+  
+  uint8_t sensorIndex = index - 31;
+  StaticJsonDocument<256> doc;
+  doc["index"] = index;
+  doc["name"] = ioConfig.energySensors[sensorIndex].name;
+  doc["showOnDashboard"] = ioConfig.energySensors[sensorIndex].showOnDashboard;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveEnergySensorConfig(uint8_t index) {
+  log(LOG_DEBUG, false, "handleSaveEnergySensorConfig: START index=%d\n", index);
+  
+  if (index < 31 || index >= 31 + MAX_ENERGY_SENSORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid energy sensor index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveEnergySensorConfig: Parsing JSON\n");
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    log(LOG_DEBUG, false, "handleSaveEnergySensorConfig: JSON parse error\n");
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveEnergySensorConfig: Updating config\n");
+  
+  uint8_t sensorIndex = index - 31;
+  
+  // Update name
+  if (doc.containsKey("name")) {
+    strncpy(ioConfig.energySensors[sensorIndex].name, doc["name"], 
+            sizeof(ioConfig.energySensors[sensorIndex].name) - 1);
+    ioConfig.energySensors[sensorIndex].name[sizeof(ioConfig.energySensors[sensorIndex].name) - 1] = '\0';
+  }
+  
+  // Update showOnDashboard flag
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.energySensors[sensorIndex].showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveEnergySensorConfig: Calling saveIOConfig\n");
+  
+  // Save configuration to flash
+  saveIOConfig();
+  
+  log(LOG_INFO, false, "Updated Energy Sensor[%d] config: %s, dashboard=%d\n",
+      index, ioConfig.energySensors[sensorIndex].name, 
+      ioConfig.energySensors[sensorIndex].showOnDashboard);
+  
+  server.send(200, "application/json", "{\"success\":true}");
+  log(LOG_DEBUG, false, "handleSaveEnergySensorConfig: COMPLETE\n");
 }
 
 // --- COM Port Configuration API Handlers ---
@@ -2039,6 +2133,13 @@ void setupWebServer()
   server.on("/api/config/gpio/18", HTTP_POST, []() { handleSaveGPIOConfig(18); });
   server.on("/api/config/gpio/19", HTTP_POST, []() { handleSaveGPIOConfig(19); });
   server.on("/api/config/gpio/20", HTTP_POST, []() { handleSaveGPIOConfig(20); });
+  
+  // Energy Sensor Configuration endpoints (indices 31-32)
+  server.on("/api/config/energy/31", HTTP_GET, []() { handleGetEnergySensorConfig(31); });
+  server.on("/api/config/energy/32", HTTP_GET, []() { handleGetEnergySensorConfig(32); });
+  
+  server.on("/api/config/energy/31", HTTP_POST, []() { handleSaveEnergySensorConfig(31); });
+  server.on("/api/config/energy/32", HTTP_POST, []() { handleSaveEnergySensorConfig(32); });
 
   // COM Port Configuration endpoints (indices 0-3)
   server.on("/api/config/comport/0", HTTP_GET, []() { handleGetComPortConfig(0); });

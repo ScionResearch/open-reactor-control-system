@@ -1860,17 +1860,20 @@ async function fetchAndRenderInputs() {
         console.log('  ADC:', data.adc ? data.adc.length : 0, 'entries');
         console.log('  RTD:', data.rtd ? data.rtd.length : 0, 'entries');
         console.log('  GPIO:', data.gpio ? data.gpio.length : 0, 'entries');
+        console.log('  Energy:', data.energy ? data.energy.length : 0, 'entries');
         
         // Render each section
         renderADCInputs(data.adc || []);
         renderRTDInputs(data.rtd || []);
         renderGPIOInputs(data.gpio || []);
+        renderEnergySensors(data.energy || []);
         
     } catch (error) {
         console.error('Error fetching inputs:', error);
         showInputError('adc-list');
         showInputError('rtd-list');
         showInputError('gpio-list');
+        showInputError('energy-list');
     }
 }
 
@@ -1974,10 +1977,131 @@ function renderGPIOInputs(gpioData) {
     }).join('');
 }
 
+function renderEnergySensors(energyData) {
+    const container = document.getElementById('energy-list');
+    if (!container) return;
+    
+    if (energyData.length === 0) {
+        container.innerHTML = '<div class="empty-message">No energy monitor data available</div>';
+        return;
+    }
+    
+    container.innerHTML = energyData.map(sensor => `
+        <div class="input-item energy-sensor-item ${sensor.f ? 'fault' : ''}">
+            <div class="input-header">
+                <div class="input-header-left">
+                    <span class="input-name">${sensor.n || `Energy Monitor ${sensor.i - 30}`}</span>
+                </div>
+                <span class="dashboard-icon ${sensor.d ? 'active' : 'inactive'}" title="${sensor.d ? 'Shown on Dashboard' : 'Hidden from Dashboard'}">
+                    <svg viewBox="0 0 24 24"><path d="M21,16V4H3V16H21M21,2A2,2 0 0,1 23,4V16A2,2 0 0,1 21,18H14V20H16V22H8V20H10V18H3C1.89,18 1,17.1 1,16V4C1,2.89 1.89,2 3,2H21M5,6H14V11H5V6M15,6H19V8H15V6M19,9V14H15V9H19M5,12H9V14H5V12M10,12H14V14H10V12Z" /></svg>
+                </span>
+                <button class="icon-btn" onclick="openEnergySensorConfigModal(${sensor.i})" title="Configure">
+                    <svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>
+                </button>
+            </div>
+            <div class="energy-values">
+                <div class="energy-value-row">
+                    <span class="energy-label">Voltage:</span>
+                    <span class="value-large">${sensor.v.toFixed(2)}</span>
+                    <span class="value-unit">V</span>
+                </div>
+                <div class="energy-value-row">
+                    <span class="energy-label">Current:</span>
+                    <span class="value-large">${sensor.c.toFixed(3)}</span>
+                    <span class="value-unit">A</span>
+                </div>
+                <div class="energy-value-row">
+                    <span class="energy-label">Power:</span>
+                    <span class="value-large">${sensor.p.toFixed(2)}</span>
+                    <span class="value-unit">W</span>
+                </div>
+            </div>
+            ${sensor.f ? '<div class="fault-indicator">FAULT</div>' : ''}
+        </div>
+    `).join('');
+}
+
 function showInputError(containerId) {
     const container = document.getElementById(containerId);
     if (container) {
         container.innerHTML = '<div class="error-message">Failed to load data</div>';
+    }
+}
+
+// ============================================================================
+// Energy Sensor Configuration Modal
+// ============================================================================
+
+let currentEnergySensorIndex = null;
+let energySensorConfigData = null;
+
+async function openEnergySensorConfigModal(index) {
+    currentEnergySensorIndex = index;
+    
+    // Fetch current configuration
+    try {
+        const response = await fetch(`/api/config/energy/${index}`);
+        if (!response.ok) throw new Error('Failed to fetch config');
+        
+        energySensorConfigData = await response.json();
+        
+        // Populate form
+        document.getElementById('energySensorConfigIndex').textContent = `[${index}]`;
+        document.getElementById('energySensorConfigName').value = energySensorConfigData.name || '';
+        document.getElementById('energySensorShowOnDashboard').checked = energySensorConfigData.showOnDashboard || false;
+        
+        // Show modal
+        document.getElementById('energySensorConfigModal').classList.add('active');
+        
+    } catch (error) {
+        console.error('Error fetching energy sensor config:', error);
+        showToast('error', 'Error', 'Failed to load configuration');
+    }
+}
+
+function closeEnergySensorConfigModal() {
+    document.getElementById('energySensorConfigModal').classList.remove('active');
+    currentEnergySensorIndex = null;
+    energySensorConfigData = null;
+    
+    // Reset form
+    document.getElementById('energySensorConfigName').value = '';
+}
+
+async function saveEnergySensorConfig() {
+    if (currentEnergySensorIndex === null) return;
+    
+    // Get values from form
+    const name = document.getElementById('energySensorConfigName').value;
+    
+    const configData = {
+        index: currentEnergySensorIndex,
+        name: name,
+        showOnDashboard: document.getElementById('energySensorShowOnDashboard').checked
+    };
+    
+    try {
+        const response = await fetch(`/api/config/energy/${currentEnergySensorIndex}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) throw new Error('Failed to save config');
+        
+        const result = await response.json();
+        
+        showToast('success', 'Success', `Configuration saved for ${name}`);
+        closeEnergySensorConfigModal();
+        
+        // Refresh inputs to show new name
+        fetchAndRenderInputs();
+        
+    } catch (error) {
+        console.error('Error saving energy sensor config:', error);
+        showToast('error', 'Error', 'Failed to save configuration');
     }
 }
 

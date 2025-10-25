@@ -8,7 +8,7 @@ HamiltonPHProbe* phProbe = nullptr;
 AlicatMFC* alicatMFC = nullptr;
 
 void schedulerHeatbeat(void) {
-  static uint32_t loopCount = 0;
+  //static uint32_t loopCount = 0;
   //Serial.printf("Scheduler alive - loop %d\n", loopCount++);
 }
 
@@ -227,7 +227,7 @@ void setup() {
   if (!pwrSensor_init()) {
     Serial.println("Failed to initialise INA260 power sensors.");
     for (int i = 0; i < 2; i++) {
-      if (pwr_power[i].fault) Serial.printf("Power sensor %d fault: %s\n", i+1, pwr_power[i].message);
+      if (pwr_energy[i].fault) Serial.printf("Power sensor %d fault: %s\n", i+1, pwr_energy[i].message);
     }
   } else {
     Serial.println("INA260 power sensors initialised.");
@@ -310,10 +310,8 @@ void setup() {
   modbus_task = tasks.addTask(modbus_manage, 10, true, true);
   ipc_task = tasks.addTask(ipc_update, 5, true, true);  // 5ms, high priority
   RTDsensor_task = tasks.addTask(RTD_manage, 200, true, false);
-  
-  // Add onboard device tasks
-  ScheduledTask* motor_task = tasks.addTask([]() { motor_update(); }, 10, true, false);
-  ScheduledTask* pwrSensor_task = tasks.addTask([]() { pwrSensor_update(); }, 1000, true, false);
+  motor_task = tasks.addTask([]() { motor_update(); }, 10, true, false);
+  pwrSensor_task = tasks.addTask([]() { pwrSensor_update(); }, 1000, true, false);
   
   // Add peripheral device tasks using lambda functions
   if (phProbe) {

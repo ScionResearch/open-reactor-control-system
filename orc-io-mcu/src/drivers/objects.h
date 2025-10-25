@@ -18,9 +18,10 @@ enum ObjectType {
     OBJ_T_OPTICAL_DENSITY_SENSOR,   // x?
     OBJ_T_FLOW_SENSOR,              // x?
     OBJ_T_PRESSURE_SENSOR,          // x?
-    OBJ_T_VOLTAGE_SENSOR,           // x2
-    OBJ_T_CURRENT_SENSOR,           // x2
-    OBJ_T_POWER_SENSOR,             // x2
+    OBJ_T_VOLTAGE_SENSOR,           // Reserved for future use
+    OBJ_T_CURRENT_SENSOR,           // Reserved for future use
+    OBJ_T_POWER_SENSOR,             // Reserved for future use
+    OBJ_T_ENERGY_SENSOR,            // x2 - Multi-value (voltage, current, power)
     // Outputs
     OBJ_T_ANALOG_OUTPUT,            // x2
     OBJ_T_DIGITAL_OUTPUT,           // x5
@@ -158,6 +159,16 @@ struct CurrentSensor_t {
 struct PowerSensor_t {
     float power;
     char unit[8];
+    bool fault;
+    bool newMessage;
+    char message[100];
+};
+
+struct EnergySensor_t {
+    float voltage;      // Volts
+    float current;      // Amperes
+    float power;        // Watts
+    char unit[8];       // Primary unit (V)
     bool fault;
     bool newMessage;
     char message[100];

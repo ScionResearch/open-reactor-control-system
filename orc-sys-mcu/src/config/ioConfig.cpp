@@ -104,6 +104,16 @@ void setDefaultIOConfig() {
     }
     
     // ========================================================================
+    // Energy Sensors (Indices 31-32)
+    // ========================================================================
+    const char* energySensorNames[] = {"Main Power Monitor", "Heater Power Monitor"};
+    for (int i = 0; i < MAX_ENERGY_SENSORS; i++) {
+        strlcpy(ioConfig.energySensors[i].name, energySensorNames[i], 
+                sizeof(ioConfig.energySensors[i].name));
+        ioConfig.energySensors[i].showOnDashboard = true;  // Show by default
+    }
+    
+    // ========================================================================
     // COM Ports (0-1: RS-232, 2-3: RS-485)
     // ========================================================================
     const char* portNames[] = {"RS-232 Port 1", "RS-232 Port 2", "RS-485 Port 1", "RS-485 Port 2"};
@@ -124,6 +134,10 @@ void setDefaultIOConfig() {
  */
 bool loadIOConfig() {
     log(LOG_INFO, true, "Loading IO configuration from %s\n", IO_CONFIG_FILENAME);
+    
+    // CRITICAL: Initialize defaults FIRST to ensure all fields have safe values
+    // This prevents crashes from uninitialized memory if config file is missing sections
+    setDefaultIOConfig();
     
     // Check if LittleFS is mounted
     if (!LittleFS.begin()) {
@@ -295,6 +309,19 @@ bool loadIOConfig() {
     }
     
     // ========================================================================
+    // Parse Energy Sensors
+    // ========================================================================
+    JsonArray energyArray = doc["energy_sensors"];
+    if (energyArray) {
+        for (int i = 0; i < MAX_ENERGY_SENSORS && i < energyArray.size(); i++) {
+            JsonObject sensor = energyArray[i];
+            strlcpy(ioConfig.energySensors[i].name, sensor["name"] | "", 
+                    sizeof(ioConfig.energySensors[i].name));
+            ioConfig.energySensors[i].showOnDashboard = sensor["showOnDashboard"] | true;
+        }
+    }
+    
+    // ========================================================================
     // Parse COM Ports
     // ========================================================================
     JsonArray comPortArray = doc["com_ports"];
@@ -428,6 +455,16 @@ void saveIOConfig() {
         motor["invertDirection"] = ioConfig.dcMotors[i].invertDirection;
         motor["enabled"] = ioConfig.dcMotors[i].enabled;
         motor["showOnDashboard"] = ioConfig.dcMotors[i].showOnDashboard;
+    }
+    
+    // ========================================================================
+    // Serialize Energy Sensors
+    // ========================================================================
+    JsonArray energyArray = doc.createNestedArray("energy_sensors");
+    for (int i = 0; i < MAX_ENERGY_SENSORS; i++) {
+        JsonObject sensor = energyArray.createNestedObject();
+        sensor["name"] = ioConfig.energySensors[i].name;
+        sensor["showOnDashboard"] = ioConfig.energySensors[i].showOnDashboard;
     }
     
     // ========================================================================

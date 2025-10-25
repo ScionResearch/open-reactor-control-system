@@ -122,15 +122,29 @@ enum IPC_ObjectType : uint8_t {
     OBJ_T_OPTICAL_DENSITY_SENSOR    = 5,
     OBJ_T_FLOW_SENSOR               = 6,
     OBJ_T_PRESSURE_SENSOR           = 7,
-    OBJ_T_VOLTAGE_SENSOR            = 8,
-    OBJ_T_CURRENT_SENSOR            = 9,
-    OBJ_T_POWER_SENSOR              = 10,
+    OBJ_T_VOLTAGE_SENSOR            = 8,    // Reserved for future use
+    OBJ_T_CURRENT_SENSOR            = 9,    // Reserved for future use
+    OBJ_T_POWER_SENSOR              = 10,   // Reserved for future use
+    OBJ_T_ENERGY_SENSOR             = 11,   // Multi-value (voltage, current, power)
     // Outputs
-    OBJ_T_ANALOG_OUTPUT             = 11,
-    OBJ_T_DIGITAL_OUTPUT            = 12,
+    OBJ_T_ANALOG_OUTPUT             = 12,
+    OBJ_T_DIGITAL_OUTPUT            = 13,
     // Motion drivers
-    OBJ_T_STEPPER_MOTOR             = 13,
-    OBJ_T_BDC_MOTOR                 = 14,
+    OBJ_T_STEPPER_MOTOR             = 14,
+    OBJ_T_BDC_MOTOR                 = 15,
+    // Control objects
+    OBJ_T_TEMPERATURE_CONTROL       = 16,
+    OBJ_T_PH_CONTROL                = 17,
+    OBJ_T_DISSOLVED_OXYGEN_CONTROL  = 18,
+    OBJ_T_OPTICAL_DENSITY_CONTROL   = 19,
+    OBJ_T_GAS_FLOW_CONTROL          = 20,
+    OBJ_T_STIRRER_CONTROL           = 21,
+    OBJ_T_PUMP_CONTROL              = 22,
+    OBJ_T_FEED_CONTROL              = 23,
+    OBJ_T_WASTE_CONTROL             = 24,
+    // Communication ports
+    OBJ_T_SERIAL_RS232_PORT         = 25,
+    OBJ_T_SERIAL_RS485_PORT         = 26,
     // External devices (high numbers to avoid conflicts)
     OBJ_T_HAMILTON_PH_PROBE         = 50,
     OBJ_T_HAMILTON_DO_PROBE         = 51,

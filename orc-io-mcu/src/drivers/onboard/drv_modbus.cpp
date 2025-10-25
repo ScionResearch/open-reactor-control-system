@@ -26,13 +26,13 @@ bool modbus_init(void) {
         modbusDriver[i].dePin = pins[i];
         modbusDriver[i].configChanged = false;
         
-        // Add to object index (indices 37-40)
+        // Add to object index (indices 33-36, shifted from 37-40)
         ObjectType portType = (i < 2) ? OBJ_T_SERIAL_RS232_PORT : OBJ_T_SERIAL_RS485_PORT;
-        objIndex[37 + i].type = portType;
-        objIndex[37 + i].obj = &modbusPort[i];
-        sprintf(objIndex[37 + i].name, "Modbus Port %d (%s)", 
+        objIndex[33 + i].type = portType;
+        objIndex[33 + i].obj = &modbusPort[i];
+        sprintf(objIndex[33 + i].name, "Modbus Port %d (%s)", 
                 i + 1, (i < 2) ? "RS-232" : "RS-485");
-        objIndex[37 + i].valid = true;
+        objIndex[33 + i].valid = true;
     }
 
     // Initialize hardware

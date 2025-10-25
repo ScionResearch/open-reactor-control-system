@@ -56,12 +56,13 @@ void pollSensors(void) {
   if (now - lastSensorPollTime < SENSOR_POLL_INTERVAL) return;
   lastSensorPollTime = now;
   
-  // Request all IO MCU objects (indices 0-30)
+  // Request all IO MCU objects (indices 0-32)
   // Sensors: ADC (0-7), DAC (8-9), RTD (10-12), GPIO (13-20)
   // Outputs: Digital Outputs (21-25), Stepper (26), DC Motors (27-30)
-  objectCache.requestBulkUpdate(0, 31);
+  // Energy Monitors: Main Power (31), Heater Power (32)
+  objectCache.requestBulkUpdate(0, 33);
   
-  //log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-30 (sensors + outputs)\n");
+  //log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-32 (sensors + outputs + energy)\n");
 }
 
 void manageIPC(void) {
@@ -87,6 +88,15 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
   // log(LOG_DEBUG, false, "IPC RX: Sensor[%d] = %.2f %s%s\n", 
   //     sensorData->index, sensorData->value, sensorData->unit,
   //     (sensorData->flags & IPC_SENSOR_FLAG_FAULT) ? " [FAULT]" : "");
+  
+  // DEBUG: Energy sensors (31-32) - show multi-value data
+  if (sensorData->index >= 31 && sensorData->index <= 32 && sensorData->valueCount >= 2) {
+    log(LOG_INFO, false, "[ENERGY] Sensor[%d]: %.2f %s, %.3f %s, %.2f %s\n",
+        sensorData->index,
+        sensorData->value, sensorData->unit,
+        sensorData->additionalValues[0], sensorData->additionalUnits[0],
+        sensorData->additionalValues[1], sensorData->additionalUnits[1]);
+  }
   
   // Update object cache
   objectCache.updateObject(sensorData);
