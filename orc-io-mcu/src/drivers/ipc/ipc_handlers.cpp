@@ -936,6 +936,7 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
             stepper->enabled = true;
             success = stepper_update(true);  // Start motor with new parameters
             if (!success) {
+                Serial.printf("[STEPPER] Start failed: %s\n", stepperDevice.message);
                 strcpy(message, "Failed to start motor");
                 errorCode = CTRL_ERR_DRIVER_FAULT;
             }
@@ -945,6 +946,7 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
             stepper->enabled = false;
             success = stepper_update(true);  // Stop motor
             if (!success) {
+                Serial.printf("[STEPPER] Stop failed: %s\n", stepperDevice.message);
                 strcpy(message, "Failed to stop motor");
                 errorCode = CTRL_ERR_DRIVER_FAULT;
             }
@@ -1476,10 +1478,23 @@ void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len) {
         // Apply to driver only if motor is currently enabled
         // This prevents the motor from starting just because config was updated
         if (wasEnabled) {
-            stepper_update(true);
+            bool success = stepper_update(true);
+            if (!success) {
+                // Config validation failed - send detailed error back to SYS MCU
+                char errorMsg[128];
+                snprintf(errorMsg, sizeof(errorMsg), "Config validation failed: %s", stepper->message);
+                Serial.printf("[IPC] ✗ Stepper config rejected: %s\n", stepper->message);
+                Serial.printf("[IPC]   (holdCurrent=%dmA [max 1000], runCurrent=%dmA [max 1800], maxRPM=%d, accel=%d)\n",
+                             cfg->holdCurrent_mA, cfg->runCurrent_mA, cfg->maxRPM, cfg->acceleration);
+                ipc_sendError(IPC_ERR_PARAM_INVALID, errorMsg);
+                return;
+            }
             Serial.printf("[IPC] ✓ Stepper[26]: %s, maxRPM=%d, steps=%d, Irun=%dmA (updated while enabled)\n",
                          cfg->name, cfg->maxRPM, cfg->stepsPerRev, cfg->runCurrent_mA);
         } else {
+            // Motor is disabled - just save config without validation
+            // The validation will happen when the user tries to enable it
+            // This prevents accidentally starting the motor during config updates
             Serial.printf("[IPC] ✓ Stepper[26]: %s, maxRPM=%d, steps=%d, Irun=%dmA (config saved, motor disabled)\n",
                          cfg->name, cfg->maxRPM, cfg->stepsPerRev, cfg->runCurrent_mA);
         }

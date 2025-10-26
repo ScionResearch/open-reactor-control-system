@@ -159,7 +159,10 @@ void IPCProtocol::processRxPacket() {
     
     // Minimum packet: LENGTH(2) + TYPE(1) + CRC(2) = 5 bytes
     if (_rxBufferIndex < 5) {
+        Serial.printf("[IPC] ERROR: Packet too small (%d bytes), flushing UART buffer\n", _rxBufferIndex);
         _rxErrorCount++;
+        // Flush UART RX buffer to resync
+        while (_uart->available()) _uart->read();
         return;
     }
     
@@ -169,17 +172,25 @@ void IPCProtocol::processRxPacket() {
     
     // Validate length (min = 1 for MSG_TYPE only, max = 1 + max payload)
     if (_rxPacketLength < 1 || _rxPacketLength > (IPC_MAX_PAYLOAD_SIZE + 1)) {
-        Serial.printf("[IPC] ERROR: Invalid packet length %d\n", _rxPacketLength);
+        Serial.printf("[IPC] ERROR: Invalid packet length %d, flushing UART buffer\n", _rxPacketLength);
         _rxErrorCount++;
+        // Flush UART RX buffer to resync
+        while (_uart->available()) _uart->read();
         return;
     }
     
     // Check if we received the expected number of bytes
     uint16_t expectedBytes = 2 + _rxPacketLength + 2;
     if (_rxBufferIndex != expectedBytes) {
-        Serial.printf("[IPC] ERROR: Length mismatch (got %d, expected %d)\n",
+        Serial.printf("[IPC] ERROR: Length mismatch (got %d, expected %d), flushing UART buffer\n",
                       _rxBufferIndex, expectedBytes);
         _rxErrorCount++;
+        // Flush UART RX buffer to resync - critical for recovery!
+        uint16_t flushed = 0;
+        while (_uart->available()) { _uart->read(); flushed++; }
+        if (flushed > 0) {
+            Serial.printf("[IPC] Flushed %d bytes from UART to resync\n", flushed);
+        }
         return;
     }
     
@@ -195,9 +206,11 @@ void IPCProtocol::processRxPacket() {
     
     // Verify CRC
     if (receivedCRC != calculatedCRC) {
-        Serial.printf("[IPC] ERROR: CRC mismatch (0x%04X != 0x%04X)\n", 
+        Serial.printf("[IPC] ERROR: CRC mismatch (0x%04X != 0x%04X), flushing UART buffer\n", 
                       receivedCRC, calculatedCRC);
         _crcErrorCount++;
+        // Flush UART RX buffer to resync
+        while (_uart->available()) _uart->read();
         return;
     }
     

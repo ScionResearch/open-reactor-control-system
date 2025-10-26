@@ -110,7 +110,7 @@ void setDefaultIOConfig() {
     for (int i = 0; i < MAX_ENERGY_SENSORS; i++) {
         strlcpy(ioConfig.energySensors[i].name, energySensorNames[i], 
                 sizeof(ioConfig.energySensors[i].name));
-        ioConfig.energySensors[i].showOnDashboard = true;  // Show by default
+        ioConfig.energySensors[i].showOnDashboard = false;
     }
     
     // ========================================================================

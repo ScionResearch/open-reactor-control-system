@@ -288,9 +288,10 @@ void setup() {
   Serial.println("  21-25 : Digital Outputs (4 + heater)");
   Serial.println("  26    : Stepper Motor");
   Serial.println("  27-30 : DC Motors");
-  Serial.println("  31-36 : Power Sensors (V/A/W)");
-  Serial.println("  37-40 : Modbus Ports");
-  Serial.println("  41-59 : Reserved for control objects");
+  Serial.println("  31-32 : Power Sensors (V/A/W)");
+  Serial.println("  33-36 : Modbus Ports");
+  Serial.println("  37-40 : Reserved for future use");
+  Serial.println("  41-59 : Control objects");
   Serial.println("  60-79 : Dynamic user-created devices");
   Serial.println("===========================\n");
 

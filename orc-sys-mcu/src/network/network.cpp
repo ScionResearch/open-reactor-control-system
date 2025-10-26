@@ -1674,6 +1674,54 @@ void handleSaveStepperConfig() {
     ioConfig.stepperMotor.showOnDashboard = doc["showOnDashboard"] | false;
   }
   
+  // Validate configuration before saving
+  // TMC5130 Constraints:
+  // - holdCurrent: 1-1000 mA
+  // - runCurrent: 1-1800 mA  
+  // - maxRPM: reasonable upper limit (e.g., 5000 RPM)
+  // - acceleration: <= maxRPM
+  
+  if (ioConfig.stepperMotor.holdCurrent_mA < 1 || ioConfig.stepperMotor.holdCurrent_mA > 1000) {
+    log(LOG_WARNING, false, "Stepper hold current out of range: %d mA (valid: 1-1000 mA)\n", 
+        ioConfig.stepperMotor.holdCurrent_mA);
+    server.send(400, "application/json", 
+                "{\"error\":\"Hold current must be 1-1000 mA\"}");
+    return;
+  }
+  
+  if (ioConfig.stepperMotor.runCurrent_mA < 1 || ioConfig.stepperMotor.runCurrent_mA > 1800) {
+    log(LOG_WARNING, false, "Stepper run current out of range: %d mA (valid: 1-1800 mA)\n",
+        ioConfig.stepperMotor.runCurrent_mA);
+    server.send(400, "application/json", 
+                "{\"error\":\"Run current must be 1-1800 mA\"}");
+    return;
+  }
+  
+  if (ioConfig.stepperMotor.maxRPM < 1 || ioConfig.stepperMotor.maxRPM > 900) {
+    log(LOG_WARNING, false, "Stepper max RPM out of range: %d (valid: 1-900 RPM)\n",
+        ioConfig.stepperMotor.maxRPM);
+    server.send(400, "application/json", 
+                "{\"error\":\"Max RPM must be 1-900\"}");
+    return;
+  }
+  
+  if (ioConfig.stepperMotor.acceleration < 1 || 
+      ioConfig.stepperMotor.acceleration > ioConfig.stepperMotor.maxRPM) {
+    log(LOG_WARNING, false, "Stepper acceleration out of range: %d (valid: 1-%d RPM/s)\n",
+        ioConfig.stepperMotor.acceleration, ioConfig.stepperMotor.maxRPM);
+    server.send(400, "application/json", 
+                "{\"error\":\"Acceleration must be 1-maxRPM RPM/s\"}");
+    return;
+  }
+  
+  if (ioConfig.stepperMotor.stepsPerRev < 1 || ioConfig.stepperMotor.stepsPerRev > 10000) {
+    log(LOG_WARNING, false, "Stepper steps/rev out of range: %d (valid: 1-10000)\n",
+        ioConfig.stepperMotor.stepsPerRev);
+    server.send(400, "application/json", 
+                "{\"error\":\"Steps per revolution must be 1-10000\"}");
+    return;
+  }
+  
   // Save configuration to file
   saveIOConfig();
   
@@ -1689,6 +1737,9 @@ void handleSaveStepperConfig() {
   cfg.acceleration = ioConfig.stepperMotor.acceleration;
   cfg.invertDirection = ioConfig.stepperMotor.invertDirection;
   cfg.enabled = ioConfig.stepperMotor.enabled;
+  
+  log(LOG_DEBUG, false, "Sending stepper config: size=%d bytes (TYPE=0x%02X)\n", 
+      sizeof(cfg), IPC_MSG_CONFIG_STEPPER);
   
   bool sent = ipc.sendPacket(IPC_MSG_CONFIG_STEPPER, (uint8_t*)&cfg, sizeof(cfg));
   

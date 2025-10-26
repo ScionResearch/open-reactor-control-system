@@ -50,7 +50,10 @@ bool ipcReady = false;  // Only start polling after handshake and config push co
  */
 void pollSensors(void) {
   // Wait for IPC handshake and configuration to complete
-  if (!ipcReady) return;
+  if (!ipcReady) {
+    log(LOG_WARNING, false, "IPC not ready for polling (handshake incomplete)\n");
+    return;
+  }
   
   unsigned long now = millis();
   if (now - lastSensorPollTime < SENSOR_POLL_INTERVAL) return;
@@ -90,13 +93,13 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
   //     (sensorData->flags & IPC_SENSOR_FLAG_FAULT) ? " [FAULT]" : "");
   
   // DEBUG: Energy sensors (31-32) - show multi-value data
-  if (sensorData->index >= 31 && sensorData->index <= 32 && sensorData->valueCount >= 2) {
+  /*if (sensorData->index >= 31 && sensorData->index <= 32 && sensorData->valueCount >= 2) {
     log(LOG_INFO, false, "[ENERGY] Sensor[%d]: %.2f %s, %.3f %s, %.2f %s\n",
         sensorData->index,
         sensorData->value, sensorData->unit,
         sensorData->additionalValues[0], sensorData->additionalUnits[0],
         sensorData->additionalValues[1], sensorData->additionalUnits[1]);
-  }
+  }*/
   
   // Update object cache
   objectCache.updateObject(sensorData);

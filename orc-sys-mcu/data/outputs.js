@@ -965,8 +965,8 @@ async function openStepperConfigModal() {
         document.getElementById('stepperConfigName').value = stepperConfigData.name || '';
         document.getElementById('stepperStepsPerRev').value = stepperConfigData.stepsPerRev || 200;
         document.getElementById('stepperMaxRPM').value = stepperConfigData.maxRPM || 500;
-        document.getElementById('stepperHoldCurrent').value = stepperConfigData.holdCurrent_mA || 500;
-        document.getElementById('stepperRunCurrent').value = stepperConfigData.runCurrent_mA || 1000;
+        document.getElementById('stepperHoldCurrent').value = stepperConfigData.holdCurrent_mA || 50;  // Safe default
+        document.getElementById('stepperRunCurrent').value = stepperConfigData.runCurrent_mA || 100;  // Safe default
         document.getElementById('stepperAcceleration').value = stepperConfigData.acceleration || 100;
         document.getElementById('stepperInvertDirection').checked = stepperConfigData.invertDirection || false;
         document.getElementById('stepperShowOnDashboard').checked = stepperConfigData.showOnDashboard || false;
@@ -997,6 +997,32 @@ async function saveStepperConfig() {
         showOnDashboard: document.getElementById('stepperShowOnDashboard').checked
     };
     
+    // Validate configuration (TMC5130 hardware constraints)
+    if (configData.holdCurrent_mA < 1 || configData.holdCurrent_mA > 1000) {
+        showToast('error', 'Validation Error', 'Hold current must be 1-1000 mA');
+        return;
+    }
+    
+    if (configData.runCurrent_mA < 1 || configData.runCurrent_mA > 1800) {
+        showToast('error', 'Validation Error', 'Run current must be 1-1800 mA');
+        return;
+    }
+    
+    if (configData.maxRPM < 1 || configData.maxRPM > 900) {
+        showToast('error', 'Validation Error', 'Max RPM must be 1-900');
+        return;
+    }
+    
+    if (configData.acceleration < 1 || configData.acceleration > configData.maxRPM) {
+        showToast('error', 'Validation Error', `Acceleration must be 1-${configData.maxRPM} RPM/s`);
+        return;
+    }
+    
+    if (configData.stepsPerRev < 1 || configData.stepsPerRev > 10000) {
+        showToast('error', 'Validation Error', 'Steps per revolution must be 1-10000');
+        return;
+    }
+    
     try {
         const response = await fetch('/api/config/stepper', {
             method: 'POST',
@@ -1004,7 +1030,10 @@ async function saveStepperConfig() {
             body: JSON.stringify(configData)
         });
         
-        if (!response.ok) throw new Error('Failed to save config');
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to save config');
+        }
         
         showToast('success', 'Success', 'Configuration saved successfully');
         closeStepperConfigModal();
@@ -1012,7 +1041,7 @@ async function saveStepperConfig() {
         
     } catch (error) {
         console.error('Error saving stepper config:', error);
-        showToast('error', 'Error', 'Failed to save configuration');
+        showToast('error', 'Error', error.message || 'Failed to save configuration');
     }
 }
 

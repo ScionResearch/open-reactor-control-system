@@ -106,6 +106,7 @@ enum IPC_ErrorCode : uint8_t {
     IPC_ERR_DEVICE_FAIL     = 0x08,  // Device creation/operation failed
     IPC_ERR_PARSE_FAIL      = 0x09,  // Payload parsing failed
     IPC_ERR_NOT_IMPLEMENTED = 0x0A,  // Feature not implemented
+    IPC_ERR_PARAM_INVALID   = 0x0B,  // Parameter validation failed (out of range, constraint violation)
 };
 
 // ============================================================================
