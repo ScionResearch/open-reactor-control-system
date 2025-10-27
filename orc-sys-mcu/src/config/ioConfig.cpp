@@ -126,6 +126,15 @@ void setDefaultIOConfig() {
         ioConfig.comPorts[i].enabled = true;
         ioConfig.comPorts[i].showOnDashboard = false;
     }
+    
+    // ========================================================================
+    // Devices (Dynamic indices 60-79)
+    // ========================================================================
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        ioConfig.devices[i].isActive = false;
+        ioConfig.devices[i].dynamicIndex = 0xFF;  // Unassigned
+        ioConfig.devices[i].name[0] = '\0';
+    }
 }
 
 /**
@@ -339,6 +348,39 @@ bool loadIOConfig() {
         }
     }
     
+    // ========================================================================
+    // Parse Devices
+    // ========================================================================
+    JsonArray devicesArray = doc["devices"];
+    if (devicesArray) {
+        for (int i = 0; i < MAX_DEVICES && i < devicesArray.size(); i++) {
+            JsonObject dev = devicesArray[i];
+            ioConfig.devices[i].isActive = dev["isActive"] | false;
+            ioConfig.devices[i].dynamicIndex = dev["dynamicIndex"] | 0xFF;
+            ioConfig.devices[i].interfaceType = (DeviceInterfaceType)(dev["interfaceType"] | 0);
+            ioConfig.devices[i].driverType = (DeviceDriverType)(dev["driverType"] | 0);
+            strlcpy(ioConfig.devices[i].name, dev["name"] | "", 
+                    sizeof(ioConfig.devices[i].name));
+            
+            // Parse interface-specific parameters based on interface type
+            if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MODBUS_RTU) {
+                ioConfig.devices[i].modbus.portIndex = dev["portIndex"] | 0;
+                ioConfig.devices[i].modbus.slaveID = dev["slaveID"] | 1;
+            } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
+                ioConfig.devices[i].analogueIO.dacOutputIndex = dev["dacOutputIndex"] | 0;
+                strlcpy(ioConfig.devices[i].analogueIO.unit, dev["unit"] | "bar", 
+                        sizeof(ioConfig.devices[i].analogueIO.unit));
+                ioConfig.devices[i].analogueIO.minOutput = dev["minOutput"] | 0.0f;
+                ioConfig.devices[i].analogueIO.maxOutput = dev["maxOutput"] | 10.0f;
+                ioConfig.devices[i].analogueIO.minPressure = dev["minPressure"] | 0.0f;
+                ioConfig.devices[i].analogueIO.maxPressure = dev["maxPressure"] | 10.0f;
+            } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
+                ioConfig.devices[i].motorDriven.usesStepper = dev["usesStepper"] | false;
+                ioConfig.devices[i].motorDriven.motorIndex = dev["motorIndex"] | 27;
+            }
+        }
+    }
+    
     log(LOG_INFO, true, "IO configuration loaded successfully\n");
     return true;
 }
@@ -480,6 +522,37 @@ void saveIOConfig() {
         port["parity"] = ioConfig.comPorts[i].parity;
         port["enabled"] = ioConfig.comPorts[i].enabled;
         port["showOnDashboard"] = ioConfig.comPorts[i].showOnDashboard;
+    }
+    
+    // ========================================================================
+    // Serialize Devices
+    // ========================================================================
+    JsonArray devicesArray = doc.createNestedArray("devices");
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (!ioConfig.devices[i].isActive) continue;  // Skip inactive devices
+        
+        JsonObject dev = devicesArray.createNestedObject();
+        dev["isActive"] = ioConfig.devices[i].isActive;
+        dev["dynamicIndex"] = ioConfig.devices[i].dynamicIndex;
+        dev["interfaceType"] = (uint8_t)ioConfig.devices[i].interfaceType;
+        dev["driverType"] = (uint8_t)ioConfig.devices[i].driverType;
+        dev["name"] = ioConfig.devices[i].name;
+        
+        // Serialize interface-specific parameters
+        if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MODBUS_RTU) {
+            dev["portIndex"] = ioConfig.devices[i].modbus.portIndex;
+            dev["slaveID"] = ioConfig.devices[i].modbus.slaveID;
+        } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
+            dev["dacOutputIndex"] = ioConfig.devices[i].analogueIO.dacOutputIndex;
+            dev["unit"] = ioConfig.devices[i].analogueIO.unit;
+            dev["minOutput"] = ioConfig.devices[i].analogueIO.minOutput;
+            dev["maxOutput"] = ioConfig.devices[i].analogueIO.maxOutput;
+            dev["minPressure"] = ioConfig.devices[i].analogueIO.minPressure;
+            dev["maxPressure"] = ioConfig.devices[i].analogueIO.maxPressure;
+        } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
+            dev["usesStepper"] = ioConfig.devices[i].motorDriven.usesStepper;
+            dev["motorIndex"] = ioConfig.devices[i].motorDriven.motorIndex;
+        }
     }
     
     // Open file for writing
@@ -835,4 +908,90 @@ void pushIOConfigToIOmcu() {
     }
     
     log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports)\n", sentCount);
+}
+
+// ============================================================================
+// Device Management Helper Functions
+// ============================================================================
+
+/**
+ * @brief Allocate next available dynamic index (60-79)
+ * @return Dynamic index (60-79), or -1 if all slots are full
+ */
+int8_t allocateDynamicIndex() {
+    // Scan through dynamic index range (60-79) to find the first unused index
+    for (uint8_t idx = DYNAMIC_INDEX_START; idx <= DYNAMIC_INDEX_END; idx++) {
+        bool inUse = false;
+        
+        // Check if this index is already allocated to a device
+        for (int i = 0; i < MAX_DEVICES; i++) {
+            if (ioConfig.devices[i].isActive && ioConfig.devices[i].dynamicIndex == idx) {
+                inUse = true;
+                break;
+            }
+        }
+        
+        if (!inUse) {
+            return idx;  // Found available index
+        }
+    }
+    
+    return -1;  // All dynamic indices are in use
+}
+
+/**
+ * @brief Free a dynamic index when device is deleted
+ * @param index Dynamic index to free (60-79)
+ */
+void freeDynamicIndex(uint8_t index) {
+    if (index < DYNAMIC_INDEX_START || index > DYNAMIC_INDEX_END) {
+        log(LOG_WARNING, true, "Attempted to free invalid dynamic index: %d\n", index);
+        return;
+    }
+    
+    // Find the device using this index and mark it as inactive
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (ioConfig.devices[i].isActive && ioConfig.devices[i].dynamicIndex == index) {
+            ioConfig.devices[i].isActive = false;
+            ioConfig.devices[i].dynamicIndex = 0xFF;
+            log(LOG_INFO, true, "Freed dynamic index %d\n", index);
+            return;
+        }
+    }
+    
+    log(LOG_WARNING, true, "Dynamic index %d not found in active devices\n", index);
+}
+
+/**
+ * @brief Check if a dynamic index is currently in use
+ * @param index Dynamic index to check (60-79)
+ * @return true if index is in use, false otherwise
+ */
+bool isDynamicIndexInUse(uint8_t index) {
+    if (index < DYNAMIC_INDEX_START || index > DYNAMIC_INDEX_END) {
+        return false;
+    }
+    
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (ioConfig.devices[i].isActive && ioConfig.devices[i].dynamicIndex == index) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * @brief Find device array position by dynamic index
+ * @param dynamicIndex Dynamic index to search for (60-79)
+ * @return Device array position (0-19), or -1 if not found
+ */
+int8_t findDeviceByIndex(uint8_t dynamicIndex) {
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (ioConfig.devices[i].isActive && ioConfig.devices[i].dynamicIndex == dynamicIndex) {
+            return i;
+        }
+    }
+    
+    return -1;  // Device not found
 }

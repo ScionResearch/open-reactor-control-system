@@ -291,6 +291,7 @@ void setupNetworkAPI()
 {
   server.on("/api/network", HTTP_GET, []()
             {
+        Serial.println("[WEB] /api/network GET request received");
         StaticJsonDocument<512> doc;
         doc["mode"] = networkConfig.useDHCP ? "dhcp" : "static";
         
@@ -299,6 +300,8 @@ void setupNetworkAPI()
         IPAddress subnet = eth.subnetMask();
         IPAddress gateway = eth.gatewayIP();
         IPAddress dns = eth.dnsIP();
+        
+        Serial.printf("[WEB] IP: %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
         
         char ipStr[16];
         snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
@@ -323,7 +326,9 @@ void setupNetworkAPI()
         
         String response;
         serializeJson(doc, response);
-        server.send(200, "application/json", response); });
+        Serial.printf("[WEB] Sending /api/network response (%d bytes)\n", response.length());
+        server.send(200, "application/json", response);
+        Serial.println("[WEB] /api/network response sent successfully"); });
 
   server.on("/api/network", HTTP_POST, []()
             {
@@ -1304,6 +1309,370 @@ void handleGetComPorts() {
 }
 
 // ============================================================================
+// DEVICES API HANDLERS
+// ============================================================================
+
+/**
+ * @brief Get all configured devices
+ */
+void handleGetDevices() {
+  DynamicJsonDocument doc(4096);  // Larger size for device list
+  
+  JsonArray devices = doc.createNestedArray("devices");
+  
+  for (int i = 0; i < MAX_DEVICES; i++) {
+    if (!ioConfig.devices[i].isActive) continue;  // Skip inactive slots
+    
+    JsonObject device = devices.createNestedObject();
+    device["dynamicIndex"] = ioConfig.devices[i].dynamicIndex;
+    device["interfaceType"] = (uint8_t)ioConfig.devices[i].interfaceType;
+    device["driverType"] = (uint8_t)ioConfig.devices[i].driverType;
+    device["name"] = ioConfig.devices[i].name;
+    device["online"] = false;  // TODO: Get actual status from IO MCU
+    
+    // Add interface-specific parameters
+    if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MODBUS_RTU) {
+      device["portIndex"] = ioConfig.devices[i].modbus.portIndex;
+      device["slaveID"] = ioConfig.devices[i].modbus.slaveID;
+    } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
+      device["dacOutputIndex"] = ioConfig.devices[i].analogueIO.dacOutputIndex;
+      device["unit"] = ioConfig.devices[i].analogueIO.unit;
+      device["minOutput"] = ioConfig.devices[i].analogueIO.minOutput;
+      device["maxOutput"] = ioConfig.devices[i].analogueIO.maxOutput;
+      device["minPressure"] = ioConfig.devices[i].analogueIO.minPressure;
+      device["maxPressure"] = ioConfig.devices[i].analogueIO.maxPressure;
+    } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
+      device["usesStepper"] = ioConfig.devices[i].motorDriven.usesStepper;
+      device["motorIndex"] = ioConfig.devices[i].motorDriven.motorIndex;
+    }
+  }
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+/**
+ * @brief Get specific device by dynamic index
+ */
+void handleGetDevice() {
+  // Extract index from URI: /api/devices/{index}
+  String uri = server.uri();
+  String indexStr = uri.substring(13);  // Skip "/api/devices/"
+  
+  // Remove any query parameters
+  int queryPos = indexStr.indexOf('?');
+  if (queryPos > 0) {
+    indexStr = indexStr.substring(0, queryPos);
+  }
+  
+  uint8_t dynamicIndex = indexStr.toInt();
+  
+  // Validate index range
+  if (dynamicIndex < DYNAMIC_INDEX_START || dynamicIndex > DYNAMIC_INDEX_END) {
+    server.send(400, "application/json", "{\"error\":\"Invalid device index\"}");
+    return;
+  }
+  
+  // Find device in config
+  int8_t deviceIdx = findDeviceByIndex(dynamicIndex);
+  if (deviceIdx < 0) {
+    server.send(404, "application/json", "{\"error\":\"Device not found\"}");
+    return;
+  }
+  
+  // Build response
+  StaticJsonDocument<512> doc;
+  doc["dynamicIndex"] = ioConfig.devices[deviceIdx].dynamicIndex;
+  doc["interfaceType"] = (uint8_t)ioConfig.devices[deviceIdx].interfaceType;
+  doc["driverType"] = (uint8_t)ioConfig.devices[deviceIdx].driverType;
+  doc["name"] = ioConfig.devices[deviceIdx].name;
+  doc["online"] = false;  // TODO: Get actual status
+  
+  // Add interface-specific parameters
+  if (ioConfig.devices[deviceIdx].interfaceType == DEVICE_INTERFACE_MODBUS_RTU) {
+    doc["portIndex"] = ioConfig.devices[deviceIdx].modbus.portIndex;
+    doc["slaveID"] = ioConfig.devices[deviceIdx].modbus.slaveID;
+  } else if (ioConfig.devices[deviceIdx].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
+    doc["dacOutputIndex"] = ioConfig.devices[deviceIdx].analogueIO.dacOutputIndex;
+    doc["unit"] = ioConfig.devices[deviceIdx].analogueIO.unit;
+    doc["minOutput"] = ioConfig.devices[deviceIdx].analogueIO.minOutput;
+    doc["maxOutput"] = ioConfig.devices[deviceIdx].analogueIO.maxOutput;
+    doc["minPressure"] = ioConfig.devices[deviceIdx].analogueIO.minPressure;
+    doc["maxPressure"] = ioConfig.devices[deviceIdx].analogueIO.maxPressure;
+  } else if (ioConfig.devices[deviceIdx].interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
+    doc["usesStepper"] = ioConfig.devices[deviceIdx].motorDriven.usesStepper;
+    doc["motorIndex"] = ioConfig.devices[deviceIdx].motorDriven.motorIndex;
+  }
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+/**
+ * @brief Create new device
+ */
+void handleCreateDevice() {
+  // Parse JSON body
+  DynamicJsonDocument doc(1024);
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  // Validate required fields
+  if (!doc.containsKey("interfaceType") || !doc.containsKey("driverType") || !doc.containsKey("name")) {
+    server.send(400, "application/json", "{\"error\":\"Missing required fields\"}");
+    return;
+  }
+  
+  uint8_t interfaceType = doc["interfaceType"];
+  uint8_t driverType = doc["driverType"];
+  String name = doc["name"].as<String>();
+  
+  // Validate name length
+  if (name.length() == 0 || name.length() > 39) {
+    server.send(400, "application/json", "{\"error\":\"Device name must be 1-39 characters\"}");
+    return;
+  }
+  
+  // Allocate dynamic index
+  int8_t dynamicIndex = allocateDynamicIndex();
+  if (dynamicIndex < 0) {
+    server.send(400, "application/json", "{\"error\":\"No available device slots (maximum 20)\"}");
+    return;
+  }
+  
+  // Find empty slot in device array
+  int emptySlot = -1;
+  for (int i = 0; i < MAX_DEVICES; i++) {
+    if (!ioConfig.devices[i].isActive) {
+      emptySlot = i;
+      break;
+    }
+  }
+  
+  if (emptySlot < 0) {
+    server.send(500, "application/json", "{\"error\":\"Internal error: no device slot available\"}");
+    return;
+  }
+  
+  // Configure device
+  ioConfig.devices[emptySlot].isActive = true;
+  ioConfig.devices[emptySlot].dynamicIndex = dynamicIndex;
+  ioConfig.devices[emptySlot].interfaceType = (DeviceInterfaceType)interfaceType;
+  ioConfig.devices[emptySlot].driverType = (DeviceDriverType)driverType;
+  strncpy(ioConfig.devices[emptySlot].name, name.c_str(), sizeof(ioConfig.devices[emptySlot].name) - 1);
+  ioConfig.devices[emptySlot].name[sizeof(ioConfig.devices[emptySlot].name) - 1] = '\0';
+  
+  // Set interface-specific parameters
+  if (interfaceType == DEVICE_INTERFACE_MODBUS_RTU) {
+    ioConfig.devices[emptySlot].modbus.portIndex = doc["portIndex"] | 0;
+    ioConfig.devices[emptySlot].modbus.slaveID = doc["slaveID"] | 1;
+  } else if (interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
+    ioConfig.devices[emptySlot].analogueIO.dacOutputIndex = doc["dacOutputIndex"] | 0;
+    strncpy(ioConfig.devices[emptySlot].analogueIO.unit, doc["unit"] | "bar", 
+            sizeof(ioConfig.devices[emptySlot].analogueIO.unit) - 1);
+    ioConfig.devices[emptySlot].analogueIO.minOutput = doc["minOutput"] | 0.0f;
+    ioConfig.devices[emptySlot].analogueIO.maxOutput = doc["maxOutput"] | 10.0f;
+    ioConfig.devices[emptySlot].analogueIO.minPressure = doc["minPressure"] | 0.0f;
+    ioConfig.devices[emptySlot].analogueIO.maxPressure = doc["maxPressure"] | 10.0f;
+  } else if (interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
+    ioConfig.devices[emptySlot].motorDriven.usesStepper = doc["usesStepper"] | false;
+    ioConfig.devices[emptySlot].motorDriven.motorIndex = doc["motorIndex"] | 27;
+  }
+  
+  // Save configuration to LittleFS
+  saveIOConfig();
+  
+  log(LOG_INFO, true, "Device created: %s (index %d, driver %d)\n", 
+      name.c_str(), dynamicIndex, driverType);
+  
+  // TODO: Send IPC_MSG_DEVICE_CREATE to IO MCU
+  // For now, we just save the config. Device creation on IO MCU will be implemented later.
+  
+  // Send success response
+  StaticJsonDocument<256> response;
+  response["success"] = true;
+  response["dynamicIndex"] = dynamicIndex;
+  response["message"] = "Device created successfully";
+  
+  String responseStr;
+  serializeJson(response, responseStr);
+  server.send(201, "application/json", responseStr);
+}
+
+/**
+ * @brief Delete device
+ */
+void handleDeleteDevice() {
+  // Extract index from URI: /api/devices/{index}
+  String uri = server.uri();
+  String indexStr = uri.substring(13);  // Skip "/api/devices/"
+  
+  // Remove any query parameters
+  int queryPos = indexStr.indexOf('?');
+  if (queryPos > 0) {
+    indexStr = indexStr.substring(0, queryPos);
+  }
+  
+  uint8_t dynamicIndex = indexStr.toInt();
+  
+  // Validate index range
+  if (dynamicIndex < DYNAMIC_INDEX_START || dynamicIndex > DYNAMIC_INDEX_END) {
+    server.send(400, "application/json", "{\"error\":\"Invalid device index\"}");
+    return;
+  }
+  
+  // Find device in config
+  int8_t deviceIdx = findDeviceByIndex(dynamicIndex);
+  if (deviceIdx < 0) {
+    server.send(404, "application/json", "{\"error\":\"Device not found\"}");
+    return;
+  }
+  
+  // Get device name for logging
+  String deviceName = String(ioConfig.devices[deviceIdx].name);
+  
+  // Free the dynamic index and mark slot as inactive
+  freeDynamicIndex(dynamicIndex);
+  
+  // Save configuration
+  saveIOConfig();
+  
+  log(LOG_INFO, true, "Device deleted: %s (index %d)\n", deviceName.c_str(), dynamicIndex);
+  
+  // TODO: Send IPC_MSG_DEVICE_DELETE to IO MCU
+  // For now, we just remove from config. IO MCU device deletion will be implemented later.
+  
+  // Send success response
+  server.send(200, "application/json", "{\"success\":true,\"message\":\"Device deleted successfully\"}");
+}
+
+/**
+ * @brief Update device configuration
+ */
+void handleUpdateDevice() {
+  // Extract index from URI: /api/devices/{index}
+  String uri = server.uri();
+  String indexStr = uri.substring(13);  // Skip "/api/devices/"
+  
+  // Remove any query parameters
+  int queryPos = indexStr.indexOf('?');
+  if (queryPos > 0) {
+    indexStr = indexStr.substring(0, queryPos);
+  }
+  
+  uint8_t dynamicIndex = indexStr.toInt();
+  
+  // Validate index range
+  if (dynamicIndex < DYNAMIC_INDEX_START || dynamicIndex > DYNAMIC_INDEX_END) {
+    server.send(400, "application/json", "{\"error\":\"Invalid device index\"}");
+    return;
+  }
+  
+  // Find device in config
+  int8_t deviceIdx = findDeviceByIndex(dynamicIndex);
+  if (deviceIdx < 0) {
+    server.send(404, "application/json", "{\"error\":\"Device not found\"}");
+    return;
+  }
+  
+  // Parse request body
+  String body = server.arg("plain");
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, body);
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  // Update device name
+  if (doc.containsKey("name")) {
+    const char* name = doc["name"];
+    if (strlen(name) == 0 || strlen(name) >= sizeof(ioConfig.devices[deviceIdx].name)) {
+      server.send(400, "application/json", "{\"error\":\"Invalid device name\"}");
+      return;
+    }
+    strlcpy(ioConfig.devices[deviceIdx].name, name, sizeof(ioConfig.devices[deviceIdx].name));
+  }
+  
+  // Update interface-specific parameters based on interface type
+  DeviceInterfaceType interfaceType = ioConfig.devices[deviceIdx].interfaceType;
+  
+  if (interfaceType == DEVICE_INTERFACE_MODBUS_RTU) {
+    if (doc.containsKey("portIndex")) {
+      uint8_t portIndex = doc["portIndex"];
+      if (portIndex > 3) {
+        server.send(400, "application/json", "{\"error\":\"Invalid port index\"}");
+        return;
+      }
+      ioConfig.devices[deviceIdx].modbus.portIndex = portIndex;
+    }
+    
+    if (doc.containsKey("slaveID")) {
+      uint8_t slaveID = doc["slaveID"];
+      if (slaveID < 1 || slaveID > 247) {
+        server.send(400, "application/json", "{\"error\":\"Invalid slave ID\"}");
+        return;
+      }
+      ioConfig.devices[deviceIdx].modbus.slaveID = slaveID;
+    }
+  } 
+  else if (interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
+    if (doc.containsKey("dacOutputIndex")) {
+      ioConfig.devices[deviceIdx].analogueIO.dacOutputIndex = doc["dacOutputIndex"];
+    }
+    if (doc.containsKey("unit")) {
+      strlcpy(ioConfig.devices[deviceIdx].analogueIO.unit, doc["unit"], 
+              sizeof(ioConfig.devices[deviceIdx].analogueIO.unit));
+    }
+    if (doc.containsKey("minPressure")) {
+      ioConfig.devices[deviceIdx].analogueIO.minPressure = doc["minPressure"];
+    }
+    if (doc.containsKey("maxPressure")) {
+      ioConfig.devices[deviceIdx].analogueIO.maxPressure = doc["maxPressure"];
+    }
+  } 
+  else if (interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
+    if (doc.containsKey("usesStepper")) {
+      ioConfig.devices[deviceIdx].motorDriven.usesStepper = doc["usesStepper"];
+    }
+    if (doc.containsKey("motorIndex")) {
+      uint8_t motorIndex = doc["motorIndex"];
+      // Validate: 26 for stepper, 27-30 for DC motors
+      if (motorIndex != 26 && (motorIndex < 27 || motorIndex > 30)) {
+        server.send(400, "application/json", "{\"error\":\"Invalid motor index\"}");
+        return;
+      }
+      ioConfig.devices[deviceIdx].motorDriven.motorIndex = motorIndex;
+    }
+  }
+  
+  // Save configuration
+  saveIOConfig();
+  
+  log(LOG_INFO, true, "Device updated: %s (index %d)\n", 
+      ioConfig.devices[deviceIdx].name, dynamicIndex);
+  
+  // TODO: Send IPC_MSG_DEVICE_UPDATE to IO MCU to reconfigure the device
+  
+  // Send success response
+  StaticJsonDocument<256> response;
+  response["success"] = true;
+  response["message"] = "Device updated successfully";
+  response["dynamicIndex"] = dynamicIndex;
+  
+  String responseStr;
+  serializeJson(response, responseStr);
+  server.send(200, "application/json", responseStr);
+}
+
+// ============================================================================
 // OUTPUTS API HANDLERS
 // ============================================================================
 
@@ -2207,6 +2576,16 @@ void setupWebServer()
   server.on("/api/comports", HTTP_GET, handleGetComPorts);
 
   // ============================================================================
+  // Devices API Endpoints
+  // ============================================================================
+  
+  // Get all devices
+  server.on("/api/devices", HTTP_GET, handleGetDevices);
+  
+  // Create new device
+  server.on("/api/devices", HTTP_POST, handleCreateDevice);
+
+  // ============================================================================
   // Outputs API Endpoints
   // ============================================================================
   
@@ -2287,9 +2666,56 @@ void setupWebServer()
   setupMqttAPI();
   setupTimeAPI();
 
-  // Handle static files
-  server.onNotFound([]()
-                    { handleFile(server.uri().c_str()); });
+  // Handle dynamic device routes and static files
+  server.onNotFound([]() {
+    String uri = server.uri();
+    Serial.printf("[WEB] onNotFound: %s (method: %d)\n", uri.c_str(), server.method());
+    
+    // Check if this is a device API route: /api/devices/{number}
+    if (uri.startsWith("/api/devices/")) {
+      // Extract the index part after "/api/devices/"
+      String indexStr = uri.substring(13);
+      
+      // Remove any query parameters or trailing slashes
+      int queryPos = indexStr.indexOf('?');
+      if (queryPos > 0) {
+        indexStr = indexStr.substring(0, queryPos);
+      }
+      int slashPos = indexStr.indexOf('/');
+      if (slashPos > 0) {
+        indexStr = indexStr.substring(0, slashPos);
+      }
+      
+      // Parse as integer
+      uint8_t index = indexStr.toInt();
+      
+      Serial.printf("[WEB] Device API route detected: index=%d, indexStr='%s'\n", index, indexStr.c_str());
+      
+      // Validate it's in the dynamic index range (60-79)
+      if (index >= DYNAMIC_INDEX_START && index <= DYNAMIC_INDEX_END && indexStr.length() > 0) {
+        // Valid device route - dispatch to appropriate handler
+        HTTPMethod method = server.method();
+        Serial.printf("[WEB] Dispatching to device handler (method: %d)\n", method);
+        if (method == HTTP_GET) {
+          handleGetDevice();
+          return;
+        } else if (method == HTTP_PUT) {
+          handleUpdateDevice();
+          return;
+        } else if (method == HTTP_DELETE) {
+          handleDeleteDevice();
+          return;
+        } else {
+          server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
+          return;
+        }
+      }
+    }
+    
+    // Not a device API route - try serving static file
+    Serial.printf("[WEB] Serving static file: %s\n", uri.c_str());
+    handleFile(uri.c_str());
+  });
 
   server.begin();
   log(LOG_INFO, true, "HTTP server started\n");
@@ -2368,9 +2794,11 @@ void setupTimeAPI()
 {
   server.on("/api/time", HTTP_GET, []()
             {
+        Serial.println("[WEB] /api/time GET request received");
         StaticJsonDocument<256> doc;
         DateTime dt;
         if (getGlobalDateTime(dt)) {
+            Serial.println("[WEB] Successfully got datetime");
             char dateStr[11];
             snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", 
                     dt.year, dt.month, dt.day);
@@ -2427,8 +2855,11 @@ void setupTimeAPI()
             
             String response;
             serializeJson(doc, response);
+            Serial.printf("[WEB] Sending /api/time response (%d bytes)\n", response.length());
             server.send(200, "application/json", response);
+            Serial.println("[WEB] /api/time response sent successfully");
         } else {
+            Serial.println("[WEB] ERROR: Failed to get current time");
             server.send(500, "application/json", "{\"error\": \"Failed to get current time\"}");
         }
     });
@@ -2625,6 +3056,14 @@ void handleFile(const char *path)
     contentType = "application/json";
   else if (strstr(path, ".ico"))
     contentType = "image/x-icon";
+  else if (strstr(path, ".png"))
+    contentType = "image/png";
+  else if (strstr(path, ".jpg") || strstr(path, ".jpeg"))
+    contentType = "image/jpeg";
+  else if (strstr(path, ".gif"))
+    contentType = "image/gif";
+  else if (strstr(path, ".svg"))
+    contentType = "image/svg+xml";
   else
     contentType = "text/plain";
 
@@ -2634,14 +3073,30 @@ void handleFile(const char *path)
   if (!filePath.startsWith("/"))
     filePath = "/" + filePath;
 
+  Serial.printf("[WEB] Request: %s (type: %s)\n", filePath.c_str(), contentType.c_str());
+
   if (LittleFS.exists(filePath))
   {
     File file = LittleFS.open(filePath, "r");
-    server.streamFile(file, contentType);
+    if (!file) {
+      Serial.printf("[WEB] ERROR: Failed to open file: %s\n", filePath.c_str());
+      server.send(500, "text/plain", "Failed to open file");
+      return;
+    }
+    
+    size_t fileSize = file.size();
+    unsigned long startTime = millis();
+    Serial.printf("[WEB] Serving file: %s (%d bytes)\n", filePath.c_str(), fileSize);
+    
+    size_t sent = server.streamFile(file, contentType);
     file.close();
+    
+    unsigned long elapsed = millis() - startTime;
+    Serial.printf("[WEB] Sent %d/%d bytes in %lu ms\n", sent, fileSize, elapsed);
   }
   else
   {
+    Serial.printf("[WEB] File not found: %s\n", filePath.c_str());
     server.send(404, "text/plain", "File not found");
   }
   if (!statusLocked) {

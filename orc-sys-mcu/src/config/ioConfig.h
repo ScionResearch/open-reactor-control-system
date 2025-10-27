@@ -151,6 +151,74 @@ struct ComPortConfig {
 };
 
 /**
+ * @brief Device interface types
+ */
+enum DeviceInterfaceType : uint8_t {
+    DEVICE_INTERFACE_MODBUS_RTU = 0,
+    DEVICE_INTERFACE_ANALOGUE_IO = 1,
+    DEVICE_INTERFACE_MOTOR_DRIVEN = 2
+};
+
+/**
+ * @brief Device driver types
+ */
+enum DeviceDriverType : uint8_t {
+    // Modbus drivers (0-9)
+    DEVICE_DRIVER_HAMILTON_PH = 0,
+    DEVICE_DRIVER_HAMILTON_DO = 1,
+    DEVICE_DRIVER_HAMILTON_OD = 2,
+    DEVICE_DRIVER_ALICAT_MFC = 3,
+    
+    // Analogue IO drivers (10-19)
+    DEVICE_DRIVER_PRESSURE_CONTROLLER = 10,
+    
+    // Motor driven drivers (20-29)
+    DEVICE_DRIVER_STIRRER = 20,
+    DEVICE_DRIVER_PUMP = 21
+};
+
+/**
+ * @brief Configuration for peripheral devices (dynamic indices 60-79)
+ * Maximum of 20 user-created devices
+ */
+#define MAX_DEVICES 20
+#define DYNAMIC_INDEX_START 60
+#define DYNAMIC_INDEX_END 79
+
+struct DeviceConfig {
+    bool isActive;                      // Is this slot in use?
+    uint8_t dynamicIndex;               // Dynamic index (60-79, 0xFF if not assigned)
+    DeviceInterfaceType interfaceType;
+    DeviceDriverType driverType;
+    char name[40];                      // User-defined device name (matches IPC limit)
+    
+    // Interface-specific parameters
+    union {
+        // Modbus RTU device parameters
+        struct {
+            uint8_t portIndex;          // COM port index (0-3)
+            uint8_t slaveID;            // Modbus slave ID (1-247)
+        } modbus;
+        
+        // Analogue IO device parameters
+        struct {
+            uint8_t dacOutputIndex;     // DAC output index (0-1)
+            char unit[8];               // Pressure unit (e.g., "bar", "kPa", "psi")
+            float minOutput;            // Minimum output voltage (0V)
+            float maxOutput;            // Maximum output voltage (10V)
+            float minPressure;          // Pressure at min output
+            float maxPressure;          // Pressure at max output
+        } analogueIO;
+        
+        // Motor driven device parameters
+        struct {
+            bool usesStepper;           // true = stepper motor (index 26), false = DC motor (27-30)
+            uint8_t motorIndex;         // Motor index: 26 for stepper, 27-30 for DC
+        } motorDriven;
+    };
+};
+
+/**
  * @brief Main IO configuration structure
  */
 struct IOConfig {
@@ -167,6 +235,9 @@ struct IOConfig {
     DCMotorConfig dcMotors[MAX_DC_MOTORS];
     EnergySensorConfig energySensors[MAX_ENERGY_SENSORS];  // Indices 31-32
     ComPortConfig comPorts[MAX_COM_PORTS];  // RS-232 (0-1) and RS-485 (2-3)
+    
+    // Dynamic peripheral devices (indices 60-79)
+    DeviceConfig devices[MAX_DEVICES];
 };
 
 // Function prototypes
@@ -175,6 +246,12 @@ void saveIOConfig();
 void setDefaultIOConfig();
 void printIOConfig();
 void pushIOConfigToIOmcu();  // Push config to IO MCU via IPC
+
+// Device management helpers
+int8_t allocateDynamicIndex();           // Allocate next available index (60-79), returns -1 if full
+void freeDynamicIndex(uint8_t index);    // Free a dynamic index
+bool isDynamicIndexInUse(uint8_t index); // Check if an index is in use
+int8_t findDeviceByIndex(uint8_t dynamicIndex); // Find device array position by index, returns -1 if not found
 
 // Global configuration instance
 extern IOConfig ioConfig;

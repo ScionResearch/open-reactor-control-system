@@ -82,7 +82,7 @@ function openTab(evt, tabName) {
     }
 }
 
-// Live clock update function
+// Live clock - uses browser time (backend time shown in input fields)
 function updateLiveClock() {
     const clockElement = document.getElementById('liveClock');
     if (clockElement) {
@@ -699,6 +699,15 @@ async function loadInitialSettings() {
         const data = await response.json();
         
         if (data) {
+            // Update form fields
+            if (data.date) {
+                document.getElementById('currentDate').value = data.date;
+            }
+            if (data.time) {
+                // Remove seconds from time string if present (format: HH:MM:SS -> HH:MM)
+                const timeWithoutSeconds = data.time.substring(0, 5);
+                document.getElementById('currentTime').value = timeWithoutSeconds;
+            }
             document.getElementById('enableNTP').checked = data.ntpEnabled;
             document.getElementById('enableDST').checked = data.dst;
             document.getElementById('timezone').value = data.timezone;
@@ -725,13 +734,23 @@ async function loadNetworkSettings() {
                 ipConfig.dispatchEvent(new Event('change'));
             }
 
-            // Set static IP fields
+            // Set static IP configuration fields (for editing)
             document.getElementById('ipAddress').value = data.ip || '';
             document.getElementById('subnetMask').value = data.subnet || '';
             document.getElementById('gateway').value = data.gateway || '';
             document.getElementById('dns').value = data.dns || '';
 
-            // Set NTP server
+            // Set current network info (read-only display)
+            const macElement = document.getElementById('macAddress');
+            if (macElement) {
+                macElement.textContent = data.mac || 'Unknown';
+            }
+            const currentIpElement = document.getElementById('currentIP');
+            if (currentIpElement) {
+                currentIpElement.textContent = data.ip || 'Unknown';
+            }
+
+            // Set hostname and NTP server
             document.getElementById('hostName').value = data.hostname || '';
             document.getElementById('ntpServer').value = data.ntp || '';
         }
@@ -769,17 +788,19 @@ async function loadControlSettings() {
 }
 
 // Event listeners
-document.addEventListener('DOMContentLoaded', () => {
-    loadInitialSettings();  // Load initial NTP and timezone settings
-    loadNetworkSettings();  // Load initial network settings
-    loadMqttSettings();     // Load initial MQTT settings
-    loadControlSettings();  // Load initial control settings
+document.addEventListener('DOMContentLoaded', async () => {
+    // Load settings sequentially to avoid overwhelming single-threaded server
+    await loadInitialSettings();  // Load initial NTP and timezone settings
+    await loadNetworkSettings();  // Load initial network settings
+    await loadMqttSettings();     // Load initial MQTT settings
+    loadControlSettings();  // Load initial control settings (no API call)
     updateLiveClock();
     updateSensorData();
     updateNetworkInfo();
     
     // Initialize system status if system tab is active initially
-    if (document.querySelector('#system').classList.contains('active')) {
+    const systemTab = document.querySelector('#system');
+    if (systemTab && systemTab.classList.contains('active')) {
         updateSystemStatus();
     }
     
@@ -819,7 +840,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initialize control board if Control tab is active on load
-    if (document.querySelector('#control').classList.contains('active')) {
+    const controlTab = document.querySelector('#control');
+    if (controlTab && controlTab.classList.contains('active')) {
         initControlBoard();
     }
 });
@@ -879,6 +901,61 @@ async function saveControlSettings(controlType) {
     }
 }
 
+// Function to save time settings
+async function saveTimeSettings() {
+    console.log('Save time settings called');
+    
+    try {
+        // Get values from form
+        const date = document.getElementById('currentDate').value;
+        const time = document.getElementById('currentTime').value;
+        const timezone = document.getElementById('timezone').value;
+        const ntpEnabled = document.getElementById('enableNTP').checked;
+        const dstEnabled = document.getElementById('enableDST').checked;
+        
+        // Validate required fields - only need date/time if NTP is disabled
+        if (!ntpEnabled && (!date || !time)) {
+            showToast('error', 'Validation Error', 'Please provide both date and time for manual time setting');
+            return;
+        }
+        
+        // Build request payload
+        const payload = {
+            date: date,
+            time: time,
+            timezone: timezone,
+            ntpEnabled: ntpEnabled,
+            dstEnabled: dstEnabled
+        };
+        
+        console.log('Sending time settings:', payload);
+        
+        // Send to backend
+        const response = await fetch('/api/time', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(errorData.error || 'Failed to save time settings');
+        }
+        
+        const data = await response.json();
+        showToast('success', 'Success', data.message || 'Time settings saved successfully');
+        
+        // Reload time settings to reflect changes
+        await loadInitialSettings();
+        
+    } catch (error) {
+        console.error('Error saving time settings:', error);
+        showToast('error', 'Error', error.message || 'Failed to save time settings');
+    }
+}
+
 // Update intervals
 setInterval(updateLiveClock, 1000);    // Update clock every second
 setInterval(updateSensorData, 5000);   // Update sensor data every 5 seconds (reduced frequency)
@@ -895,18 +972,6 @@ function updateTrend(elementId, newValue, oldValue) {
     // This function is called but not defined - adding a placeholder
     // In a real implementation, this would update trend indicators
     console.log('Trend update called for', elementId, 'new:', newValue, 'old:', oldValue);
-}
-
-function saveTimeSettings() {
-    // This function is called but not defined - adding a placeholder
-    // In a real implementation, this would save time settings
-    console.log('Save time settings called');
-}
-
-function saveControl(controlType) {
-    // This function is called but not defined - adding a placeholder
-    // In a real implementation, this would save control settings
-    console.log('Save control called for:', controlType);
 }
 
 // Update system status information
