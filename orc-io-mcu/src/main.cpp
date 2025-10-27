@@ -4,8 +4,8 @@
 // Most of this is debug code!!!! Very much a work in progress
 
 // Peripheral device instances (class-based drivers)
-HamiltonPHProbe* phProbe = nullptr;
-AlicatMFC* alicatMFC = nullptr;
+//HamiltonPHProbe* phProbe = nullptr;
+//AlicatMFC* alicatMFC = nullptr;
 
 void schedulerHeatbeat(void) {
   //static uint32_t loopCount = 0;
@@ -116,12 +116,12 @@ void printStuff(void) {
 
 
 void testTaskFunction(void) {
-  if (!alicatMFC) return;  // Safety check
+  /*if (!alicatMFC) return;  // Safety check
   static float setpoint = 0.0;
   setpoint += 0.1;
   if (setpoint > 1.2) setpoint = 0.0;
   //Serial.printf("Sending a new setpoint to Alicat MFC: %0.4f\n", setpoint);
-  alicatMFC->writeSetpoint(setpoint);
+  alicatMFC->writeSetpoint(setpoint);*/
 }
 
 void setupCSpins(void) {
@@ -144,8 +144,7 @@ void setupRtdInterface(void) {
   } else {
     Serial.println("RTD driver initialised.");
   }
-
-  setRtdSensorType(&rtd_interface[0], PT100);
+  /*setRtdSensorType(&rtd_interface[0], PT100);
   setRtdWires(&rtd_interface[0], MAX31865_4WIRE);
   Serial.println("Changed sensor 1 to PT100, 4 wire.");
   setRtdSensorType(&rtd_interface[1], PT1000);
@@ -153,7 +152,7 @@ void setupRtdInterface(void) {
   Serial.println("Changed sensor 2 to PT1000, 3 wire.");
   setRtdSensorType(&rtd_interface[2], PT100);
   setRtdWires(&rtd_interface[2], MAX31865_2WIRE);
-  Serial.println("Changed sensor 3 to PT100, 2 wire.");
+  Serial.println("Changed sensor 3 to PT100, 2 wire.");*/
 }
 
 void setup() {
@@ -256,22 +255,29 @@ void setup() {
   modbus_init();
   
   // Configure Modbus Port 3 for pH probe (19200 baud, 8N2)
-  modbusPort[2].baudRate = 19200;
+  /*modbusPort[2].baudRate = 19200;
   modbusPort[2].stopBits = 2;
   modbusPort[2].parity = 0;
-  modbusDriver[2].configChanged = true;
+  modbusDriver[2].configChanged = true;*/
 
   // Configure Modbus Port 4 for Alicat MFC (19200 baud, 8N1)
-  modbusPort[3].baudRate = 19200;
+  /*modbusPort[3].baudRate = 19200;
   modbusPort[3].stopBits = 1;
   modbusPort[3].parity = 0;
-  modbusDriver[3].configChanged = true;
+  modbusDriver[3].configChanged = true;*/
 
   Serial.println("Starting IPC interface");
   if (!ipc_init()) {
     Serial.println("Failed to initialise IPC driver.");
   } else {
     Serial.println("IPC driver initialised at 2 Mbps.");
+  }
+
+  Serial.println("Initialising Device Manager");
+  if (!DeviceManager::init()) {
+    Serial.println("Failed to initialise Device Manager.");
+  } else {
+    Serial.println("Device Manager initialised (dynamic devices: 60-79)");
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -296,12 +302,12 @@ void setup() {
   Serial.println("===========================\n");
 
   // Initialise Hamilton pH probe interface (class-based)
-  Serial.println("Initialising Hamilton pH probe interface");
-  phProbe = new HamiltonPHProbe(&modbusDriver[2], 3);  // Port 2 (RS485), Slave ID 3
+  /*Serial.println("Initialising Hamilton pH probe interface");
+  phProbe = new HamiltonPHProbe(&modbusDriver[2], 3);  // Port 2 (RS485), Slave ID 3*/
 
   // Initialise Alicat MFC interface (class-based)
-  Serial.println("Initialising Alicat MFC interface");
-  alicatMFC = new AlicatMFC(&modbusDriver[3], 1);  // Port 3 (RS485), Slave ID 1
+  /*Serial.println("Initialising Alicat MFC interface");
+  alicatMFC = new AlicatMFC(&modbusDriver[3], 1);  // Port 3 (RS485), Slave ID 1*/
 
   Serial.println("Adding tasks to scheduler");
   analog_input_task = tasks.addTask(ADC_update, 10, true, false);
@@ -315,12 +321,12 @@ void setup() {
   pwrSensor_task = tasks.addTask([]() { pwrSensor_update(); }, 1000, true, false);
   
   // Add peripheral device tasks using lambda functions
-  if (phProbe) {
+  /*if (phProbe) {
     phProbe_task = tasks.addTask([]() { phProbe->update(); }, 2000, true, false);
   }
   if (alicatMFC) {
     mfc_task = tasks.addTask([]() { alicatMFC->update(); }, 2000, true, false);
-  }
+  }*/
   
   // Debug/monitoring tasks
   printStuff_task = tasks.addTask(printStuff, 1000, true, false);
@@ -329,7 +335,7 @@ void setup() {
 
   //heartbeatMillis = millis();
 
-  Serial.println("Setup done - VERSION CHECK: 4 (IPC queue drain fix)");
+  Serial.println("Setup done");
 }
 
 void loop() {

@@ -61,6 +61,13 @@ void HamiltonArcDO::handleDOResponse(bool valid, uint16_t *data) {
         _doSensor.fault = true;
         snprintf(_doSensor.message, sizeof(_doSensor.message), "Invalid DO data from Hamilton Arc DO sensor (ID %d)", _slaveID);
         _doSensor.newMessage = true;
+        
+        // Update control object with fault status
+        _controlObj.connected = false;
+        _controlObj.fault = true;
+        _controlObj.newMessage = true;
+        strncpy(_controlObj.message, _doSensor.message, sizeof(_controlObj.message));
+        
         return;
     }
     
@@ -79,6 +86,21 @@ void HamiltonArcDO::handleDOResponse(bool valid, uint16_t *data) {
     memcpy(&dissolvedOxygen, &data[2], sizeof(float));
     _doSensor.dissolvedOxygen = dissolvedOxygen;
     _doSensor.fault = false;
+    
+    // Update device control object
+    _controlObj.setpoint = 0.0f;  // No setpoint for sensor-only device (future DO control will use this)
+    _controlObj.actualValue = _doSensor.dissolvedOxygen;  // Current DO reading
+    strncpy(_controlObj.setpointUnit, _doSensor.unit, sizeof(_controlObj.setpointUnit));
+    _controlObj.connected = true;  // Got valid Modbus response
+    _controlObj.fault = _doSensor.fault || _temperatureSensor.fault;
+    _controlObj.newMessage = _doSensor.newMessage || _temperatureSensor.newMessage;
+    if (_doSensor.newMessage) {
+        strncpy(_controlObj.message, _doSensor.message, sizeof(_controlObj.message));
+    } else if (_temperatureSensor.newMessage) {
+        strncpy(_controlObj.message, _temperatureSensor.message, sizeof(_controlObj.message));
+    }
+    _controlObj.slaveID = _slaveID;
+    _controlObj.deviceType = IPC_DEV_HAMILTON_DO;
 }
 
 // Instance method to handle temperature response

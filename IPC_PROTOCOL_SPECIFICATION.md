@@ -1,6 +1,6 @@
 # Inter-Processor Communication (IPC) Protocol Specification
-**Version:** 2.4  
-**Date:** 2025-10-25  
+**Version:** 2.5  
+**Date:** 2025-10-27  
 **Status:** ✅ Implemented & Operational
 
 ---
@@ -25,7 +25,7 @@ High-speed, robust binary communication protocol between:
 ### 1.3 Design Principles
 - ✅ **Lightweight:** 8-byte overhead per packet
 - ✅ **Robust:** CRC16-CCITT error detection
-- ✅ **Scalable:** Extensible message types, 80-object index
+- ✅ **Scalable:** Extensible message types, 100-object index
 - ✅ **Non-blocking:** Async state machine, TX queue
 - ✅ **Fast:** 2 Mbps, minimal latency (<1ms per packet)
 - ✅ **Type-safe:** Object type verification on all operations
@@ -434,26 +434,30 @@ The object index provides a unified addressing scheme for all sensors, actuators
 - **35:** Modbus Port 3 (RS-485) - Serial4
 - **36:** Modbus Port 4 (RS-485) - Serial5
 
-#### **Reserved (37-40)** 🚧 Future Expansion
-- **37-40:** Reserved for future control or sensor objects
+#### **Onboard Device Feedback (37-39)** 🚧 Reserved
+- **37-39:** Reserved for additional onboard device status/feedback
 
-#### **Control Objects (41-59)** 🚧 Reserved for Future Implementation
-- **41-43:** Temperature Control (3 loops) - PID controllers
-- **44:** pH Control - Dosing control
-- **45:** Dissolved Oxygen Control - Gas mixing + stirrer
-- **46:** Optical Density Control - Turbidity/biomass
-- **47-50:** Gas Flow Control (4 channels) - MFC control loops
-- **51:** Stirrer Speed Control - Motor control loop
-- **52-55:** Pump Control (4 channels) - Peristaltic pump control
-- **56:** Feed Control - Nutrient addition sequencer
-- **57:** Waste Control - Drainage sequencer
-- **58-59:** Reserved (future control objects)
+#### **Controller Objects (40-49)** 🚧 Reserved for Future Implementation
+- **40-42:** Temperature Control (3 loops) - PID controllers
+- **43:** pH Control - Dosing control
+- **44:** Dissolved Oxygen Control - Gas mixing + stirrer
+- **45:** Optical Density Control - Turbidity/biomass
+- **46-47:** Gas Flow Control (2 channels) - MFC control loops
+- **48:** Pump Control - Peristaltic pump control
+- **49:** Feed/Waste Control - Nutrient/waste sequencers
 
-**Dynamic Indices (60-79):** User-created peripheral devices
-- Modbus/peripheral sensors (pH probes, DO sensors, OD sensors, MFCs, etc.)
-- User-created devices via `IPC_MSG_DEVICE_CREATE`
-- Assigned sequentially starting at 60, recycled on deletion
-- **20 slots available** for dynamic objects
+**Device Control Objects (50-69):** ✅ **NEW** Peripheral device control
+- Control interface for dynamic devices (setpoints, commands, status)
+- Each device gets one control object (MFC setpoint, pump speed, etc.)
+- Linked to sensor objects via `startSensorIndex` field
+- **20 slots available** for device control
+
+**Device Sensor Objects (70-99):** User-created peripheral sensors
+- Sensor readings from dynamic devices (pH, DO, OD, flow, pressure, etc.)
+- User-created via `IPC_MSG_DEVICE_CREATE`
+- Assigned sequentially starting at 70, recycled on deletion
+- Each device can have 1-4 sensors (e.g., MFC: flow + pressure)
+- **30 slots available** for device sensors
 
 ### 5.2 Object Type Mapping
 
@@ -479,23 +483,25 @@ OBJ_T_BDC_MOTOR                 // Indices 27-30
 OBJ_T_SERIAL_RS232_PORT         // Indices 33-34
 OBJ_T_SERIAL_RS485_PORT         // Indices 35-36
 
-// Controls (future)
-OBJ_T_TEMPERATURE_CONTROL       // Indices 41-43
-OBJ_T_PH_CONTROL                // Index 44
-OBJ_T_DISSOLVED_OXYGEN_CONTROL  // Index 45
-OBJ_T_OPTICAL_DENSITY_CONTROL   // Index 46
-OBJ_T_GAS_FLOW_CONTROL          // Indices 47-50
-OBJ_T_STIRRER_CONTROL           // Index 51
-OBJ_T_PUMP_CONTROL              // Indices 52-55
-OBJ_T_FEED_CONTROL              // Index 56
-OBJ_T_WASTE_CONTROL             // Index 57
+// Controllers (40-49) - Future
+OBJ_T_TEMPERATURE_CONTROL       // Indices 40-42
+OBJ_T_PH_CONTROL                // Index 43
+OBJ_T_DISSOLVED_OXYGEN_CONTROL  // Index 44
+OBJ_T_OPTICAL_DENSITY_CONTROL   // Index 45
+OBJ_T_GAS_FLOW_CONTROL          // Indices 46-47
+OBJ_T_PUMP_CONTROL              // Index 48
+OBJ_T_FEED_WASTE_CONTROL        // Index 49
 
-// Dynamic sensors (60+)
-OBJ_T_PH_SENSOR                 // User-created
-OBJ_T_DISSOLVED_OXYGEN_SENSOR   // User-created
-OBJ_T_OPTICAL_DENSITY_SENSOR    // User-created
-OBJ_T_FLOW_SENSOR               // User-created
-OBJ_T_PRESSURE_SENSOR           // User-created
+// Device Controls (50-69) - ✅ Active
+OBJ_T_DEVICE_CONTROL            // Control/status for peripheral devices
+
+// Device Sensors (70-99) - ✅ Active
+OBJ_T_PH_SENSOR                 // Indices 70+ (dynamic)
+OBJ_T_DISSOLVED_OXYGEN_SENSOR   // Indices 70+ (dynamic)
+OBJ_T_OPTICAL_DENSITY_SENSOR    // Indices 70+ (dynamic)
+OBJ_T_FLOW_SENSOR               // Indices 70+ (dynamic)
+OBJ_T_PRESSURE_SENSOR           // Indices 70+ (dynamic)
+OBJ_T_TEMPERATURE_SENSOR        // Indices 10-12, 70+ (dynamic)
 ```
 
 ### 5.3 Unit Strings
@@ -524,6 +530,53 @@ Every command includes `objectType` field:
 - Prevents wrong commands to wrong device types
 - Mismatch → `IPC_MSG_ERROR` with code `IPC_ERR_TYPE_MISMATCH`
 - Validated on both SAME51 and RP2040 sides
+
+### 5.5 Dual-Index Device Model ✅ **NEW v2.5**
+
+Peripheral devices (MFCs, pH probes, pumps) use a **dual-index architecture** separating control from sensors:
+
+#### **Control Object (50-69)**
+- **Purpose:** Device setpoints, commands, status
+- **One per device:** Single control point for the device
+- **Contains:**
+  - `setpoint` - Target value (flow rate, pH, etc.)
+  - `actualValue` - Feedback from primary sensor
+  - `connected` - Modbus/I2C connection status
+  - `fault` - Fault condition flag
+  - `message` - Status/error messages
+  - `startSensorIndex` - Link to sensor objects (70-99)
+  - `sensorCount` - Number of associated sensors
+
+#### **Sensor Objects (70-99)**
+- **Purpose:** Real-time sensor readings
+- **1-4 per device:** Flow, pressure, temperature, etc.
+- **Polled continuously:** Included in bulk read (indices 0-99)
+- **Standard sensor format:** Value, unit, type, fault flags
+
+#### **Example: Alicat MFC**
+```
+Index 50: Device Control
+  - Setpoint: 100.0 SLPM
+  - Actual: 99.8 SLPM (from sensor 70)
+  - Connected: true
+  - Fault: false
+  
+Index 70: Flow Sensor (OBJ_T_FLOW_SENSOR)
+  - Value: 99.8
+  - Unit: "SLPM"
+  - Type: FLOW_SENSOR
+  
+Index 71: Pressure Sensor (OBJ_T_PRESSURE_SENSOR)
+  - Value: 25.3
+  - Unit: "PSI"
+  - Type: PRESSURE_SENSOR
+```
+
+#### **Benefits:**
+- ✅ **Clean separation:** Control (write) vs sensors (read)
+- ✅ **Efficient polling:** Sensors in bulk read, control on-demand
+- ✅ **Scalable:** 20 devices with up to 30 total sensors
+- ✅ **Consistent API:** Control via `/api/device/{index}`, sensors via `/api/inputs`
 
 ---
 

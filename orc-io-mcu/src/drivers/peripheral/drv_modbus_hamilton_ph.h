@@ -83,12 +83,19 @@ public:
         _temperatureSensor.newMessage = false;
     }
     
+    /**
+     * @brief Get the device control object
+     * @return Pointer to the DeviceControl_t object for this device
+     */
+    DeviceControl_t* getControlObject() { return &_controlObj; }
+    
 private:
     ModbusDriver_t *_modbusDriver;          ///< Pointer to the Modbus driver managing the serial port
     uint8_t _slaveID;                        ///< Modbus slave ID
     PhSensor_t _phSensor;                    ///< pH sensor data
     TemperatureSensor_t _temperatureSensor;  ///< Temperature sensor data
     uint16_t _dataBuffer[10];                ///< Data buffer for Modbus transactions
+    DeviceControl_t _controlObj;             ///< Device control object
     
     // Unit tracking for each instance
     uint32_t _phUnitCode;                    ///< pH unit code (for change detection)

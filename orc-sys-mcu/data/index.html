@@ -154,6 +154,14 @@
                             <div class="loading">Loading...</div>
                         </div>
                     </div>
+                    
+                    <!-- Dynamic Device Sensors Section -->
+                    <div class="input-section-card">
+                        <h3>Device Sensors</h3>
+                        <div id="device-sensors-list" class="input-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -808,6 +816,32 @@
             <div class="modal-buttons">
                 <button class="modal-cancel" onclick="closeEnergySensorConfigModal()">Cancel</button>
                 <button class="modal-confirm" onclick="saveEnergySensorConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Device Sensor Configuration Modal -->
+    <div id="deviceSensorConfigModal" class="modal-overlay">
+        <div class="config-modal">
+            <h3>Configure Device Sensor <span id="deviceSensorConfigIndex"></span></h3>
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="deviceSensorConfigName">Name:</label>
+                    <input type="text" id="deviceSensorConfigName" maxlength="32" placeholder="Device sensor name">
+                    <small style="color: #7f8c8d;">Maximum 32 characters</small>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="deviceSensorShowOnDashboard">
+                        Show on Dashboard
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="modal-cancel" onclick="closeDeviceSensorConfigModal()">Cancel</button>
+                <button class="modal-confirm" onclick="saveDeviceSensorConfig()">Save</button>
             </div>
         </div>
     </div>

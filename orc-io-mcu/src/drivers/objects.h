@@ -2,45 +2,52 @@
 
 #include <Arduino.h>
 
-#define MAX_NUM_OBJECTS 80
+#define MAX_NUM_OBJECTS 100  // Expanded from 80 to support more dynamic devices
 
-// Object index------------------------------------------>|
-// Using tagged union with metadata for heterogeneous objects
+// Object index allocation:
+// 0-32:   Fixed onboard objects (ADC, DAC, RTD, GPIO, outputs, motors, energy)
+// 33-37:  COM ports (5 slots)
+// 38-39:  Reserved for onboard device feedback
+// 40-49:  Controller objects (10 slots) - PID loops, sequencers, control algorithms
+// 50-69:  Device control objects (20 slots) - Setpoints, commands for peripheral devices
+// 70-99:  Device sensor objects (30 slots) - Sensor readings from peripheral devices
 
 // Object types
 enum ObjectType {
     // Sensors
-    OBJ_T_ANALOG_INPUT,             // x8
-    OBJ_T_DIGITAL_INPUT,            // x8
-    OBJ_T_TEMPERATURE_SENSOR,       // x3
-    OBJ_T_PH_SENSOR,                // x?
-    OBJ_T_DISSOLVED_OXYGEN_SENSOR,  // x?
-    OBJ_T_OPTICAL_DENSITY_SENSOR,   // x?
-    OBJ_T_FLOW_SENSOR,              // x?
-    OBJ_T_PRESSURE_SENSOR,          // x?
+    OBJ_T_ANALOG_INPUT,             // Indices 0-7
+    OBJ_T_DIGITAL_INPUT,            // Indices 13-20
+    OBJ_T_TEMPERATURE_SENSOR,       // Indices 10-12, 70+
+    OBJ_T_PH_SENSOR,                // Indices 70+ (dynamic)
+    OBJ_T_DISSOLVED_OXYGEN_SENSOR,  // Indices 70+ (dynamic)
+    OBJ_T_OPTICAL_DENSITY_SENSOR,   // Indices 70+ (dynamic)
+    OBJ_T_FLOW_SENSOR,              // Indices 70+ (dynamic)
+    OBJ_T_PRESSURE_SENSOR,          // Indices 70+ (dynamic)
     OBJ_T_VOLTAGE_SENSOR,           // Reserved for future use
     OBJ_T_CURRENT_SENSOR,           // Reserved for future use
     OBJ_T_POWER_SENSOR,             // Reserved for future use
-    OBJ_T_ENERGY_SENSOR,            // x2 - Multi-value (voltage, current, power)
+    OBJ_T_ENERGY_SENSOR,            // Indices 31-32 - Multi-value (voltage, current, power)
     // Outputs
-    OBJ_T_ANALOG_OUTPUT,            // x2
-    OBJ_T_DIGITAL_OUTPUT,           // x5
+    OBJ_T_ANALOG_OUTPUT,            // Indices 8-9
+    OBJ_T_DIGITAL_OUTPUT,           // Indices 21-25
     // Motion drivers
-    OBJ_T_STEPPER_MOTOR,            // x1
-    OBJ_T_BDC_MOTOR,                // x4
-    // Control objects
-    OBJ_T_TEMPERATURE_CONTROL,      // x3
-    OBJ_T_PH_CONTROL,               // x?
-    OBJ_T_DISSOLVED_OXYGEN_CONTROL, // x?
-    OBJ_T_OPTICAL_DENSITY_CONTROL,  // x?
-    OBJ_T_GAS_FLOW_CONTROL,         // x?
-    OBJ_T_STIRRER_CONTROL,          // x1
-    OBJ_T_PUMP_CONTROL,             // x4
-    OBJ_T_FEED_CONTROL,             // x1
-    OBJ_T_WASTE_CONTROL,            // x1
-    // Comm ports
-    OBJ_T_SERIAL_RS232_PORT,        // x2
-    OBJ_T_SERIAL_RS485_PORT         // x2
+    OBJ_T_STEPPER_MOTOR,            // Index 26
+    OBJ_T_BDC_MOTOR,                // Indices 27-30
+    // Controller objects (40-49)
+    OBJ_T_TEMPERATURE_CONTROL,      // PID temperature control loops
+    OBJ_T_PH_CONTROL,               // pH dosing control
+    OBJ_T_DISSOLVED_OXYGEN_CONTROL, // DO control (gas mixing + stirrer)
+    OBJ_T_OPTICAL_DENSITY_CONTROL,  // OD/biomass control
+    OBJ_T_GAS_FLOW_CONTROL,         // MFC control loops
+    OBJ_T_STIRRER_CONTROL,          // Stirrer speed control
+    OBJ_T_PUMP_CONTROL,             // Peristaltic pump control
+    OBJ_T_FEED_CONTROL,             // Nutrient feed sequencer
+    OBJ_T_WASTE_CONTROL,            // Waste removal sequencer
+    // Device control objects (50-69)
+    OBJ_T_DEVICE_CONTROL,           // Control/status for peripheral devices
+    // Comm ports (33-36)
+    OBJ_T_SERIAL_RS232_PORT,        // RS-232 ports
+    OBJ_T_SERIAL_RS485_PORT         // RS-485 ports
 };
 
 // Object index structure
@@ -269,6 +276,22 @@ struct PhControl_t {
     float setpoint;
     float interval;
     float maxDoseTime;
+};
+
+// Device control object (indices 50-69)
+// Provides control interface and status for peripheral devices (MFCs, pumps, etc.)
+struct DeviceControl_t {
+    float setpoint;             // Control setpoint (flow rate, pH target, etc.)
+    float actualValue;          // Feedback value from associated sensor
+    char setpointUnit[10];      // Unit string for setpoint
+    bool connected;             // Device connection status (Modbus/I2C responding)
+    bool fault;                 // Fault condition
+    bool newMessage;            // Message available flag
+    char message[100];          // Status/error message buffer
+    uint8_t slaveID;            // Modbus slave ID or I2C address
+    uint8_t deviceType;         // IPC_DeviceType enum value
+    uint8_t startSensorIndex;   // First associated sensor index (70-99)
+    uint8_t sensorCount;        // Number of associated sensor objects
 };
 
 struct DissolvedOxygenControl_t {

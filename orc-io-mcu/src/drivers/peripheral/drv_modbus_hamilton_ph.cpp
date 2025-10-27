@@ -22,6 +22,7 @@ HamiltonPHProbe::HamiltonPHProbe(ModbusDriver_t *modbusDriver, uint8_t slaveID)
 
 // Update method - queues Modbus requests for pH and temperature
 void HamiltonPHProbe::update() {
+    //Serial.println("PHProbe-update");
     const uint8_t functionCode = 3;  // Read holding registers
     
     // Set current instance for callbacks
@@ -59,6 +60,13 @@ void HamiltonPHProbe::handlePhResponse(bool valid, uint16_t *data) {
         _phSensor.fault = true;
         snprintf(_phSensor.message, sizeof(_phSensor.message), "Invalid pH data from pH probe (ID %d)", _slaveID);
         _phSensor.newMessage = true;
+        
+        // Update control object with fault status
+        _controlObj.connected = false;
+        _controlObj.fault = true;
+        _controlObj.newMessage = true;
+        strncpy(_controlObj.message, _phSensor.message, sizeof(_controlObj.message));
+        
         return;
     }
     
@@ -77,6 +85,21 @@ void HamiltonPHProbe::handlePhResponse(bool valid, uint16_t *data) {
     memcpy(&pH, &data[2], sizeof(float));
     _phSensor.ph = pH;
     _phSensor.fault = false;
+    
+    // Update device control object
+    _controlObj.setpoint = 0.0f;  // No setpoint for sensor-only device (future pH control will use this)
+    _controlObj.actualValue = _phSensor.ph;  // Current pH reading
+    strncpy(_controlObj.setpointUnit, _phSensor.unit, sizeof(_controlObj.setpointUnit));
+    _controlObj.connected = true;  // Got valid Modbus response
+    _controlObj.fault = _phSensor.fault || _temperatureSensor.fault;
+    _controlObj.newMessage = _phSensor.newMessage || _temperatureSensor.newMessage;
+    if (_phSensor.newMessage) {
+        strncpy(_controlObj.message, _phSensor.message, sizeof(_controlObj.message));
+    } else if (_temperatureSensor.newMessage) {
+        strncpy(_controlObj.message, _temperatureSensor.message, sizeof(_controlObj.message));
+    }
+    _controlObj.slaveID = _slaveID;
+    _controlObj.deviceType = IPC_DEV_HAMILTON_PH;
 }
 
 // Instance method to handle temperature response

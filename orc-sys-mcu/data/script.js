@@ -76,6 +76,11 @@ function openTab(evt, tabName) {
         initOutputsTab();
     } else if (tabName === 'comports') {
         initComPortsTab();
+    } else if (tabName === 'devices') {
+        // Initialize devices tab with control object polling
+        if (typeof initDevicesTab === 'function') {
+            initDevicesTab();
+        }
     } else if (tabName === 'sensors') {
         // Initialize sensors tab with continuous polling
         initSensorsTab();
@@ -1926,12 +1931,14 @@ async function fetchAndRenderInputs() {
         console.log('  RTD:', data.rtd ? data.rtd.length : 0, 'entries');
         console.log('  GPIO:', data.gpio ? data.gpio.length : 0, 'entries');
         console.log('  Energy:', data.energy ? data.energy.length : 0, 'entries');
+        console.log('  Devices:', data.devices ? data.devices.length : 0, 'entries');
         
         // Render each section
         renderADCInputs(data.adc || []);
         renderRTDInputs(data.rtd || []);
         renderGPIOInputs(data.gpio || []);
         renderEnergySensors(data.energy || []);
+        renderDeviceSensors(data.devices || []);
         
     } catch (error) {
         console.error('Error fetching inputs:', error);
@@ -1939,6 +1946,7 @@ async function fetchAndRenderInputs() {
         showInputError('rtd-list');
         showInputError('gpio-list');
         showInputError('energy-list');
+        showInputError('device-sensors-list');
     }
 }
 
@@ -2086,6 +2094,58 @@ function renderEnergySensors(energyData) {
     `).join('');
 }
 
+function renderDeviceSensors(deviceData) {
+    const container = document.getElementById('device-sensors-list');
+    if (!container) return;
+    
+    if (deviceData.length === 0) {
+        container.innerHTML = '<div class="empty-message">No device sensors available<br><small>Create devices in the Devices tab to see their sensors here</small></div>';
+        return;
+    }
+    
+    // Map object type codes to friendly names (from ObjectType enum in objects.h)
+    const getTypeName = (typeCode) => {
+        const types = {
+            0: 'Analog Input',
+            1: 'Digital Input',
+            2: 'Temperature',
+            3: 'pH',
+            4: 'Dissolved Oxygen',
+            5: 'Optical Density',
+            6: 'Flow',
+            7: 'Pressure',
+            8: 'Voltage',
+            9: 'Current',
+            10: 'Power',
+            11: 'Energy',
+            // Add more types as devices are supported
+        };
+        return types[typeCode] || 'Sensor';
+    };
+    
+    container.innerHTML = deviceData.map(sensor => `
+        <div class="input-item ${sensor.f ? 'fault' : ''}">
+            <div class="input-header">
+                <div class="input-header-left">
+                    <span class="input-name">${sensor.n || `Device Sensor ${sensor.i}`}</span>
+                    <span class="sensor-type-badge">${getTypeName(sensor.t)}</span>
+                    <span class="input-value-inline">
+                        <span class="value-large">${sensor.v.toFixed(2)}</span>
+                        <span class="value-unit">${sensor.u}</span>
+                    </span>
+                </div>
+                <span class="dashboard-icon ${sensor.d ? 'active' : 'inactive'}" title="${sensor.d ? 'Shown on Dashboard' : 'Hidden from Dashboard'}">
+                    <svg viewBox="0 0 24 24"><path d="M21,16V4H3V16H21M21,2A2,2 0 0,1 23,4V16A2,2 0 0,1 21,18H14V20H16V22H8V20H10V18H3C1.89,18 1,17.1 1,16V4C1,2.89 1.89,2 3,2H21M5,6H14V11H5V6M15,6H19V8H15V6M19,9V14H15V9H19M5,12H9V14H5V12M10,12H14V14H10V12Z" /></svg>
+                </span>
+                <button class="icon-btn" onclick="openDeviceSensorConfigModal(${sensor.i})" title="Configure">
+                    <svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>
+                </button>
+            </div>
+            ${sensor.f ? '<div class="fault-indicator">FAULT</div>' : ''}
+        </div>
+    `).join('');
+}
+
 function showInputError(containerId) {
     const container = document.getElementById(containerId);
     if (container) {
@@ -2166,6 +2226,80 @@ async function saveEnergySensorConfig() {
         
     } catch (error) {
         console.error('Error saving energy sensor config:', error);
+        showToast('error', 'Error', 'Failed to save configuration');
+    }
+}
+
+// ============================================================================
+// Device Sensor Configuration Modal
+// ============================================================================
+
+let currentDeviceSensorIndex = null;
+let deviceSensorConfigData = null;
+
+async function openDeviceSensorConfigModal(index) {
+    currentDeviceSensorIndex = index;
+    
+    // Fetch current configuration
+    try {
+        const response = await fetch(`/api/config/devicesensor/${index}`);
+        if (!response.ok) throw new Error('Failed to fetch config');
+        
+        deviceSensorConfigData = await response.json();
+        
+        // Populate form
+        document.getElementById('deviceSensorConfigIndex').textContent = `[${index}]`;
+        document.getElementById('deviceSensorConfigName').value = deviceSensorConfigData.name || '';
+        document.getElementById('deviceSensorShowOnDashboard').checked = deviceSensorConfigData.showOnDashboard || false;
+        
+        // Show modal
+        document.getElementById('deviceSensorConfigModal').classList.add('active');
+    } catch (error) {
+        console.error('Error fetching device sensor config:', error);
+        showToast('error', 'Error', 'Failed to load configuration');
+    }
+}
+
+function closeDeviceSensorConfigModal() {
+    document.getElementById('deviceSensorConfigModal').classList.remove('active');
+    currentDeviceSensorIndex = null;
+    deviceSensorConfigData = null;
+    
+    // Clear form
+    document.getElementById('deviceSensorConfigName').value = '';
+}
+
+async function saveDeviceSensorConfig() {
+    if (currentDeviceSensorIndex === null) return;
+    
+    // Get values from form
+    const name = document.getElementById('deviceSensorConfigName').value.trim();
+    const showOnDashboard = document.getElementById('deviceSensorShowOnDashboard').checked;
+    
+    const config = {
+        name: name,
+        showOnDashboard: showOnDashboard
+    };
+    
+    try {
+        const response = await fetch(`/api/config/devicesensor/${currentDeviceSensorIndex}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        if (!response.ok) throw new Error('Failed to save config');
+        
+        const result = await response.json();
+        
+        showToast('success', 'Success', `Configuration saved for sensor ${currentDeviceSensorIndex}`);
+        closeDeviceSensorConfigModal();
+        
+        // Refresh inputs to show new name
+        fetchAndRenderInputs();
+        
+    } catch (error) {
+        console.error('Error saving device sensor config:', error);
         showToast('error', 'Error', 'Failed to save configuration');
     }
 }

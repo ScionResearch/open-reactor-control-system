@@ -61,6 +61,13 @@ void HamiltonArcOD::handleODResponse(bool valid, uint16_t *data) {
         _odSensor.fault = true;
         snprintf(_odSensor.message, sizeof(_odSensor.message), "Invalid OD data from Hamilton Arc OD sensor (ID %d)", _slaveID);
         _odSensor.newMessage = true;
+        
+        // Update control object with fault status
+        _controlObj.connected = false;
+        _controlObj.fault = true;
+        _controlObj.newMessage = true;
+        strncpy(_controlObj.message, _odSensor.message, sizeof(_controlObj.message));
+        
         return;
     }
     
@@ -79,6 +86,21 @@ void HamiltonArcOD::handleODResponse(bool valid, uint16_t *data) {
     memcpy(&opticalDensity, &data[2], sizeof(float));
     _odSensor.opticalDensity = opticalDensity;
     _odSensor.fault = false;
+    
+    // Update device control object
+    _controlObj.setpoint = 0.0f;  // No setpoint for sensor-only device (future OD control will use this)
+    _controlObj.actualValue = _odSensor.opticalDensity;  // Current OD reading
+    strncpy(_controlObj.setpointUnit, _odSensor.unit, sizeof(_controlObj.setpointUnit));
+    _controlObj.connected = true;  // Got valid Modbus response
+    _controlObj.fault = _odSensor.fault || _temperatureSensor.fault;
+    _controlObj.newMessage = _odSensor.newMessage || _temperatureSensor.newMessage;
+    if (_odSensor.newMessage) {
+        strncpy(_controlObj.message, _odSensor.message, sizeof(_controlObj.message));
+    } else if (_temperatureSensor.newMessage) {
+        strncpy(_controlObj.message, _temperatureSensor.message, sizeof(_controlObj.message));
+    }
+    _controlObj.slaveID = _slaveID;
+    _controlObj.deviceType = IPC_DEV_HAMILTON_OD;
 }
 
 // Instance method to handle temperature response

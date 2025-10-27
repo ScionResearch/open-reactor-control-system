@@ -190,14 +190,17 @@ bool ipc_sendControlAck_v2(uint16_t index, uint8_t objectType, uint8_t command,
                           bool success, uint8_t errorCode, const char *message);
 
 /**
- * @brief Send device status response
- * @param indices Array of assigned indices
- * @param indexCount Number of assigned indices
- * @param success Success status
- * @param message Status message
+ * @brief Send device status message
+ * @param startIndex First object index of device
+ * @param active Device is active and updating
+ * @param fault Device has a fault condition
+ * @param objectCount Number of object indices allocated
+ * @param sensorIndices Array of sensor object indices (NULL if none)
+ * @param message Status/error message
  */
-bool ipc_sendDeviceStatus(const uint16_t *indices, uint8_t indexCount, 
-                          bool success, const char *message);
+bool ipc_sendDeviceStatus(uint8_t startIndex, bool active, bool fault,
+                          uint8_t objectCount, const uint8_t *sensorIndices,
+                          const char *message);
 
 // ============================================================================
 // MESSAGE HANDLERS
@@ -224,9 +227,11 @@ void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len);
+void ipc_handle_device_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_read(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_create(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_delete(const uint8_t *payload, uint16_t len);
+void ipc_handle_device_config(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_write(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_analog_input(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_analog_output(const uint8_t *payload, uint16_t len);

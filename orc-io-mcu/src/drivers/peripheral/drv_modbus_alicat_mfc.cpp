@@ -104,6 +104,13 @@ void AlicatMFC::handleMfcResponse(bool valid, uint16_t *data) {
         _fault = true;
         snprintf(_message, sizeof(_message), "Invalid data from Alicat MFC (ID %d)", _slaveID);
         _newMessage = true;
+        
+        // Update control object with fault status
+        _controlObj.connected = false;  // Modbus communication failed
+        _controlObj.fault = true;
+        _controlObj.newMessage = true;
+        strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
+        
         return;
     }
     
@@ -127,6 +134,17 @@ void AlicatMFC::handleMfcResponse(bool valid, uint16_t *data) {
     // Clear fault flags on successful read
     _flowSensor.fault = false;
     _pressureSensor.fault = false;
+    
+    // Update device control object
+    _controlObj.setpoint = _setpoint;
+    _controlObj.actualValue = _flowSensor.flow;  // Primary feedback is flow
+    strncpy(_controlObj.setpointUnit, _setpointUnit, sizeof(_controlObj.setpointUnit));
+    _controlObj.connected = true;  // Got valid Modbus response
+    _controlObj.fault = _fault;
+    _controlObj.newMessage = _newMessage;
+    strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
+    _controlObj.slaveID = _slaveID;
+    _controlObj.deviceType = IPC_DEV_ALICAT_MFC;
     
     // If we just wrote a setpoint, validate it
     if (_newSetpoint) {

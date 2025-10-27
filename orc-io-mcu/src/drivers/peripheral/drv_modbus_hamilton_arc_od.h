@@ -83,11 +83,18 @@ public:
         _temperatureSensor.newMessage = false;
     }
     
+    /**
+     * @brief Get the device control object
+     * @return Pointer to the DeviceControl_t object for this device
+     */
+    DeviceControl_t* getControlObject() { return &_controlObj; }
+    
 private:
     ModbusDriver_t *_modbusDriver;          ///< Pointer to the Modbus driver managing the serial port
     uint8_t _slaveID;                        ///< Modbus slave ID
     OpticalDensitySensor_t _odSensor;        ///< Optical density sensor data
     TemperatureSensor_t _temperatureSensor;  ///< Temperature sensor data
+    DeviceControl_t _controlObj;             ///< Device control object
     uint16_t _dataBuffer[10];                ///< Data buffer for Modbus transactions
     
     // Unit tracking for each instance

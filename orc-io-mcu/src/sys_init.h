@@ -30,5 +30,8 @@
 #include "drivers/peripheral/drv_modbus_alicat_mfc.h"
 #include "drivers/ipc/drv_ipc.h"
 
+// Device Manager (must be after peripheral drivers to avoid circular deps)
+#include "drivers/device_manager.h"
+
 // Utility
 #include "utility/calibrate.h"

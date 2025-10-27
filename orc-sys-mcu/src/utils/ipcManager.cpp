@@ -59,13 +59,23 @@ void pollSensors(void) {
   if (now - lastSensorPollTime < SENSOR_POLL_INTERVAL) return;
   lastSensorPollTime = now;
   
-  // Request all IO MCU objects (indices 0-32)
+  // Request fixed hardware objects (indices 0-40)
   // Sensors: ADC (0-7), DAC (8-9), RTD (10-12), GPIO (13-20)
   // Outputs: Digital Outputs (21-25), Stepper (26), DC Motors (27-30)
   // Energy Monitors: Main Power (31), Heater Power (32)
-  objectCache.requestBulkUpdate(0, 33);
+  // Modbus Ports: (37-40)
+  objectCache.requestBulkUpdate(0, 41);
   
-  //log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-32 (sensors + outputs + energy)\n");
+  // Request device control objects (indices 50-69)
+  // These provide control status for peripheral devices (setpoint, actual, connected, fault)
+  objectCache.requestBulkUpdate(50, 20);
+  
+  // Request dynamic device sensor objects (indices 70-99)
+  // These are user-created device sensors (Modbus, I2C, etc.)
+  // Polling them even if no devices are configured is low overhead
+  objectCache.requestBulkUpdate(70, 30);
+  
+  //log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-40 (fixed), 50-69 (control), and 70-99 (sensors)\n");
 }
 
 void manageIPC(void) {
@@ -239,9 +249,11 @@ void registerIpcCallbacks(void) {
   // Control acknowledgments
   ipc.registerHandler(IPC_MSG_CONTROL_ACK, handleControlAck);
   
+  // Device management
+  ipc.registerHandler(IPC_MSG_DEVICE_STATUS, handleDeviceStatus);
+  
   // TODO: Add more handlers as needed:
   // - IPC_MSG_INDEX_SYNC_DATA
-  // - IPC_MSG_DEVICE_STATUS
   // etc.
 
   log(LOG_INFO, false, "IPC message handlers registered.\n");
@@ -267,6 +279,41 @@ void handleControlAck(uint8_t messageType, const uint8_t *payload, uint16_t leng
   }
   
   // TODO: Could store last error in a status structure for API queries
+}
+
+/**
+ * @brief Handler for device status messages from IO MCU
+ */
+void handleDeviceStatus(uint8_t messageType, const uint8_t *payload, uint16_t length) {
+  if (payload == nullptr || length != sizeof(IPC_DeviceStatus_t)) {
+    log(LOG_ERROR, false, "IPC: Invalid device status payload\n");
+    return;
+  }
+  
+  const IPC_DeviceStatus_t *status = (const IPC_DeviceStatus_t *)payload;
+  
+  if (status->active && !status->fault) {
+    log(LOG_INFO, true, "IPC: Device at index %d is ACTIVE with %d sensors: %s\n",
+        status->startIndex, status->objectCount, status->message);
+    
+    // Log sensor indices
+    if (status->objectCount > 0) {
+      log(LOG_DEBUG, false, "  Sensor indices: ");
+      for (uint8_t i = 0; i < status->objectCount && i < 4; i++) {
+        log(LOG_DEBUG, false, "%d ", status->sensorIndices[i]);
+      }
+      log(LOG_DEBUG, false, "\n");
+    }
+  } else if (status->fault) {
+    log(LOG_ERROR, true, "IPC: Device at index %d has FAULT: %s\n",
+        status->startIndex, status->message);
+  } else {
+    log(LOG_INFO, true, "IPC: Device at index %d is INACTIVE: %s\n",
+        status->startIndex, status->message);
+  }
+  
+  // TODO: Store device status for API queries
+  // TODO: Trigger sensor cache refresh for the affected indices
 }
 
 // ============================================================================
@@ -382,6 +429,90 @@ bool sendDCMotorCommand(uint16_t index, uint8_t command, float power, bool direc
         index, command, power, direction);
   } else {
     log(LOG_WARNING, false, "IPC TX: Failed to send DCMotor command (queue full)\n");
+  }
+  
+  return sent;
+}
+
+// ============================================================================
+// DEVICE MANAGEMENT COMMAND SENDERS
+// ============================================================================
+
+/**
+ * @brief Send device create command to IO MCU
+ * @param startIndex Preferred starting index (60-79)
+ * @param config Device configuration
+ * @return true if command was queued
+ */
+bool sendDeviceCreateCommand(uint8_t startIndex, const IPC_DeviceConfig_t* config) {
+  IPC_DeviceCreate_t cmd;
+  cmd.startIndex = startIndex;
+  memcpy(&cmd.config, config, sizeof(IPC_DeviceConfig_t));
+  
+  bool sent = ipc.sendPacket(IPC_MSG_DEVICE_CREATE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, true, "IPC TX: Create device at index %d (type=%d)\n", 
+        startIndex, config->deviceType);
+  } else {
+    log(LOG_WARNING, false, "IPC TX: Failed to send device create command\n");
+  }
+  
+  return sent;
+}
+
+/**
+ * @brief Send device delete command to IO MCU
+ * @param startIndex Device starting index to delete (60-79)
+ * @return true if command was queued
+ */
+bool sendDeviceDeleteCommand(uint8_t startIndex) {
+  IPC_DeviceDelete_t cmd;
+  cmd.startIndex = startIndex;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_DEVICE_DELETE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, true, "IPC TX: Delete device at index %d\n", startIndex);
+  } else {
+    log(LOG_WARNING, false, "IPC TX: Failed to send device delete command\n");
+  }
+  
+  return sent;
+}
+
+/**
+ * @brief Send device configuration update to IO MCU
+ * @param config Device configuration (includes startIndex internally)
+ * @return true if command was queued
+ */
+bool sendDeviceConfigCommand(const IPC_DeviceConfig_t* config) {
+  bool sent = ipc.sendPacket(IPC_MSG_DEVICE_CONFIG, (uint8_t*)config, sizeof(IPC_DeviceConfig_t));
+  
+  if (sent) {
+    log(LOG_INFO, true, "IPC TX: Update device config (type=%d)\n", config->deviceType);
+  } else {
+    log(LOG_WARNING, false, "IPC TX: Failed to send device config command\n");
+  }
+  
+  return sent;
+}
+
+/**
+ * @brief Send device query command to IO MCU
+ * @param startIndex Device starting index to query (60-79)
+ * @return true if command was queued
+ */
+bool sendDeviceQueryCommand(uint8_t startIndex) {
+  IPC_DeviceQuery_t cmd;
+  cmd.startIndex = startIndex;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_DEVICE_QUERY, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_DEBUG, false, "IPC TX: Query device at index %d\n", startIndex);
+  } else {
+    log(LOG_WARNING, false, "IPC TX: Failed to send device query command\n");
   }
   
   return sent;

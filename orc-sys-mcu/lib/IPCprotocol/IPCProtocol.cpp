@@ -431,12 +431,15 @@ bool IPCProtocol::sendDeviceCreate(const IPC_DeviceCreate_t* device) {
     return sendPacket(IPC_MSG_DEVICE_CREATE, (uint8_t*)device, sizeof(IPC_DeviceCreate_t));
 }
 
+// TODO: Remove this - now handled by sendDeviceDeleteCommand() in ipcManager
+#if 0
 bool IPCProtocol::sendDeviceDelete(uint16_t index, uint8_t objectType) {
     IPC_DeviceDelete_t deleteMsg;
     deleteMsg.index = index;
     deleteMsg.objectType = objectType;
     return sendPacket(IPC_MSG_DEVICE_DELETE, (uint8_t*)&deleteMsg, sizeof(deleteMsg));
 }
+#endif
 
 bool IPCProtocol::sendDeviceStatus(const IPC_DeviceStatus_t* status) {
     if (status == nullptr) return false;

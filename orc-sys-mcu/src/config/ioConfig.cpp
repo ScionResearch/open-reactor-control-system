@@ -135,6 +135,15 @@ void setDefaultIOConfig() {
         ioConfig.devices[i].dynamicIndex = 0xFF;  // Unassigned
         ioConfig.devices[i].name[0] = '\0';
     }
+    
+    // ========================================================================
+    // Device Sensors (Indices 60-79)
+    // ========================================================================
+    for (int i = 0; i < MAX_DEVICE_SENSORS; i++) {
+        ioConfig.deviceSensors[i].name[0] = '\0';  // Empty by default (use IO MCU name)
+        ioConfig.deviceSensors[i].showOnDashboard = false;
+        ioConfig.deviceSensors[i].nameOverridden = false;
+    }
 }
 
 /**
@@ -381,6 +390,20 @@ bool loadIOConfig() {
         }
     }
     
+    // ========================================================================
+    // Parse Device Sensors (Indices 60-79)
+    // ========================================================================
+    JsonArray deviceSensorsArray = doc["device_sensors"];
+    if (deviceSensorsArray) {
+        for (int i = 0; i < MAX_DEVICE_SENSORS && i < deviceSensorsArray.size(); i++) {
+            JsonObject sensor = deviceSensorsArray[i];
+            strlcpy(ioConfig.deviceSensors[i].name, sensor["name"] | "", 
+                    sizeof(ioConfig.deviceSensors[i].name));
+            ioConfig.deviceSensors[i].showOnDashboard = sensor["showOnDashboard"] | false;
+            ioConfig.deviceSensors[i].nameOverridden = sensor["nameOverridden"] | false;
+        }
+    }
+    
     log(LOG_INFO, true, "IO configuration loaded successfully\n");
     return true;
 }
@@ -553,6 +576,17 @@ void saveIOConfig() {
             dev["usesStepper"] = ioConfig.devices[i].motorDriven.usesStepper;
             dev["motorIndex"] = ioConfig.devices[i].motorDriven.motorIndex;
         }
+    }
+    
+    // ========================================================================
+    // Serialize Device Sensors (Indices 60-79)
+    // ========================================================================
+    JsonArray deviceSensorsArray = doc.createNestedArray("device_sensors");
+    for (int i = 0; i < MAX_DEVICE_SENSORS; i++) {
+        JsonObject sensor = deviceSensorsArray.createNestedObject();
+        sensor["name"] = ioConfig.deviceSensors[i].name;
+        sensor["showOnDashboard"] = ioConfig.deviceSensors[i].showOnDashboard;
+        sensor["nameOverridden"] = ioConfig.deviceSensors[i].nameOverridden;
     }
     
     // Open file for writing
@@ -907,7 +941,85 @@ void pushIOConfigToIOmcu() {
         delay(10);
     }
     
-    log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports)\n", sentCount);
+    // ========================================================================
+    // Push Dynamic Device configurations (indices 60-79)
+    // ========================================================================
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (!ioConfig.devices[i].isActive) continue;
+        
+        uint8_t dynamicIndex = ioConfig.devices[i].dynamicIndex;
+        
+        // Convert to IPC config
+        IPC_DeviceConfig_t ipcConfig;
+        memset(&ipcConfig, 0, sizeof(IPC_DeviceConfig_t));
+        
+        // Map driver type to IPC device type
+        switch (ioConfig.devices[i].driverType) {
+            case DEVICE_DRIVER_HAMILTON_PH:  ipcConfig.deviceType = IPC_DEV_HAMILTON_PH; break;
+            case DEVICE_DRIVER_HAMILTON_DO:  ipcConfig.deviceType = IPC_DEV_HAMILTON_DO; break;
+            case DEVICE_DRIVER_HAMILTON_OD:  ipcConfig.deviceType = IPC_DEV_HAMILTON_OD; break;
+            case DEVICE_DRIVER_ALICAT_MFC:   ipcConfig.deviceType = IPC_DEV_ALICAT_MFC; break;
+            case DEVICE_DRIVER_PRESSURE_CONTROLLER: ipcConfig.deviceType = IPC_DEV_ANALOG_SENSOR; break;
+            default: ipcConfig.deviceType = IPC_DEV_NONE; break;
+        }
+        
+        // Map interface type to IPC bus type
+        switch (ioConfig.devices[i].interfaceType) {
+            case DEVICE_INTERFACE_MODBUS_RTU:
+                ipcConfig.busType = IPC_BUS_MODBUS_RTU;
+                ipcConfig.busIndex = ioConfig.devices[i].modbus.portIndex;
+                ipcConfig.address = ioConfig.devices[i].modbus.slaveID;
+                break;
+                
+            case DEVICE_INTERFACE_ANALOGUE_IO:
+                ipcConfig.busType = IPC_BUS_ANALOG;
+                ipcConfig.busIndex = ioConfig.devices[i].analogueIO.dacOutputIndex;
+                ipcConfig.address = 0;
+                break;
+                
+            case DEVICE_INTERFACE_MOTOR_DRIVEN:
+                ipcConfig.busType = IPC_BUS_DIGITAL;
+                ipcConfig.busIndex = ioConfig.devices[i].motorDriven.motorIndex;
+                ipcConfig.address = 0;
+                break;
+                
+            default:
+                ipcConfig.busType = IPC_BUS_NONE;
+                break;
+        }
+        
+        // Send device create command
+        IPC_DeviceCreate_t createCmd;
+        createCmd.startIndex = dynamicIndex;
+        memcpy(&createCmd.config, &ipcConfig, sizeof(IPC_DeviceConfig_t));
+        
+        // Retry up to 10 times if queue is full
+        bool sent = false;
+        for (int retry = 0; retry < 10; retry++) {
+            if (ipc.sendPacket(IPC_MSG_DEVICE_CREATE, (uint8_t*)&createCmd, sizeof(createCmd))) {
+                sent = true;
+                sentCount++;
+                const char* devTypeStr = (ipcConfig.deviceType == IPC_DEV_HAMILTON_PH) ? "Hamilton pH" :
+                                       (ipcConfig.deviceType == IPC_DEV_HAMILTON_DO) ? "Hamilton DO" :
+                                       (ipcConfig.deviceType == IPC_DEV_HAMILTON_OD) ? "Hamilton OD" :
+                                       (ipcConfig.deviceType == IPC_DEV_ALICAT_MFC) ? "Alicat MFC" : "Unknown";
+                log(LOG_INFO, false, "  → Device[%d]: %s, type=%s, bus=%d, addr=%d\n",
+                    dynamicIndex, ioConfig.devices[i].name, devTypeStr,
+                    ipcConfig.busIndex, ipcConfig.address);
+                break;
+            }
+            ipc.update();
+            delay(10);
+        }
+        
+        if (!sent) {
+            log(LOG_WARNING, false, "  ✗ Failed to send Device[%d] config after retries\n", dynamicIndex);
+        }
+        
+        delay(20);  // Extra delay for device initialization
+    }
+    
+    log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports + devices)\n", sentCount);
 }
 
 // ============================================================================
@@ -915,24 +1027,104 @@ void pushIOConfigToIOmcu() {
 // ============================================================================
 
 /**
- * @brief Allocate next available dynamic index (60-79)
+ * @brief Get the number of object indices needed for a device type
+ * @param driverType Device driver type
+ * @return Number of consecutive indices needed (1-4)
+ */
+static uint8_t getDeviceObjectCount(DeviceDriverType driverType) {
+    switch(driverType) {
+        case DEVICE_DRIVER_HAMILTON_PH:   // pH + Temperature
+        case DEVICE_DRIVER_HAMILTON_DO:   // DO + Temperature  
+        case DEVICE_DRIVER_HAMILTON_OD:   // OD + Temperature
+        case DEVICE_DRIVER_ALICAT_MFC:    // Flow + Pressure
+            return 2;
+        
+        case DEVICE_DRIVER_PRESSURE_CONTROLLER:  // Single analog sensor
+            return 1;
+        
+        // Future multi-sensor devices
+        // case DEVICE_DRIVER_BME280:     // Temp + Humidity + Pressure
+        // case DEVICE_DRIVER_SCD40:      // CO2 + Temp + Humidity
+        //     return 3;
+        
+        default:
+            return 1;  // Default to single index
+    }
+}
+
+/**
+ * @brief Check if a range of indices is available (not in use by any device)
+ * @param startIndex First index to check
+ * @param count Number of consecutive indices to check
+ * @return true if all indices in range are available
+ */
+static bool isIndexRangeAvailable(uint8_t startIndex, uint8_t count) {
+    // Check bounds
+    if (startIndex < DYNAMIC_INDEX_START || 
+        startIndex + count - 1 > DYNAMIC_INDEX_END) {
+        return false;
+    }
+    
+    // Check each index in the range
+    for (uint8_t offset = 0; offset < count; offset++) {
+        uint8_t idx = startIndex + offset;
+        
+        // Check if this index is used by any device
+        for (int i = 0; i < MAX_DEVICES; i++) {
+            if (!ioConfig.devices[i].isActive) continue;
+            
+            // Get the object count for this device to know its index range
+            uint8_t devObjCount = getDeviceObjectCount(ioConfig.devices[i].driverType);
+            uint8_t devStartIdx = ioConfig.devices[i].dynamicIndex;
+            uint8_t devEndIdx = devStartIdx + devObjCount - 1;
+            
+            // Check if idx falls within this device's range
+            if (idx >= devStartIdx && idx <= devEndIdx) {
+                return false;  // Index is in use
+            }
+        }
+    }
+    
+    return true;  // All indices in range are available
+}
+
+/**
+ * @brief Allocate consecutive dynamic indices for a device
+ * @param driverType Device driver type (to determine how many indices needed)
+ * @return Starting dynamic index (60-79), or -1 if not enough consecutive slots available
+ */
+int8_t allocateDynamicIndex(DeviceDriverType driverType) {
+    uint8_t objectCount = getDeviceObjectCount(driverType);
+    
+    // Scan through dynamic index range (60-79) to find consecutive free indices
+    for (uint8_t idx = DYNAMIC_INDEX_START; idx <= DYNAMIC_INDEX_END; idx++) {
+        // Check if we have enough room (don't go past DYNAMIC_INDEX_END)
+        if (idx + objectCount - 1 > DYNAMIC_INDEX_END) {
+            break;  // Not enough room at the end
+        }
+        
+        // Check if this range is available
+        if (isIndexRangeAvailable(idx, objectCount)) {
+            log(LOG_DEBUG, false, "Allocated %d consecutive indices starting at %d\n", 
+                objectCount, idx);
+            return idx;  // Found available range
+        }
+    }
+    
+    log(LOG_WARNING, false, "No %d consecutive indices available in range 60-79\n", objectCount);
+    return -1;  // No consecutive range available
+}
+
+/**
+ * @brief Legacy function for backward compatibility - allocates single index
+ * @deprecated Use allocateDynamicIndex(DeviceDriverType) instead
  * @return Dynamic index (60-79), or -1 if all slots are full
  */
 int8_t allocateDynamicIndex() {
     // Scan through dynamic index range (60-79) to find the first unused index
     for (uint8_t idx = DYNAMIC_INDEX_START; idx <= DYNAMIC_INDEX_END; idx++) {
-        bool inUse = false;
-        
-        // Check if this index is already allocated to a device
-        for (int i = 0; i < MAX_DEVICES; i++) {
-            if (ioConfig.devices[i].isActive && ioConfig.devices[i].dynamicIndex == idx) {
-                inUse = true;
-                break;
-            }
-        }
-        
-        if (!inUse) {
-            return idx;  // Found available index
+        if (isIndexRangeAvailable(idx, 1)) {
+            return idx;
         }
     }
     

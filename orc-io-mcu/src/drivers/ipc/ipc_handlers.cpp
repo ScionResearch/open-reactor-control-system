@@ -3,6 +3,8 @@
 #include "../onboard/drv_rtd.h"  // For RTD configuration
 #include "../onboard/drv_gpio.h" // For GPIO configuration
 #include "../onboard/drv_output.h" // For output mode switching
+#include "../device_manager.h" // For dynamic device management
+#include "../peripheral/drv_modbus_alicat_mfc.h" // For AlicatMFC setpoint control
 
 // ============================================================================
 // MESSAGE HANDLER DISPATCHER
@@ -50,6 +52,14 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             
         case IPC_MSG_DEVICE_DELETE:
             ipc_handle_device_delete(payload, len);
+            break;
+            
+        case IPC_MSG_DEVICE_CONFIG:
+            ipc_handle_device_config(payload, len);
+            break;
+            
+        case IPC_MSG_DEVICE_CONTROL:
+            ipc_handle_device_control(payload, len);
             break;
             
         case IPC_MSG_CONFIG_WRITE:
@@ -365,19 +375,22 @@ void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len) {
 
 bool ipc_sendSensorData(uint16_t index) {
     if (index >= MAX_NUM_OBJECTS) {
-        Serial.printf("[IPC] DEBUG: Index %d out of range (max %d)\n", index, MAX_NUM_OBJECTS);
+        // Commented out - too spammy when polling dynamic device range
+        // Serial.printf("[IPC] DEBUG: Index %d out of range (max %d)\n", index, MAX_NUM_OBJECTS);
         return false;
     }
     
     if (!objIndex[index].valid) {
-        Serial.printf("[IPC] DEBUG: Index %d not valid\n", index);
+        // Commented out - expected when polling empty device slots (indices 60-79)
+        // Serial.printf("[IPC] DEBUG: Index %d not valid\n", index);
         return false;
     }
     
     void *obj = objIndex[index].obj;
     if (obj == nullptr) {
-        Serial.printf("[IPC] DEBUG: Index %d obj pointer is NULL (type=%d)\n", 
-                     index, objIndex[index].type);
+        // Commented out - too spammy
+        // Serial.printf("[IPC] DEBUG: Index %d obj pointer is NULL (type=%d)\n", 
+        //              index, objIndex[index].type);
         return false;
     }
     
@@ -604,6 +617,28 @@ bool ipc_sendSensorData(uint16_t index) {
             if (sensor->newMessage) {
                 data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
                 strncpy(data.message, sensor->message, sizeof(data.message) - 1);
+            }
+            break;
+        }
+        
+        case OBJ_T_DEVICE_CONTROL: {
+            DeviceControl_t *ctrl = (DeviceControl_t*)obj;
+            // Primary value: Setpoint
+            data.value = ctrl->setpoint;
+            strncpy(data.unit, ctrl->setpointUnit, sizeof(data.unit) - 1);
+            
+            // Additional value: Actual value
+            if (ctrl->actualValue != ctrl->setpoint) {
+                data.valueCount = 1;
+                data.additionalValues[0] = ctrl->actualValue;
+                strncpy(data.additionalUnits[0], ctrl->setpointUnit, sizeof(data.additionalUnits[0]) - 1);
+            }
+            
+            if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (!ctrl->connected) data.flags |= IPC_SENSOR_FLAG_FAULT;  // Treat disconnected as fault
+            if (ctrl->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, ctrl->message, sizeof(data.message) - 1);
             }
             break;
         }
@@ -1128,42 +1163,246 @@ bool ipc_sendControlAck(uint16_t index, bool success, const char *message) {
 // ============================================================================
 
 void ipc_handle_device_create(const uint8_t *payload, uint16_t len) {
-    if (len < sizeof(IPC_DeviceCreate_t)) {
-        ipc_sendError(IPC_ERR_PARSE_FAIL, "DEVICE_CREATE: Invalid payload size");
+    if (len != sizeof(IPC_DeviceCreate_t)) {
+        char errMsg[100];
+        sprintf(errMsg, "Invalid size: got %d, expected %d", len, sizeof(IPC_DeviceCreate_t));
+        ipc_sendError(IPC_ERR_PARSE_FAIL, errMsg);
         return;
     }
     
-    // TODO: Implement device creation logic
-    // This will involve creating peripheral device instances dynamically
-    // IPC_DeviceCreate_t *cmd = (IPC_DeviceCreate_t*)payload;
-    (void)payload; // Suppress unused warning
-    ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "DEVICE_CREATE not implemented yet");
+    const IPC_DeviceCreate_t *req = (const IPC_DeviceCreate_t*)payload;
+    
+    Serial.printf("[IPC] Device CREATE request: type=%d, startIndex=%d, bus=%d, addr=%d\n",
+                 req->config.deviceType, req->startIndex, 
+                 req->config.busType, req->config.address);
+    
+    // Validate index range (60-79)
+    if (req->startIndex < 60 || req->startIndex > 79) {
+        Serial.printf("[IPC] ERROR: Invalid start index %d (must be 60-79)\n", req->startIndex);
+        ipc_sendDeviceStatus(req->startIndex, false, true, 0, nullptr, "Invalid index range");
+        return;
+    }
+    
+    // Create device through Device Manager
+    bool success = DeviceManager::createDevice(req->startIndex, &req->config);
+    
+    // Get device info for status response
+    ManagedDevice* dev = DeviceManager::findDevice(req->startIndex);
+    if (dev) {
+        // Build sensor indices array
+        uint8_t sensorIndices[4] = {0};
+        for (uint8_t i = 0; i < dev->sensorCount && i < 4; i++) {
+            sensorIndices[i] = dev->startSensorIndex + i;
+        }
+        
+        ipc_sendDeviceStatus(dev->startSensorIndex, dev->active, dev->fault, 
+                           dev->sensorCount, sensorIndices, dev->message);
+    } else {
+        ipc_sendDeviceStatus(req->startIndex, false, true, 0, nullptr, 
+                           "Device creation failed");
+    }
+    
+    (void)success;  // Suppress unused variable warning
 }
 
 void ipc_handle_device_delete(const uint8_t *payload, uint16_t len) {
-    if (len < sizeof(IPC_DeviceDelete_t)) {
-        ipc_sendError(IPC_ERR_PARSE_FAIL, "DEVICE_DELETE: Invalid payload size");
+    if (len != sizeof(IPC_DeviceDelete_t)) {
+        char errMsg[100];
+        sprintf(errMsg, "Invalid size: got %d, expected %d", len, sizeof(IPC_DeviceDelete_t));
+        ipc_sendError(IPC_ERR_PARSE_FAIL, errMsg);
         return;
     }
     
-    // TODO: Implement device deletion logic
-    // IPC_DeviceDelete_t *cmd = (IPC_DeviceDelete_t*)payload;
-    (void)payload; // Suppress unused warning
-    ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "DEVICE_DELETE not implemented yet");
-}
-
-bool ipc_sendDeviceStatus(const uint16_t *indices, uint8_t indexCount, 
-                          bool success, const char *message) {
-    IPC_DeviceStatus_t status;
-    status.indexCount = indexCount < 4 ? indexCount : 4;
-    status.success = success ? 1 : 0;
+    const IPC_DeviceDelete_t *req = (const IPC_DeviceDelete_t*)payload;
     
-    for (uint8_t i = 0; i < status.indexCount; i++) {
-        status.assignedIndex[i] = indices[i];
+    Serial.printf("[IPC] Device DELETE request: startIndex=%d\n", req->startIndex);
+    
+    // Validate index range
+    if (req->startIndex < 60 || req->startIndex > 79) {
+        Serial.printf("[IPC] ERROR: Invalid start index %d\n", req->startIndex);
+        ipc_sendDeviceStatus(req->startIndex, false, true, 0, nullptr, "Invalid index range");
+        return;
     }
     
-    strncpy(status.message, message, sizeof(status.message) - 1);
-    status.message[sizeof(status.message) - 1] = '\0';
+    // Delete device through Device Manager
+    bool success = DeviceManager::deleteDevice(req->startIndex);
+    
+    // Send status response
+    ipc_sendDeviceStatus(req->startIndex, !success, success, 0, nullptr,
+                       success ? "Device deleted" : "Delete failed");
+}
+
+void ipc_handle_device_config(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_DeviceConfigUpdate_t)) {
+        char errMsg[100];
+        sprintf(errMsg, "Invalid size: got %d, expected %d", len, sizeof(IPC_DeviceConfigUpdate_t));
+        ipc_sendError(IPC_ERR_PARSE_FAIL, errMsg);
+        return;
+    }
+    
+    const IPC_DeviceConfigUpdate_t *req = (const IPC_DeviceConfigUpdate_t*)payload;
+    
+    Serial.printf("[IPC] Device CONFIG request: startIndex=%d\n", req->startIndex);
+    
+    // Validate index range
+    if (req->startIndex < 60 || req->startIndex > 79) {
+        Serial.printf("[IPC] ERROR: Invalid start index %d\n", req->startIndex);
+        ipc_sendDeviceStatus(req->startIndex, false, true, 0, nullptr, "Invalid index range");
+        return;
+    }
+    
+    // Update device configuration through Device Manager
+    bool success = DeviceManager::configureDevice(req->startIndex, &req->config);
+    
+    // Get updated device info
+    ManagedDevice* dev = DeviceManager::findDevice(req->startIndex);
+    if (dev) {
+        uint8_t sensorIndices[4] = {0};
+        for (uint8_t i = 0; i < dev->sensorCount && i < 4; i++) {
+            sensorIndices[i] = dev->startSensorIndex + i;
+        }
+        
+        ipc_sendDeviceStatus(dev->startSensorIndex, dev->active, dev->fault,
+                           dev->sensorCount, sensorIndices, dev->message);
+    } else {
+        ipc_sendDeviceStatus(req->startIndex, false, true, 0, nullptr,
+                           success ? "Config updated" : "Config update failed");
+    }
+}
+
+void ipc_handle_device_control(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_DeviceControlCmd_t)) {
+        char errMsg[100];
+        sprintf(errMsg, "Invalid size: got %d, expected %d", len, sizeof(IPC_DeviceControlCmd_t));
+        ipc_sendError(IPC_ERR_PARSE_FAIL, errMsg);
+        return;
+    }
+    
+    const IPC_DeviceControlCmd_t* cmd = (const IPC_DeviceControlCmd_t*)payload;
+    
+    // Validate control object index (50-69)
+    if (cmd->index < 50 || cmd->index >= 70) {
+        Serial.printf("[IPC] ERROR: Invalid control index %d (must be 50-69)\n", cmd->index);
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false, 
+                            CTRL_ERR_INVALID_INDEX, "Control index out of range");
+        return;
+    }
+    
+    // Check object is valid and is a device control object
+    if (!objIndex[cmd->index].valid || objIndex[cmd->index].type != OBJ_T_DEVICE_CONTROL) {
+        Serial.printf("[IPC] ERROR: Index %d is not a valid device control object\n", cmd->index);
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+                            CTRL_ERR_TYPE_MISMATCH, "Not a device control object");
+        return;
+    }
+    
+    DeviceControl_t* control = (DeviceControl_t*)objIndex[cmd->index].obj;
+    bool success = false;
+    char message[100] = {0};
+    ControlErrorCode errorCode = CTRL_ERR_NONE;
+    
+    // Dispatch based on command type
+    switch(cmd->command) {
+        case DEV_CMD_SET_SETPOINT: {
+            // Find device instance from control index
+            ManagedDevice* dev = DeviceManager::findDeviceByControlIndex(cmd->index);
+            if (!dev) {
+                Serial.printf("[DEV CTRL] ERROR: No device found for control index %d\n", cmd->index);
+                errorCode = CTRL_ERR_INVALID_INDEX;
+                strcpy(message, "Device not found");
+                break;
+            }
+            
+            // Dispatch to device-specific handler based on device type
+            switch(control->deviceType) {
+                case IPC_DEV_ALICAT_MFC: {
+                    Serial.printf("[DEV CTRL] Set MFC setpoint: index=%d, value=%.2f\n", 
+                                 cmd->index, cmd->setpoint);
+                    
+                    // Get device instance
+                    AlicatMFC* mfc = (AlicatMFC*)dev->deviceInstance;
+                    if (!mfc) {
+                        Serial.printf("[DEV CTRL] ERROR: MFC device instance is null\n");
+                        errorCode = CTRL_ERR_DRIVER_FAULT;
+                        strcpy(message, "MFC device instance not found");
+                        break;
+                    }
+                    
+                    // Store setpoint in control object for feedback
+                    control->setpoint = cmd->setpoint;
+                    
+                    // Write setpoint to hardware
+                    bool writeSuccess = mfc->writeSetpoint(cmd->setpoint);
+                    if (writeSuccess) {
+                        success = true;
+                        snprintf(message, sizeof(message), "Setpoint %.2f SLPM sent to MFC", cmd->setpoint);
+                        Serial.printf("[DEV CTRL] MFC setpoint command queued successfully\n");
+                    } else {
+                        success = false;
+                        errorCode = CTRL_ERR_DRIVER_FAULT;
+                        strcpy(message, "Failed to queue setpoint command");
+                        Serial.printf("[DEV CTRL] ERROR: Failed to queue MFC setpoint command\n");
+                    }
+                    break;
+                }
+                
+                default:
+                    Serial.printf("[DEV CTRL] ERROR: Device type %d does not support setpoint control\n", 
+                                 control->deviceType);
+                    errorCode = CTRL_ERR_INVALID_CMD;
+                    strcpy(message, "Device does not support setpoint control");
+                    break;
+            }
+            break;
+        }
+        
+        case DEV_CMD_RESET_FAULT: {
+            control->fault = false;
+            control->newMessage = false;
+            strcpy(control->message, "Fault cleared");
+            success = true;
+            strcpy(message, "Fault reset");
+            Serial.printf("[DEV CTRL] Fault cleared for device at index %d\n", cmd->index);
+            break;
+        }
+        
+        default:
+            Serial.printf("[DEV CTRL] ERROR: Unknown command %d\n", cmd->command);
+            errorCode = CTRL_ERR_INVALID_CMD;
+            strcpy(message, "Unknown device control command");
+            break;
+    }
+    
+    // Send acknowledgment
+    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, 
+                         success, errorCode, message);
+}
+
+bool ipc_sendDeviceStatus(uint8_t startIndex, bool active, bool fault,
+                          uint8_t objectCount, const uint8_t *sensorIndices,
+                          const char *message) {
+    IPC_DeviceStatus_t status;
+    status.startIndex = startIndex;
+    status.active = active;
+    status.fault = fault;
+    status.objectCount = objectCount;
+    
+    // Copy sensor indices
+    for (uint8_t i = 0; i < 4; i++) {
+        if (sensorIndices && i < objectCount) {
+            status.sensorIndices[i] = sensorIndices[i];
+        } else {
+            status.sensorIndices[i] = 0;
+        }
+    }
+    
+    // Copy message
+    if (message) {
+        strncpy(status.message, message, sizeof(status.message) - 1);
+        status.message[sizeof(status.message) - 1] = '\0';
+    } else {
+        status.message[0] = '\0';
+    }
     
     return ipc_sendPacket(IPC_MSG_DEVICE_STATUS, (uint8_t*)&status, sizeof(status));
 }

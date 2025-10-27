@@ -5,17 +5,17 @@
 // Driver definitions
 const DRIVER_DEFINITIONS = {
     // Modbus drivers
-    0: { name: 'Hamilton pH Probe', interface: 0, description: 'Hamilton Modbus pH/Temperature probe' },
-    1: { name: 'Hamilton DO Probe', interface: 0, description: 'Hamilton Modbus Dissolved Oxygen probe' },
-    2: { name: 'Hamilton OD Probe', interface: 0, description: 'Hamilton Modbus Optical Density probe' },
-    3: { name: 'Alicat Mass Flow Controller', interface: 0, description: 'Alicat Modbus MFC' },
+    0: { name: 'Hamilton pH Probe', interface: 0, description: 'Hamilton Modbus pH/Temperature probe', hasSetpoint: false },
+    1: { name: 'Hamilton DO Probe', interface: 0, description: 'Hamilton Modbus Dissolved Oxygen probe', hasSetpoint: false },
+    2: { name: 'Hamilton OD Probe', interface: 0, description: 'Hamilton Modbus Optical Density probe', hasSetpoint: false },
+    3: { name: 'Alicat Mass Flow Controller', interface: 0, description: 'Alicat Modbus MFC', hasSetpoint: true },
     
     // Analogue IO drivers
-    10: { name: 'Pressure Controller', interface: 1, description: '0-10V analogue pressure controller' },
+    10: { name: 'Pressure Controller', interface: 1, description: '0-10V analogue pressure controller', hasSetpoint: true },
     
     // Motor driven drivers
-    20: { name: 'Stirrer', interface: 2, description: 'Stepper or DC motor stirrer' },
-    21: { name: 'Pump', interface: 2, description: 'Stepper or DC motor pump' }
+    20: { name: 'Stirrer', interface: 2, description: 'Stepper or DC motor stirrer', hasSetpoint: true },
+    21: { name: 'Pump', interface: 2, description: 'Stepper or DC motor pump', hasSetpoint: true }
 };
 
 const INTERFACE_NAMES = {
@@ -25,6 +25,96 @@ const INTERFACE_NAMES = {
 };
 
 let currentDeviceIndex = -1; // For editing devices
+let deviceControlData = {}; // Cache for device control objects
+let devicesPollingInterval = null;
+
+// ============================================================================
+// Device Control Data Polling
+// ============================================================================
+
+async function fetchDeviceControlData() {
+    try {
+        // Fetch object cache data for control indices 50-69
+        const response = await fetch('/api/inputs');  // This returns all cached objects
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        
+        // Extract device control objects (indices 50-69)
+        // Note: The API doesn't have a specific endpoint yet, so we'll poll devices endpoint
+        // which should include control object data
+        const devicesResponse = await fetch('/api/devices');
+        if (devicesResponse.ok) {
+            const devicesData = await devicesResponse.json();
+            
+            // Update device cards with control data
+            if (devicesData.devices && devicesData.devices.length > 0) {
+                updateDeviceControlStatus(devicesData.devices);
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching device control data:', error);
+    }
+}
+
+function updateDeviceControlStatus(devices) {
+    devices.forEach(device => {
+        // Calculate control index from sensor index
+        const controlIndex = device.dynamicIndex - 20;  // 70 - 20 = 50
+        
+        // Find the device card
+        const card = document.querySelector(`.device-card[data-control-index="${controlIndex}"]`);
+        if (!card) return;
+        
+        // Update connected status
+        const statusDiv = card.querySelector('.device-status');
+        if (statusDiv) {
+            const isConnected = device.connected !== false;  // Default to true if not specified
+            statusDiv.className = `device-status ${isConnected ? 'status-online' : 'status-offline'}`;
+            statusDiv.textContent = isConnected ? 'Connected' : 'Disconnected';
+            
+            if (device.fault) {
+                statusDiv.className = 'device-status status-fault';
+                statusDiv.textContent = 'FAULT';
+            }
+        }
+        
+        // Update control values if they exist
+        const setpointValue = card.querySelector('.setpoint-value');
+        const actualValue = card.querySelector('.actual-value');
+        const message = card.querySelector('.device-message');
+        
+        if (setpointValue && device.setpoint !== undefined) {
+            setpointValue.textContent = `${device.setpoint.toFixed(2)} ${device.unit || ''}`;
+        }
+        
+        if (actualValue && device.actualValue !== undefined) {
+            actualValue.textContent = `${device.actualValue.toFixed(2)} ${device.unit || ''}`;
+        }
+        
+        if (message && device.message) {
+            message.textContent = device.message;
+            message.style.display = device.message ? 'block' : 'none';
+        }
+    });
+}
+
+function startDevicesPolling() {
+    // Poll every 2 seconds
+    if (devicesPollingInterval) {
+        clearInterval(devicesPollingInterval);
+    }
+    
+    fetchDeviceControlData();  // Initial fetch
+    devicesPollingInterval = setInterval(fetchDeviceControlData, 2000);
+}
+
+function stopDevicesPolling() {
+    if (devicesPollingInterval) {
+        clearInterval(devicesPollingInterval);
+        devicesPollingInterval = null;
+    }
+}
 
 // ============================================================================
 // Modal Management
@@ -169,12 +259,16 @@ function createDeviceCard(device) {
     const card = document.createElement('div');
     card.className = 'device-card';
     
+    // Calculate control index from sensor index
+    const controlIndex = device.dynamicIndex - 20;  // e.g., 70 - 20 = 50
+    card.setAttribute('data-control-index', controlIndex);
+    
     const driverInfo = DRIVER_DEFINITIONS[device.driverType];
     const interfaceName = INTERFACE_NAMES[device.interfaceType];
     
-    // Status indicator
-    const statusClass = device.online ? 'status-online' : 'status-offline';
-    const statusText = device.online ? 'Online' : 'Offline';
+    // Status indicator - will be updated by polling
+    const statusClass = 'status-offline';
+    const statusText = 'Disconnected';
     
     card.innerHTML = `
         <div class="output-header">
@@ -182,21 +276,63 @@ function createDeviceCard(device) {
                 <span class="output-name">${device.name}</span>
                 <span class="output-mode-badge">${driverInfo ? driverInfo.name : 'Unknown'}</span>
             </div>
-            <button class="icon-btn" onclick="openDeviceConfig(${device.dynamicIndex})" title="Configure">
-                <svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>
-            </button>
+            <div class="output-header-right">
+                <div class="device-status ${statusClass}">${statusText}</div>
+                <button class="icon-btn" onclick="openDeviceConfig(${device.dynamicIndex})" title="Configure">
+                    <svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>
+                </button>
+            </div>
         </div>
+        
+        <!-- Device Configuration Info -->
         <div class="device-info">
             <div class="device-detail">
                 <strong>Interface:</strong> ${interfaceName}
             </div>
             <div class="device-detail">
-                <strong>Index:</strong> ${device.dynamicIndex}
+                <strong>Sensor Index:</strong> ${device.dynamicIndex}
+            </div>
+            <div class="device-detail">
+                <strong>Control Index:</strong> ${controlIndex}
             </div>
             ${getDeviceDetailsHTML(device)}
         </div>
-        <div class="device-status-row">
-            <div class="device-status ${statusClass}">${statusText}</div>
+        
+        <!-- Device Control Section -->
+        <div class="device-control-section">
+            <div class="device-control-row">
+                ${driverInfo && driverInfo.hasSetpoint ? `
+                    <div class="control-item">
+                        <span class="control-label">Setpoint:</span>
+                        <span class="setpoint-value">-- --</span>
+                    </div>
+                ` : ''}
+                <div class="control-item">
+                    <span class="control-label">${driverInfo && driverInfo.hasSetpoint ? 'Actual:' : 'Value:'}</span>
+                    <span class="actual-value">-- --</span>
+                </div>
+            </div>
+            
+            ${driverInfo && driverInfo.hasSetpoint ? `
+                <div class="device-control-input">
+                    <input type="number" 
+                           id="setpoint-input-${controlIndex}" 
+                           class="setpoint-input" 
+                           step="0.1" 
+                           placeholder="Enter setpoint">
+                    <button class="output-btn output-btn-primary" 
+                            onclick="sendSetpoint(${controlIndex})">
+                        Set
+                    </button>
+                    <button class="output-btn output-btn-secondary" 
+                            onclick="resetFault(${controlIndex})" 
+                            title="Reset Fault">
+                        Reset Fault
+                    </button>
+                </div>
+            ` : ''}
+            
+            <div class="device-message" style="display: none;"></div>
         </div>
     `;
     
@@ -537,12 +673,96 @@ async function deleteDevice() {
 }
 
 // ============================================================================
+// Device Control Commands
+// ============================================================================
+
+async function sendSetpoint(controlIndex) {
+    const input = document.getElementById(`setpoint-input-${controlIndex}`);
+    if (!input) {
+        showToast('error', 'Error', 'Setpoint input not found');
+        return;
+    }
+    
+    const setpoint = parseFloat(input.value);
+    if (isNaN(setpoint)) {
+        showToast('error', 'Validation Error', 'Please enter a valid setpoint value');
+        return;
+    }
+    
+    console.log(`[DEVICE] Sending setpoint to control index ${controlIndex}: ${setpoint}`);
+    
+    try {
+        const response = await fetch(`/api/device/${controlIndex}/setpoint`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ setpoint: setpoint })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to set setpoint');
+        }
+        
+        const result = await response.json();
+        showToast('success', 'Setpoint Set', `Setpoint ${setpoint} sent to device`);
+        console.log('[DEVICE] Setpoint command sent successfully');
+        
+        // Clear input
+        input.value = '';
+        
+        // Refresh data immediately
+        fetchDeviceControlData();
+    } catch (error) {
+        console.error('Error setting setpoint:', error);
+        showToast('error', 'Error', error.message);
+    }
+}
+
+async function resetFault(controlIndex) {
+    console.log(`[DEVICE] Resetting fault for control index ${controlIndex}`);
+    
+    try {
+        const response = await fetch(`/api/device/${controlIndex}/fault/reset`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to reset fault');
+        }
+        
+        const result = await response.json();
+        showToast('success', 'Fault Reset', 'Device fault reset command sent');
+        console.log('[DEVICE] Fault reset command sent successfully');
+        
+        // Refresh data immediately
+        fetchDeviceControlData();
+    } catch (error) {
+        console.error('Error resetting fault:', error);
+        showToast('error', 'Error', error.message);
+    }
+}
+
+// ============================================================================
 // Initialization
 // ============================================================================
 
 // Load devices when page loads
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadDevices);
+    document.addEventListener('DOMContentLoaded', () => {
+        loadDevices();
+        startDevicesPolling();
+    });
 } else {
     loadDevices();
+    startDevicesPolling();
 }
+
+// Hook into tab switching to start/stop polling
+function initDevicesTab() {
+    startDevicesPolling();
+    console.log('[DEVICES] Polling started');
+}
+
+// Export for use in main script.js
+window.initDevicesTab = initDevicesTab;

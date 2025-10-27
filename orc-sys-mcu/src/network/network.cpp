@@ -658,6 +658,46 @@ void handleGetInputs() {
     }
   }
   
+  // Dynamic Device Sensors - Indices 70-99
+  // These are created by dynamic devices (pH probes, MFCs, etc.)
+  JsonArray devices = doc.createNestedArray("devices");
+  for (uint8_t i = 70; i <= 99; i++) {
+    ObjectCache::CachedObject* obj = objectCache.getObject(i);
+    if (obj && obj->valid) {
+      JsonObject o = devices.createNestedObject();
+      o["i"] = i;
+      o["v"] = obj->value;
+      
+      // Use custom name from config if set, otherwise use IO MCU name
+      uint8_t sensorIndex = i - 70;
+      char cleanName[40];
+      if (ioConfig.deviceSensors[sensorIndex].nameOverridden && 
+          strlen(ioConfig.deviceSensors[sensorIndex].name) > 0) {
+        // Use custom name from SYS MCU config
+        strncpy(cleanName, ioConfig.deviceSensors[sensorIndex].name, sizeof(cleanName) - 1);
+      } else {
+        // Use default name from IO MCU
+        strncpy(cleanName, obj->name, sizeof(cleanName) - 1);
+      }
+      cleanName[sizeof(cleanName) - 1] = '\0';
+      o["n"] = cleanName;
+      
+      // Ensure unit string is null-terminated and clean
+      char cleanUnit[8];
+      strncpy(cleanUnit, obj->unit, sizeof(cleanUnit) - 1);
+      cleanUnit[sizeof(cleanUnit) - 1] = '\0';
+      o["u"] = cleanUnit;
+      
+      // Object type for display (pH, DO, Temperature, Flow, Pressure, etc.)
+      o["t"] = obj->objectType;
+      
+      // Show on dashboard flag from config
+      o["d"] = ioConfig.deviceSensors[sensorIndex].showOnDashboard;
+      
+      if (obj->flags & IPC_SENSOR_FLAG_FAULT) o["f"] = 1;
+    }
+  }
+  
   String response;
   serializeJson(doc, response);
   
@@ -1174,6 +1214,81 @@ void handleSaveEnergySensorConfig(uint8_t index) {
   log(LOG_DEBUG, false, "handleSaveEnergySensorConfig: COMPLETE\n");
 }
 
+// --- Device Sensor Configuration API Handlers ---
+
+void handleGetDeviceSensorConfig(uint8_t index) {
+  // Device sensor indices are 70-99, convert to array index 0-29
+  if (index < 70 || index >= 70 + MAX_DEVICE_SENSORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid device sensor index\"}");
+    return;
+  }
+  
+  uint8_t sensorIndex = index - 70;
+  
+  StaticJsonDocument<256> doc;
+  doc["index"] = index;
+  doc["name"] = ioConfig.deviceSensors[sensorIndex].name;
+  doc["showOnDashboard"] = ioConfig.deviceSensors[sensorIndex].showOnDashboard;
+  doc["nameOverridden"] = ioConfig.deviceSensors[sensorIndex].nameOverridden;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveDeviceSensorConfig(uint8_t index) {
+  log(LOG_DEBUG, false, "handleSaveDeviceSensorConfig: START index=%d\n", index);
+  
+  if (index < 60 || index >= 60 + MAX_DEVICE_SENSORS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid device sensor index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveDeviceSensorConfig: Parsing JSON\n");
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    log(LOG_DEBUG, false, "handleSaveDeviceSensorConfig: JSON parse error\n");
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveDeviceSensorConfig: Updating config\n");
+  
+  uint8_t sensorIndex = index - 70;
+  
+  // Update name
+  if (doc.containsKey("name")) {
+    strncpy(ioConfig.deviceSensors[sensorIndex].name, doc["name"], 
+            sizeof(ioConfig.deviceSensors[sensorIndex].name) - 1);
+    ioConfig.deviceSensors[sensorIndex].name[sizeof(ioConfig.deviceSensors[sensorIndex].name) - 1] = '\0';
+    ioConfig.deviceSensors[sensorIndex].nameOverridden = (strlen(ioConfig.deviceSensors[sensorIndex].name) > 0);
+  }
+  
+  // Update showOnDashboard flag
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.deviceSensors[sensorIndex].showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  log(LOG_DEBUG, false, "handleSaveDeviceSensorConfig: Calling saveIOConfig\n");
+  
+  // Save configuration to flash
+  saveIOConfig();
+  
+  log(LOG_INFO, false, "Updated device sensor[%d] config: name='%s', showOnDashboard=%d\n", 
+      index, ioConfig.deviceSensors[sensorIndex].name,
+      ioConfig.deviceSensors[sensorIndex].showOnDashboard);
+  
+  server.send(200, "application/json", "{\"success\":true}");
+  log(LOG_DEBUG, false, "handleSaveDeviceSensorConfig: COMPLETE\n");
+}
+
 // --- COM Port Configuration API Handlers ---
 
 void handleGetComPortConfig(uint8_t index) {
@@ -1313,6 +1428,51 @@ void handleGetComPorts() {
 // ============================================================================
 
 /**
+ * @brief Helper function to convert DeviceConfig to IPC_DeviceConfig_t
+ */
+static void deviceConfigToIPC(const DeviceConfig* device, IPC_DeviceConfig_t* ipcConfig) {
+  memset(ipcConfig, 0, sizeof(IPC_DeviceConfig_t));
+  
+  // Map driver type to IPC device type
+  switch (device->driverType) {
+    case DEVICE_DRIVER_HAMILTON_PH:  ipcConfig->deviceType = IPC_DEV_HAMILTON_PH; break;
+    case DEVICE_DRIVER_HAMILTON_DO:  ipcConfig->deviceType = IPC_DEV_HAMILTON_DO; break;
+    case DEVICE_DRIVER_HAMILTON_OD:  ipcConfig->deviceType = IPC_DEV_HAMILTON_OD; break;
+    case DEVICE_DRIVER_ALICAT_MFC:   ipcConfig->deviceType = IPC_DEV_ALICAT_MFC; break;
+    case DEVICE_DRIVER_PRESSURE_CONTROLLER: ipcConfig->deviceType = IPC_DEV_ANALOG_SENSOR; break;
+    default: ipcConfig->deviceType = IPC_DEV_NONE; break;
+  }
+  
+  // Map interface type to IPC bus type
+  switch (device->interfaceType) {
+    case DEVICE_INTERFACE_MODBUS_RTU:
+      ipcConfig->busType = IPC_BUS_MODBUS_RTU;
+      ipcConfig->busIndex = device->modbus.portIndex;
+      ipcConfig->address = device->modbus.slaveID;
+      break;
+      
+    case DEVICE_INTERFACE_ANALOGUE_IO:
+      ipcConfig->busType = IPC_BUS_ANALOG;
+      ipcConfig->busIndex = device->analogueIO.dacOutputIndex;
+      ipcConfig->address = 0;  // Not used for analog
+      break;
+      
+    case DEVICE_INTERFACE_MOTOR_DRIVEN:
+      ipcConfig->busType = IPC_BUS_DIGITAL;
+      ipcConfig->busIndex = device->motorDriven.motorIndex;
+      ipcConfig->address = 0;  // Not used for motors
+      break;
+      
+    default:
+      ipcConfig->busType = IPC_BUS_NONE;
+      break;
+  }
+  
+  // Object count will be determined by IO MCU based on device type
+  ipcConfig->objectCount = 0;
+}
+
+/**
  * @brief Get all configured devices
  */
 void handleGetDevices() {
@@ -1328,7 +1488,37 @@ void handleGetDevices() {
     device["interfaceType"] = (uint8_t)ioConfig.devices[i].interfaceType;
     device["driverType"] = (uint8_t)ioConfig.devices[i].driverType;
     device["name"] = ioConfig.devices[i].name;
-    device["online"] = false;  // TODO: Get actual status from IO MCU
+    
+    // Get control object data from cache
+    // Control index = sensor index - 20 (e.g., 70 - 20 = 50)
+    uint8_t controlIndex = ioConfig.devices[i].dynamicIndex - 20;
+    ObjectCache::CachedObject* controlObj = objectCache.getObject(controlIndex);
+    
+    if (controlObj && controlObj->valid && controlObj->lastUpdate > 0) {
+      // Device has valid control data
+      device["connected"] = !(controlObj->flags & IPC_SENSOR_FLAG_FAULT);  // Connected if no fault
+      device["fault"] = (controlObj->flags & IPC_SENSOR_FLAG_FAULT) ? true : false;
+      device["setpoint"] = controlObj->value;  // Control object value is the setpoint
+      device["unit"] = controlObj->unit;
+      
+      // Check if there's an actual value (might be in sensor object or additional values)
+      if (controlObj->valueCount > 0) {
+        device["actualValue"] = controlObj->additionalValues[0];
+      } else {
+        device["actualValue"] = controlObj->value;  // Fallback to same as setpoint
+      }
+      
+      if (strlen(controlObj->message) > 0) {
+        device["message"] = controlObj->message;
+      }
+    } else {
+      // No control data available yet
+      device["connected"] = false;
+      device["fault"] = false;
+      device["setpoint"] = 0.0f;
+      device["actualValue"] = 0.0f;
+      device["unit"] = "";
+    }
     
     // Add interface-specific parameters
     if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MODBUS_RTU) {
@@ -1439,10 +1629,10 @@ void handleCreateDevice() {
     return;
   }
   
-  // Allocate dynamic index
-  int8_t dynamicIndex = allocateDynamicIndex();
+  // Allocate dynamic index (reserves consecutive slots based on device type)
+  int8_t dynamicIndex = allocateDynamicIndex((DeviceDriverType)driverType);
   if (dynamicIndex < 0) {
-    server.send(400, "application/json", "{\"error\":\"No available device slots (maximum 20)\"}");
+    server.send(400, "application/json", "{\"error\":\"No available consecutive device slots for this device type\"}");
     return;
   }
   
@@ -1488,11 +1678,18 @@ void handleCreateDevice() {
   // Save configuration to LittleFS
   saveIOConfig();
   
+  // Convert to IPC config and send to IO MCU
+  IPC_DeviceConfig_t ipcConfig;
+  deviceConfigToIPC(&ioConfig.devices[emptySlot], &ipcConfig);
+  
+  bool sent = sendDeviceCreateCommand(dynamicIndex, &ipcConfig);
+  if (!sent) {
+    log(LOG_WARNING, true, "Failed to send device create command to IO MCU\n");
+    // Don't fail the request - config is saved, device will be created on next boot
+  }
+  
   log(LOG_INFO, true, "Device created: %s (index %d, driver %d)\n", 
       name.c_str(), dynamicIndex, driverType);
-  
-  // TODO: Send IPC_MSG_DEVICE_CREATE to IO MCU
-  // For now, we just save the config. Device creation on IO MCU will be implemented later.
   
   // Send success response
   StaticJsonDocument<256> response;
@@ -1540,13 +1737,16 @@ void handleDeleteDevice() {
   // Free the dynamic index and mark slot as inactive
   freeDynamicIndex(dynamicIndex);
   
+  // Send delete command to IO MCU
+  bool sent = sendDeviceDeleteCommand(dynamicIndex);
+  if (!sent) {
+    log(LOG_WARNING, true, "Failed to send device delete command to IO MCU\n");
+  }
+  
   // Save configuration
   saveIOConfig();
   
   log(LOG_INFO, true, "Device deleted: %s (index %d)\n", deviceName.c_str(), dynamicIndex);
-  
-  // TODO: Send IPC_MSG_DEVICE_DELETE to IO MCU
-  // For now, we just remove from config. IO MCU device deletion will be implemented later.
   
   // Send success response
   server.send(200, "application/json", "{\"success\":true,\"message\":\"Device deleted successfully\"}");
@@ -1656,10 +1856,17 @@ void handleUpdateDevice() {
   // Save configuration
   saveIOConfig();
   
+  // Convert to IPC config and send update to IO MCU
+  IPC_DeviceConfig_t ipcConfig;
+  deviceConfigToIPC(&ioConfig.devices[deviceIdx], &ipcConfig);
+  
+  bool sent = sendDeviceConfigCommand(&ipcConfig);
+  if (!sent) {
+    log(LOG_WARNING, true, "Failed to send device config update to IO MCU\n");
+  }
+  
   log(LOG_INFO, true, "Device updated: %s (index %d)\n", 
       ioConfig.devices[deviceIdx].name, dynamicIndex);
-  
-  // TODO: Send IPC_MSG_DEVICE_UPDATE to IO MCU to reconfigure the device
   
   // Send success response
   StaticJsonDocument<256> response;
@@ -2451,6 +2658,75 @@ void handleStopDCMotor(uint8_t index) {
   }
 }
 
+// ============================================================================
+// Device Control (Peripheral Devices like MFC, pH controllers)
+// ============================================================================
+
+bool sendDeviceControlCommand(uint16_t controlIndex, DeviceControlCommand command, float setpoint = 0.0f) {
+  IPC_DeviceControlCmd_t cmd;
+  cmd.index = controlIndex;
+  cmd.objectType = OBJ_T_DEVICE_CONTROL;
+  cmd.command = command;
+  cmd.setpoint = setpoint;
+  memset(cmd.reserved, 0, sizeof(cmd.reserved));
+  
+  return ipc.sendPacket(IPC_MSG_DEVICE_CONTROL, (uint8_t*)&cmd, sizeof(cmd));
+}
+
+void handleSetDeviceSetpoint(uint16_t controlIndex) {
+  // Validate control index (50-69)
+  if (controlIndex < 50 || controlIndex >= 70) {
+    server.send(400, "application/json", "{\"error\":\"Invalid control index\"}");
+    return;
+  }
+  
+  // Parse JSON body
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  if (!doc.containsKey("setpoint")) {
+    server.send(400, "application/json", "{\"error\":\"Missing setpoint parameter\"}");
+    return;
+  }
+  
+  float setpoint = doc["setpoint"];
+  
+  // Send setpoint command via IPC
+  bool sent = sendDeviceControlCommand(controlIndex, DEV_CMD_SET_SETPOINT, setpoint);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Set device %d setpoint: %.2f\n", controlIndex, setpoint);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Setpoint command sent\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to set device %d setpoint: IPC queue full\n", controlIndex);
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
+void handleResetDeviceFault(uint16_t controlIndex) {
+  // Validate control index (50-69)
+  if (controlIndex < 50 || controlIndex >= 70) {
+    server.send(400, "application/json", "{\"error\":\"Invalid control index\"}");
+    return;
+  }
+  
+  // Send fault reset command via IPC
+  bool sent = sendDeviceControlCommand(controlIndex, DEV_CMD_RESET_FAULT);
+  
+  if (sent) {
+    log(LOG_INFO, false, "Reset fault for device %d\n", controlIndex);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Fault reset command sent\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to reset device %d fault: IPC queue full\n", controlIndex);
+    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
+  }
+}
+
 void setupWebServer()
 {
   // Initialize LittleFS for serving web files
@@ -2561,6 +2837,14 @@ void setupWebServer()
   server.on("/api/config/energy/31", HTTP_POST, []() { handleSaveEnergySensorConfig(31); });
   server.on("/api/config/energy/32", HTTP_POST, []() { handleSaveEnergySensorConfig(32); });
 
+  // Device Sensor Configuration endpoints (indices 70-99)
+  for (uint8_t i = 70; i <= 99; i++) {
+    String getPath = "/api/config/devicesensor/" + String(i);
+    String postPath = "/api/config/devicesensor/" + String(i);
+    server.on(getPath.c_str(), HTTP_GET, [i]() { handleGetDeviceSensorConfig(i); });
+    server.on(postPath.c_str(), HTTP_POST, [i]() { handleSaveDeviceSensorConfig(i); });
+  }
+
   // COM Port Configuration endpoints (indices 0-3)
   server.on("/api/config/comport/0", HTTP_GET, []() { handleGetComPortConfig(0); });
   server.on("/api/config/comport/1", HTTP_GET, []() { handleGetComPortConfig(1); });
@@ -2660,7 +2944,12 @@ void setupWebServer()
   server.on("/api/dcmotor/28/stop", HTTP_POST, []() { handleStopDCMotor(28); });
   server.on("/api/dcmotor/29/stop", HTTP_POST, []() { handleStopDCMotor(29); });
   server.on("/api/dcmotor/30/stop", HTTP_POST, []() { handleStopDCMotor(30); });
-
+  
+  // Device Control (Peripheral Devices) - Control indices 50-69
+  // Format: /api/device/{controlIndex}/setpoint
+  //         /api/device/{controlIndex}/fault/reset
+  // These will be handled dynamically in onNotFound() to support all 20 control slots
+  
   // Setup API endpoints
   setupNetworkAPI();
   setupMqttAPI();
@@ -2669,7 +2958,29 @@ void setupWebServer()
   // Handle dynamic device routes and static files
   server.onNotFound([]() {
     String uri = server.uri();
-    Serial.printf("[WEB] onNotFound: %s (method: %d)\n", uri.c_str(), server.method());
+    Serial.printf("[WEB] onNotFound: %s (method: %d)\\n", uri.c_str(), server.method());
+    
+    // Check device control routes first
+    if (uri.startsWith("/api/device/")) {
+      String remaining = uri.substring(12);
+      int slashPos = remaining.indexOf('/');
+      if (slashPos > 0) {
+        String indexStr = remaining.substring(0, slashPos);
+        String action = remaining.substring(slashPos + 1);
+        uint16_t controlIndex = indexStr.toInt();
+        if (controlIndex >= 50 && controlIndex < 70 && indexStr.length() > 0) {
+          if (server.method() == HTTP_POST) {
+            if (action == "setpoint") {
+              handleSetDeviceSetpoint(controlIndex);
+              return;
+            } else if (action == "fault/reset") {
+              handleResetDeviceFault(controlIndex);
+              return;
+            }
+          }
+        }
+      }
+    }
     
     // Check if this is a device API route: /api/devices/{number}
     if (uri.startsWith("/api/devices/")) {
@@ -2691,7 +3002,7 @@ void setupWebServer()
       
       Serial.printf("[WEB] Device API route detected: index=%d, indexStr='%s'\n", index, indexStr.c_str());
       
-      // Validate it's in the dynamic index range (60-79)
+      // Validate it's in the dynamic index range (70-99)
       if (index >= DYNAMIC_INDEX_START && index <= DYNAMIC_INDEX_END && indexStr.length() > 0) {
         // Valid device route - dispatch to appropriate handler
         HTTPMethod method = server.method();

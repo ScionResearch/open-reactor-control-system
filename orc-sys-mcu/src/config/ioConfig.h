@@ -135,6 +135,19 @@ struct EnergySensorConfig {
 };
 
 /**
+ * @brief Configuration for Device Sensors (indices 70-99)
+ * These are sensor objects created by dynamic devices.
+ * Each device can create multiple sensors (e.g., pH probe creates pH + Temperature)
+ */
+#define MAX_DEVICE_SENSORS 30  // Matches DYNAMIC_INDEX_END - DYNAMIC_INDEX_START + 1
+
+struct DeviceSensorConfig {
+    char name[33];           // User-defined name (max 32 characters + null terminator)
+    bool showOnDashboard;    // Show on main dashboard
+    bool nameOverridden;     // True if user has set custom name
+};
+
+/**
  * @brief Configuration for COM ports (serial communication)
  * Ports: 0-1 = RS-232, 2-3 = RS-485
  */
@@ -178,16 +191,19 @@ enum DeviceDriverType : uint8_t {
 };
 
 /**
- * @brief Configuration for peripheral devices (dynamic indices 60-79)
+ * @brief Configuration for peripheral devices
+ * Dynamic Device Configuration
  * Maximum of 20 user-created devices
+ * Sensor indices: 70-99 (30 slots)
+ * Control indices: 50-69 (20 slots, calculated as sensorIndex - 20)
  */
 #define MAX_DEVICES 20
-#define DYNAMIC_INDEX_START 60
-#define DYNAMIC_INDEX_END 79
+#define DYNAMIC_INDEX_START 70
+#define DYNAMIC_INDEX_END 99
 
 struct DeviceConfig {
     bool isActive;                      // Is this slot in use?
-    uint8_t dynamicIndex;               // Dynamic index (60-79, 0xFF if not assigned)
+    uint8_t dynamicIndex;               // Dynamic sensor index (70-99, 0xFF if not assigned)
     DeviceInterfaceType interfaceType;
     DeviceDriverType driverType;
     char name[40];                      // User-defined device name (matches IPC limit)
@@ -236,8 +252,11 @@ struct IOConfig {
     EnergySensorConfig energySensors[MAX_ENERGY_SENSORS];  // Indices 31-32
     ComPortConfig comPorts[MAX_COM_PORTS];  // RS-232 (0-1) and RS-485 (2-3)
     
-    // Dynamic peripheral devices (indices 60-79)
+    // Dynamic peripheral devices (sensor indices 70-99, control indices 50-69)
     DeviceConfig devices[MAX_DEVICES];
+    
+    // Device sensor object configurations (indices 70-99)
+    DeviceSensorConfig deviceSensors[MAX_DEVICE_SENSORS];
 };
 
 // Function prototypes
@@ -248,8 +267,9 @@ void printIOConfig();
 void pushIOConfigToIOmcu();  // Push config to IO MCU via IPC
 
 // Device management helpers
-int8_t allocateDynamicIndex();           // Allocate next available index (60-79), returns -1 if full
-void freeDynamicIndex(uint8_t index);    // Free a dynamic index
+int8_t allocateDynamicIndex(DeviceDriverType driverType); // Allocate consecutive indices for device type, returns -1 if not enough space
+int8_t allocateDynamicIndex();           // Legacy: Allocate single index (70-99), returns -1 if full
+void freeDynamicIndex(uint8_t index);    // Free a dynamic index (and all its sub-indices)
 bool isDynamicIndexInUse(uint8_t index); // Check if an index is in use
 int8_t findDeviceByIndex(uint8_t dynamicIndex); // Find device array position by index, returns -1 if not found
 

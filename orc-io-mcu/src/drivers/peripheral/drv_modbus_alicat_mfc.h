@@ -161,11 +161,18 @@ public:
      */
     void clearMessage() { _newMessage = false; }
     
+    /**
+     * @brief Get the device control object
+     * @return Pointer to the DeviceControl_t object for this device
+     */
+    DeviceControl_t* getControlObject() { return &_controlObj; }
+    
 private:
     ModbusDriver_t *_modbusDriver;          ///< Pointer to the Modbus driver managing the serial port
     uint8_t _slaveID;                        ///< Modbus slave ID
     FlowSensor_t _flowSensor;                ///< Flow sensor data
     PressureSensor_t _pressureSensor;        ///< Pressure sensor data
+    DeviceControl_t _controlObj;             ///< Device control object (indices 50-69)
     float _setpoint;                         ///< Current setpoint
     char _setpointUnit[10];                  ///< Setpoint unit string
     bool _fault;                             ///< Fault flag

@@ -66,7 +66,9 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_DEVICE_CREATE   = 0x40,  // Create peripheral device instance
     IPC_MSG_DEVICE_DELETE   = 0x41,  // Delete peripheral device instance
     IPC_MSG_DEVICE_CONFIG   = 0x42,  // Configure device parameters
-    IPC_MSG_DEVICE_STATUS   = 0x43,  // Device status response
+    IPC_MSG_DEVICE_QUERY    = 0x43,  // Query device status
+    IPC_MSG_DEVICE_STATUS   = 0x44,  // Device status response
+    IPC_MSG_DEVICE_CONTROL  = 0x45,  // Device control command (set setpoint, etc.)
     
     // Fault & Message (0x50-0x5F)
     IPC_MSG_FAULT_NOTIFY    = 0x50,  // Fault notification
@@ -255,6 +257,14 @@ enum AnalogOutputCommand : uint8_t {
     AOUT_CMD_DISABLE   = 0x02,  // Disable output (set to 0)
 };
 
+// Device control command types (for peripheral devices like MFC, pH controllers, etc.)
+enum DeviceControlCommand : uint8_t {
+    DEV_CMD_SET_SETPOINT    = 0x01,  // Set device setpoint (MFC flow, pH target, etc.)
+    DEV_CMD_RESET_FAULT     = 0x02,  // Clear fault condition
+    DEV_CMD_ENABLE          = 0x03,  // Enable device
+    DEV_CMD_DISABLE         = 0x04,  // Disable device
+};
+
 // Control error codes
 enum ControlErrorCode : uint8_t {
     CTRL_ERR_NONE           = 0x00,  // No error
@@ -308,6 +318,15 @@ struct IPC_AnalogOutputControl_t {
     float value;             // Output value in mV (0-10240)
 } __attribute__((packed));
 
+// Device Control (indices 50-69) - for peripheral devices like MFC, pH controllers, etc.
+struct IPC_DeviceControlCmd_t {
+    uint16_t index;          // Control object index (50-69)
+    uint8_t objectType;      // Type verification (OBJ_T_DEVICE_CONTROL)
+    uint8_t command;         // DeviceControlCommand
+    float setpoint;          // New setpoint value
+    uint8_t reserved[8];     // Reserved for future use
+} __attribute__((packed));
+
 // Control Acknowledgment (for all control commands)
 struct IPC_ControlAck_t {
     uint16_t index;
@@ -336,30 +355,104 @@ struct IPC_ControlData_t {
 
 // Device Management messages --------------------------------------------
 
+/**
+ * Dynamic device types - Modbus, I2C, SPI, and Analog peripheral devices
+ * Devices are created dynamically in object index range 60-79 (20 slots)
+ * Each device can occupy 1-4 object indices depending on sensor count
+ */
 enum IPC_DeviceType : uint8_t {
-    IPC_DEV_HAMILTON_PH      = 0x01,
-    IPC_DEV_HAMILTON_DO      = 0x02,
-    IPC_DEV_HAMILTON_OD      = 0x03,
-    IPC_DEV_ALICAT_MFC       = 0x04,
-    // Add more device types as needed
+    IPC_DEV_NONE                = 0x00,
+    
+    // Modbus RTU Devices (1-19) - Use Modbus COM ports 0-3
+    IPC_DEV_HAMILTON_PH         = 0x01,  // pH probe (2 sensors: pH + Temperature)
+    IPC_DEV_HAMILTON_DO         = 0x02,  // Dissolved Oxygen probe (2 sensors: DO + Temperature)
+    IPC_DEV_HAMILTON_OD         = 0x03,  // Optical Density probe (2 sensors: OD + Temperature)
+    IPC_DEV_ALICAT_MFC          = 0x04,  // Mass Flow Controller (2-3 sensors: Flow + Pressure + Setpoint)
+    IPC_DEV_MODBUS_GENERIC      = 0x05,  // Generic Modbus RTU device
+    
+    // I2C Devices (20-39) - Future expansion
+    IPC_DEV_BME280              = 0x14,  // Temperature + Humidity + Pressure
+    IPC_DEV_SCD40               = 0x15,  // CO2 + Temperature + Humidity
+    IPC_DEV_INA260              = 0x16,  // Voltage + Current + Power (additional)
+    
+    // SPI Devices (40-59) - Future expansion
+    IPC_DEV_MAX31865            = 0x28,  // RTD Temperature (additional)
+    
+    // Analog Devices (60-79) - Future expansion
+    IPC_DEV_ANALOG_SENSOR       = 0x3C,  // External ADC, pressure transducer, etc.
+    
+    // Custom/User-defined (80-254)
+    IPC_DEV_CUSTOM              = 0xFF,  // User-defined device
 };
 
+/**
+ * Device bus types - determines which hardware interface is used
+ */
+enum IPC_BusType : uint8_t {
+    IPC_BUS_NONE                = 0xFF,  // No bus (inactive/unassigned)
+    IPC_BUS_MODBUS_RTU          = 0x00,  // Modbus RTU (RS-232/RS-485)
+    IPC_BUS_I2C                 = 0x01,  // I2C
+    IPC_BUS_SPI                 = 0x02,  // SPI
+    IPC_BUS_ANALOG              = 0x03,  // Analog (ADC-based)
+    IPC_BUS_DIGITAL             = 0x04,  // Digital I/O
+};
+
+/**
+ * Device configuration - hardware-specific parameters (sent to IO MCU)
+ * Name and dashboard settings are kept on SYS MCU only
+ */
+struct IPC_DeviceConfig_t {
+    uint8_t deviceType;         // IPC_DeviceType enum
+    uint8_t busType;            // IPC_BusType enum
+    uint8_t busIndex;           // Bus/port index (COM port 0-3, I2C bus 0-1, etc.)
+    uint8_t address;            // Device address (Modbus slave ID, I2C address, SPI CS, etc.)
+    uint8_t objectCount;        // Number of sensor objects created (1-4, set by IO MCU)
+    uint8_t reserved[3];        // Padding for future expansion
+} __attribute__((packed));
+
+/**
+ * Create a new dynamic device instance
+ * IO MCU will allocate object indices starting at startIndex
+ */
 struct IPC_DeviceCreate_t {
-    uint8_t deviceType;      // IPC_DeviceType
-    uint8_t modbusPort;      // Modbus port (0-3)
-    uint8_t slaveID;         // Modbus slave ID
-    char name[40];           // Device name
+    uint8_t startIndex;         // First object index to allocate (60-79)
+    IPC_DeviceConfig_t config;  // Device configuration
 } __attribute__((packed));
 
+/**
+ * Delete a dynamic device instance
+ * Removes device and frees all associated object indices
+ */
 struct IPC_DeviceDelete_t {
-    uint16_t index;
-    uint8_t objectType;      // Must match for safety
+    uint8_t startIndex;         // First object index of device
 } __attribute__((packed));
 
+/**
+ * Query device status
+ * Requests status information for a specific device
+ */
+struct IPC_DeviceQuery_t {
+    uint8_t startIndex;         // First object index of device
+} __attribute__((packed));
+
+/**
+ * Update device configuration (change bus, address, etc.)
+ * Device must be deleted and recreated if type changes
+ */
+struct IPC_DeviceConfigUpdate_t {
+    uint8_t startIndex;         // First object index of device
+    IPC_DeviceConfig_t config;  // New configuration
+} __attribute__((packed));
+
+/**
+ * Device status response - sent after create/delete/config operations
+ */
 struct IPC_DeviceStatus_t {
-    uint16_t assignedIndex[4];  // Indices assigned to device (device + sensors)
-    uint8_t indexCount;         // Number of indices assigned
-    uint8_t success;            // Creation/operation success
+    uint8_t startIndex;         // First object index
+    bool active;                // Device is active and updating
+    bool fault;                 // Device has a fault condition
+    uint8_t objectCount;        // Number of object indices allocated
+    uint8_t sensorIndices[4];   // Actual object indices assigned (0 = unused)
     char message[100];          // Status/error message
 } __attribute__((packed));
 
