@@ -483,14 +483,19 @@ bool sendDeviceDeleteCommand(uint8_t startIndex) {
 
 /**
  * @brief Send device configuration update to IO MCU
- * @param config Device configuration (includes startIndex internally)
+ * @param startIndex Device start index (70-99)
+ * @param config Device configuration
  * @return true if command was queued
  */
-bool sendDeviceConfigCommand(const IPC_DeviceConfig_t* config) {
-  bool sent = ipc.sendPacket(IPC_MSG_DEVICE_CONFIG, (uint8_t*)config, sizeof(IPC_DeviceConfig_t));
+bool sendDeviceConfigCommand(uint8_t startIndex, const IPC_DeviceConfig_t* config) {
+  IPC_DeviceConfigUpdate_t update;
+  update.startIndex = startIndex;
+  memcpy(&update.config, config, sizeof(IPC_DeviceConfig_t));
+  
+  bool sent = ipc.sendPacket(IPC_MSG_DEVICE_CONFIG, (uint8_t*)&update, sizeof(IPC_DeviceConfigUpdate_t));
   
   if (sent) {
-    log(LOG_INFO, true, "IPC TX: Update device config (type=%d)\n", config->deviceType);
+    log(LOG_INFO, true, "IPC TX: Update device config (index=%d, type=%d)\n", startIndex, config->deviceType);
   } else {
     log(LOG_WARNING, false, "IPC TX: Failed to send device config command\n");
   }

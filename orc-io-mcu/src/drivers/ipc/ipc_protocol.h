@@ -87,6 +87,7 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_CONFIG_STEPPER        = 0x68,  // Configure stepper motor
     IPC_MSG_CONFIG_DCMOTOR        = 0x69,  // Configure DC motor
     IPC_MSG_CONFIG_COMPORT        = 0x6A,  // Configure COM port (serial)
+    IPC_MSG_CONFIG_PRESSURE_CTRL  = 0x6E,  // Configure pressure controller
 };
 
 // ============================================================================
@@ -380,6 +381,7 @@ enum IPC_DeviceType : uint8_t {
     
     // Analog Devices (60-79) - Future expansion
     IPC_DEV_ANALOG_SENSOR       = 0x3C,  // External ADC, pressure transducer, etc.
+    IPC_DEV_PRESSURE_CTRL       = 0x3D,  // Analog pressure controller (0-10V output)
     
     // Custom/User-defined (80-254)
     IPC_DEV_CUSTOM              = 0xFF,  // User-defined device
@@ -611,6 +613,20 @@ struct IPC_ConfigComPort_t {
     uint8_t dataBits;        // Data bits (fixed to 8 for Modbus)
     float stopBits;          // Stop bits (1.0 or 2.0)
     uint8_t parity;          // Parity: 0=none, 1=odd, 2=even
+} __attribute__((packed));
+
+/**
+ * @brief Pressure controller calibration configuration
+ * Sent from SYS MCU to IO MCU to configure pressure controller calibration
+ * Uses scale/offset calibration pattern (matches ADC/DAC/RTD)
+ * Formula: pressure = scale * voltage_mV + offset
+ */
+struct IPC_ConfigPressureCtrl_t {
+    uint8_t controlIndex;        // Control object index (50-69)
+    uint8_t dacIndex;            // DAC output index (8 or 9)
+    char unit[8];                // Pressure unit (Pa, kPa, bar, PSI, atm, mbar)
+    float scale;                 // Calibration scale factor (Pa/mV)
+    float offset;                // Calibration offset (Pa)
 } __attribute__((packed));
 
 // ============================================================================

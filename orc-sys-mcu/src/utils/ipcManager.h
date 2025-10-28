@@ -26,7 +26,7 @@ bool sendDCMotorCommand(uint16_t index, uint8_t command, float power, bool direc
 // Device management command senders
 bool sendDeviceCreateCommand(uint8_t startIndex, const IPC_DeviceConfig_t* config);
 bool sendDeviceDeleteCommand(uint8_t startIndex);
-bool sendDeviceConfigCommand(const IPC_DeviceConfig_t* config);
+bool sendDeviceConfigCommand(uint8_t startIndex, const IPC_DeviceConfig_t* config);
 bool sendDeviceQueryCommand(uint8_t startIndex);
 
 // Global IPC object

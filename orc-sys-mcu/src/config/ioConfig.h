@@ -220,10 +220,8 @@ struct DeviceConfig {
         struct {
             uint8_t dacOutputIndex;     // DAC output index (0-1)
             char unit[8];               // Pressure unit (e.g., "bar", "kPa", "psi")
-            float minOutput;            // Minimum output voltage (0V)
-            float maxOutput;            // Maximum output voltage (10V)
-            float minPressure;          // Pressure at min output
-            float maxPressure;          // Pressure at max output
+            float scale;                // Calibration scale factor (Pa/mV)
+            float offset;               // Calibration offset (Pa)
         } analogueIO;
         
         // Motor driven device parameters
@@ -272,6 +270,18 @@ int8_t allocateDynamicIndex();           // Legacy: Allocate single index (70-99
 void freeDynamicIndex(uint8_t index);    // Free a dynamic index (and all its sub-indices)
 bool isDynamicIndexInUse(uint8_t index); // Check if an index is in use
 int8_t findDeviceByIndex(uint8_t dynamicIndex); // Find device array position by index, returns -1 if not found
+
+/**
+ * @brief Get the control object index for a device
+ * 
+ * Calculates the correct control index based on device type and architecture:
+ * - Control-only devices (e.g., Pressure Controller): dynamicIndex IS the control index (50-69)
+ * - Sensor+Control devices (e.g., pH, DO, MFC): control index = dynamicIndex - 20 (70-99 → 50-69)
+ * 
+ * @param device Pointer to device configuration
+ * @return Control object index (50-69), or dynamicIndex if device is NULL
+ */
+uint8_t getDeviceControlIndex(const DeviceConfig* device);
 
 // Global configuration instance
 extern IOConfig ioConfig;

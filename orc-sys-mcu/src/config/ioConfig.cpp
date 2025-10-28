@@ -379,10 +379,8 @@ bool loadIOConfig() {
                 ioConfig.devices[i].analogueIO.dacOutputIndex = dev["dacOutputIndex"] | 0;
                 strlcpy(ioConfig.devices[i].analogueIO.unit, dev["unit"] | "bar", 
                         sizeof(ioConfig.devices[i].analogueIO.unit));
-                ioConfig.devices[i].analogueIO.minOutput = dev["minOutput"] | 0.0f;
-                ioConfig.devices[i].analogueIO.maxOutput = dev["maxOutput"] | 10.0f;
-                ioConfig.devices[i].analogueIO.minPressure = dev["minPressure"] | 0.0f;
-                ioConfig.devices[i].analogueIO.maxPressure = dev["maxPressure"] | 10.0f;
+                ioConfig.devices[i].analogueIO.scale = dev["scale"] | 100.0f;
+                ioConfig.devices[i].analogueIO.offset = dev["offset"] | 0.0f;
             } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
                 ioConfig.devices[i].motorDriven.usesStepper = dev["usesStepper"] | false;
                 ioConfig.devices[i].motorDriven.motorIndex = dev["motorIndex"] | 27;
@@ -568,10 +566,8 @@ void saveIOConfig() {
         } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
             dev["dacOutputIndex"] = ioConfig.devices[i].analogueIO.dacOutputIndex;
             dev["unit"] = ioConfig.devices[i].analogueIO.unit;
-            dev["minOutput"] = ioConfig.devices[i].analogueIO.minOutput;
-            dev["maxOutput"] = ioConfig.devices[i].analogueIO.maxOutput;
-            dev["minPressure"] = ioConfig.devices[i].analogueIO.minPressure;
-            dev["maxPressure"] = ioConfig.devices[i].analogueIO.maxPressure;
+            dev["scale"] = ioConfig.devices[i].analogueIO.scale;
+            dev["offset"] = ioConfig.devices[i].analogueIO.offset;
         } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
             dev["usesStepper"] = ioConfig.devices[i].motorDriven.usesStepper;
             dev["motorIndex"] = ioConfig.devices[i].motorDriven.motorIndex;
@@ -959,7 +955,7 @@ void pushIOConfigToIOmcu() {
             case DEVICE_DRIVER_HAMILTON_DO:  ipcConfig.deviceType = IPC_DEV_HAMILTON_DO; break;
             case DEVICE_DRIVER_HAMILTON_OD:  ipcConfig.deviceType = IPC_DEV_HAMILTON_OD; break;
             case DEVICE_DRIVER_ALICAT_MFC:   ipcConfig.deviceType = IPC_DEV_ALICAT_MFC; break;
-            case DEVICE_DRIVER_PRESSURE_CONTROLLER: ipcConfig.deviceType = IPC_DEV_ANALOG_SENSOR; break;
+            case DEVICE_DRIVER_PRESSURE_CONTROLLER: ipcConfig.deviceType = IPC_DEV_PRESSURE_CTRL; break;
             default: ipcConfig.deviceType = IPC_DEV_NONE; break;
         }
         
@@ -1019,6 +1015,43 @@ void pushIOConfigToIOmcu() {
         delay(20);  // Extra delay for device initialization
     }
     
+    // Push pressure controller calibration (after device creation)
+    log(LOG_INFO, true, "Sending pressure controller calibration...\n");
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (ioConfig.devices[i].isActive && 
+            ioConfig.devices[i].driverType == (DeviceDriverType)IPC_DEV_PRESSURE_CTRL &&
+            ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
+            
+            IPC_ConfigPressureCtrl_t cfg;
+            cfg.controlIndex = ioConfig.devices[i].dynamicIndex - 20;  // Control index
+            cfg.dacIndex = ioConfig.devices[i].analogueIO.dacOutputIndex;
+            strncpy(cfg.unit, ioConfig.devices[i].analogueIO.unit, sizeof(cfg.unit) - 1);
+            cfg.unit[sizeof(cfg.unit) - 1] = '\0';
+            cfg.scale = ioConfig.devices[i].analogueIO.scale;
+            cfg.offset = ioConfig.devices[i].analogueIO.offset;
+            
+            bool sent = false;
+            for (int retry = 0; retry < 10; retry++) {
+                if (ipc.sendPacket(IPC_MSG_CONFIG_PRESSURE_CTRL, (uint8_t*)&cfg, sizeof(cfg))) {
+                    sent = true;
+                    sentCount++;
+                    log(LOG_DEBUG, false, "  → Pressure[%d]: scale=%.6f, offset=%.2f %s at DAC %d\n",
+                        cfg.controlIndex, cfg.scale, cfg.offset, 
+                        cfg.unit, cfg.dacIndex);
+                    break;
+                }
+                ipc.update();
+                delay(10);
+            }
+            
+            if (!sent) {
+                log(LOG_WARNING, false, "  ✗ Failed to send pressure controller calibration\n");
+            }
+            
+            delay(10);
+        }
+    }
+    
     log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports + devices)\n", sentCount);
 }
 
@@ -1039,8 +1072,8 @@ static uint8_t getDeviceObjectCount(DeviceDriverType driverType) {
         case DEVICE_DRIVER_ALICAT_MFC:    // Flow + Pressure
             return 2;
         
-        case DEVICE_DRIVER_PRESSURE_CONTROLLER:  // Single analog sensor
-            return 1;
+        case DEVICE_DRIVER_PRESSURE_CONTROLLER:  // Control only (no sensor)
+            return 0;  // No sensor objects - only control object
         
         // Future multi-sensor devices
         // case DEVICE_DRIVER_BME280:     // Temp + Humidity + Pressure
@@ -1054,14 +1087,12 @@ static uint8_t getDeviceObjectCount(DeviceDriverType driverType) {
 
 /**
  * @brief Check if a range of indices is available (not in use by any device)
- * @param startIndex First index to check
- * @param count Number of consecutive indices to check
- * @return true if all indices in range are available
  */
 static bool isIndexRangeAvailable(uint8_t startIndex, uint8_t count) {
-    // Check bounds
-    if (startIndex < DYNAMIC_INDEX_START || 
-        startIndex + count - 1 > DYNAMIC_INDEX_END) {
+    if (count == 0) return false;
+    
+    // Validate range
+    if (startIndex < DYNAMIC_INDEX_START || startIndex > DYNAMIC_INDEX_END) {
         return false;
     }
     
@@ -1069,18 +1100,29 @@ static bool isIndexRangeAvailable(uint8_t startIndex, uint8_t count) {
     for (uint8_t offset = 0; offset < count; offset++) {
         uint8_t idx = startIndex + offset;
         
-        // Check if this index is used by any device
+        // Check if idx exceeds valid range
+        if (idx > DYNAMIC_INDEX_END) {
+            return false;
+        }
+        
+        // Check if this sensor index is used by any device
         for (int i = 0; i < MAX_DEVICES; i++) {
             if (!ioConfig.devices[i].isActive) continue;
             
             // Get the object count for this device to know its index range
             uint8_t devObjCount = getDeviceObjectCount(ioConfig.devices[i].driverType);
+            
+            // All devices need at least 1 slot (same logic as allocateDynamicIndex)
+            if (devObjCount == 0) {
+                devObjCount = 1;
+            }
+            
             uint8_t devStartIdx = ioConfig.devices[i].dynamicIndex;
             uint8_t devEndIdx = devStartIdx + devObjCount - 1;
             
-            // Check if idx falls within this device's range
+            // Check if idx falls within this device's sensor range
             if (idx >= devStartIdx && idx <= devEndIdx) {
-                return false;  // Index is in use
+                return false;  // Sensor index is in use
             }
         }
     }
@@ -1090,13 +1132,24 @@ static bool isIndexRangeAvailable(uint8_t startIndex, uint8_t count) {
 
 /**
  * @brief Allocate consecutive dynamic indices for a device
+ * 
+ * Simplified architecture: ALL devices allocate from 70-99 range (sensor index)
+ * - Control index is automatically: dynamicIndex - 20 → 50-69
+ * - Control-only devices get objectCount=0, but still allocate 1 sensor slot
+ * - Sensor slot can store actual/feedback value for diagnostics
+ * 
  * @param driverType Device driver type (to determine how many indices needed)
- * @return Starting dynamic index (60-79), or -1 if not enough consecutive slots available
+ * @return Starting dynamic index (70-99), or -1 if not enough consecutive slots available
  */
 int8_t allocateDynamicIndex(DeviceDriverType driverType) {
     uint8_t objectCount = getDeviceObjectCount(driverType);
     
-    // Scan through dynamic index range (60-79) to find consecutive free indices
+    // All devices need at least 1 slot (for control-only devices, this holds feedback/actual value)
+    if (objectCount == 0) {
+        objectCount = 1;  // Allocate 1 sensor slot for feedback/diagnostics
+    }
+    
+    // Scan through dynamic index range (70-99) to find consecutive free indices
     for (uint8_t idx = DYNAMIC_INDEX_START; idx <= DYNAMIC_INDEX_END; idx++) {
         // Check if we have enough room (don't go past DYNAMIC_INDEX_END)
         if (idx + objectCount - 1 > DYNAMIC_INDEX_END) {
@@ -1105,13 +1158,14 @@ int8_t allocateDynamicIndex(DeviceDriverType driverType) {
         
         // Check if this range is available
         if (isIndexRangeAvailable(idx, objectCount)) {
-            log(LOG_DEBUG, false, "Allocated %d consecutive indices starting at %d\n", 
-                objectCount, idx);
+            uint8_t controlIdx = idx - 20;  // Calculate paired control index
+            log(LOG_DEBUG, false, "Allocated device indices: sensor=%d, control=%d (count=%d)\n", 
+                idx, controlIdx, objectCount);
             return idx;  // Found available range
         }
     }
     
-    log(LOG_WARNING, false, "No %d consecutive indices available in range 60-79\n", objectCount);
+    log(LOG_WARNING, false, "No %d consecutive indices available in range 70-99\n", objectCount);
     return -1;  // No consecutive range available
 }
 
@@ -1186,4 +1240,27 @@ int8_t findDeviceByIndex(uint8_t dynamicIndex) {
     }
     
     return -1;  // Device not found
+}
+
+/**
+ * @brief Get the control object index for a device
+ * 
+ * Simplified architecture: ALL devices follow same pattern:
+ * - Sensor index (dynamicIndex): 70-99
+ * - Control index: dynamicIndex - 20 → 50-69
+ * 
+ * This provides consistent, predictable index mapping with no special cases.
+ * 
+ * @param device Pointer to device configuration
+ * @return Control object index (50-69), or 0xFF if device is NULL
+ */
+uint8_t getDeviceControlIndex(const DeviceConfig* device) {
+    if (device == nullptr) {
+        log(LOG_ERROR, false, "getDeviceControlIndex: NULL device pointer\n");
+        return 0xFF;  // Invalid index
+    }
+    
+    // All devices: control index = sensor index - 20
+    // Maps 70-99 → 50-69
+    return device->dynamicIndex - 20;
 }

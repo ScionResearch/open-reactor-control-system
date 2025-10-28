@@ -5,6 +5,7 @@
 #include "../onboard/drv_output.h" // For output mode switching
 #include "../device_manager.h" // For dynamic device management
 #include "../peripheral/drv_modbus_alicat_mfc.h" // For AlicatMFC setpoint control
+#include "../peripheral/drv_analogue_pressure.h" // For Pressure Controller config
 
 // ============================================================================
 // MESSAGE HANDLER DISPATCHER
@@ -96,6 +97,10 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             
         case IPC_MSG_CONFIG_COMPORT:
             ipc_handle_config_comport(payload, len);
+            break;
+            
+        case IPC_MSG_CONFIG_PRESSURE_CTRL:
+            ipc_handle_config_pressure_ctrl(payload, len);
             break;
             
         default:
@@ -1176,9 +1181,10 @@ void ipc_handle_device_create(const uint8_t *payload, uint16_t len) {
                  req->config.deviceType, req->startIndex, 
                  req->config.busType, req->config.address);
     
-    // Validate index range (60-79)
-    if (req->startIndex < 60 || req->startIndex > 79) {
-        Serial.printf("[IPC] ERROR: Invalid start index %d (must be 60-79)\n", req->startIndex);
+    // Validate index range - allow control (50-69) and sensor (70-99) ranges
+    if ((req->startIndex < 50 || req->startIndex > 69) && 
+        (req->startIndex < 70 || req->startIndex > 99)) {
+        Serial.printf("[IPC] ERROR: Invalid start index %d (must be 50-69 or 70-99)\n", req->startIndex);
         ipc_sendDeviceStatus(req->startIndex, false, true, 0, nullptr, "Invalid index range");
         return;
     }
@@ -1217,9 +1223,10 @@ void ipc_handle_device_delete(const uint8_t *payload, uint16_t len) {
     
     Serial.printf("[IPC] Device DELETE request: startIndex=%d\n", req->startIndex);
     
-    // Validate index range
-    if (req->startIndex < 60 || req->startIndex > 79) {
-        Serial.printf("[IPC] ERROR: Invalid start index %d\n", req->startIndex);
+    // Validate index range - allow control (50-69) and sensor (70-99) ranges
+    if ((req->startIndex < 50 || req->startIndex > 69) && 
+        (req->startIndex < 70 || req->startIndex > 99)) {
+        Serial.printf("[IPC] ERROR: Invalid start index %d (must be 50-69 or 70-99)\n", req->startIndex);
         ipc_sendDeviceStatus(req->startIndex, false, true, 0, nullptr, "Invalid index range");
         return;
     }
@@ -1244,9 +1251,10 @@ void ipc_handle_device_config(const uint8_t *payload, uint16_t len) {
     
     Serial.printf("[IPC] Device CONFIG request: startIndex=%d\n", req->startIndex);
     
-    // Validate index range
-    if (req->startIndex < 60 || req->startIndex > 79) {
-        Serial.printf("[IPC] ERROR: Invalid start index %d\n", req->startIndex);
+    // Validate index range - allow control (50-69) and sensor (70-99) ranges
+    if ((req->startIndex < 50 || req->startIndex > 69) && 
+        (req->startIndex < 70 || req->startIndex > 99)) {
+        Serial.printf("[IPC] ERROR: Invalid start index %d (must be 50-69 or 70-99)\n", req->startIndex);
         ipc_sendDeviceStatus(req->startIndex, false, true, 0, nullptr, "Invalid index range");
         return;
     }
@@ -1342,6 +1350,38 @@ void ipc_handle_device_control(const uint8_t *payload, uint16_t len) {
                         errorCode = CTRL_ERR_DRIVER_FAULT;
                         strcpy(message, "Failed to queue setpoint command");
                         Serial.printf("[DEV CTRL] ERROR: Failed to queue MFC setpoint command\n");
+                    }
+                    break;
+                }
+                
+                case IPC_DEV_PRESSURE_CTRL: {
+                    Serial.printf("[DEV CTRL] Set pressure setpoint: index=%d, value=%.2f\n", 
+                                 cmd->index, cmd->setpoint);
+                    
+                    // Get device instance
+                    AnaloguePressureController* pc = (AnaloguePressureController*)dev->deviceInstance;
+                    if (!pc) {
+                        Serial.printf("[DEV CTRL] ERROR: Pressure controller instance is null\n");
+                        errorCode = CTRL_ERR_DRIVER_FAULT;
+                        strcpy(message, "Pressure controller instance not found");
+                        break;
+                    }
+                    
+                    // Store setpoint in control object for feedback
+                    control->setpoint = cmd->setpoint;
+                    
+                    // Write setpoint (converts to mV and writes to DAC)
+                    bool writeSuccess = pc->writeSetpoint(cmd->setpoint);
+                    if (writeSuccess) {
+                        success = true;
+                        snprintf(message, sizeof(message), 
+                                "Pressure %.2f %s set", cmd->setpoint, control->setpointUnit);
+                        Serial.printf("[DEV CTRL] Pressure setpoint written successfully\n");
+                    } else {
+                        success = false;
+                        errorCode = CTRL_ERR_OUT_OF_RANGE;
+                        strcpy(message, "Failed to set pressure (out of range or DAC error)");
+                        Serial.printf("[DEV CTRL] ERROR: Failed to write pressure setpoint\n");
                     }
                     break;
                 }
@@ -1823,4 +1863,56 @@ void ipc_handle_config_comport(const uint8_t *payload, uint16_t len) {
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "COM port object not initialized");
     }
+}
+
+/**
+ * @brief Handle pressure controller configuration
+ * 
+ * Applies calibration to an existing pressure controller device instance.
+ * The device must already be created via IPC_MSG_DEVICE_CREATE.
+ */
+void ipc_handle_config_pressure_ctrl(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_ConfigPressureCtrl_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid pressure controller config message size");
+        return;
+    }
+    
+    const IPC_ConfigPressureCtrl_t *cfg = (const IPC_ConfigPressureCtrl_t*)payload;
+    
+    // Validate control index range (50-69)
+    if (cfg->controlIndex < 50 || cfg->controlIndex >= 70) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Control index out of range (50-69)");
+        return;
+    }
+    
+    // Find device by control index
+    ManagedDevice* dev = DeviceManager::findDeviceByControlIndex(cfg->controlIndex);
+    if (!dev) {
+        char errMsg[100];
+        snprintf(errMsg, sizeof(errMsg), "No device found at control index %d", cfg->controlIndex);
+        ipc_sendError(IPC_ERR_INDEX_INVALID, errMsg);
+        return;
+    }
+    
+    // Verify device type
+    if (dev->type != IPC_DEV_PRESSURE_CTRL) {
+        char errMsg[100];
+        snprintf(errMsg, sizeof(errMsg), "Device at index %d is not a pressure controller (type=%d)", 
+                cfg->controlIndex, dev->type);
+        ipc_sendError(IPC_ERR_TYPE_MISMATCH, errMsg);
+        return;
+    }
+    
+    // Get device instance
+    AnaloguePressureController* pc = (AnaloguePressureController*)dev->deviceInstance;
+    if (!pc) {
+        ipc_sendError(IPC_ERR_DEVICE_FAIL, "Pressure controller instance is null");
+        return;
+    }
+    
+    // Apply calibration (scale, offset, unit)
+    pc->setCalibration(cfg->scale, cfg->offset, cfg->unit);
+    
+    Serial.printf("[IPC] ✓ Pressure Controller[%d]: scale=%.6f, offset=%.2f, unit=%s, DAC=%d\n",
+                 cfg->controlIndex, cfg->scale, cfg->offset, cfg->unit, cfg->dacIndex);
 }

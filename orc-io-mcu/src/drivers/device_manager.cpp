@@ -38,6 +38,9 @@ static IPC_DeviceType deviceTypes[MAX_DYNAMIC_DEVICES] = {IPC_DEV_NONE};
             case IPC_DEV_ALICAT_MFC: \
                 ((AlicatMFC*)deviceInstances[slot])->update(); \
                 break; \
+            case IPC_DEV_PRESSURE_CTRL: \
+                ((AnaloguePressureController*)deviceInstances[slot])->update(); \
+                break; \
             default: \
                 break; \
         } \
@@ -119,19 +122,28 @@ bool DeviceManager::createDevice(uint8_t startIndex, const IPC_DeviceConfig_t* c
         return false;
     }
     
-    // Validate sensor index range (70-99)
-    if (startIndex < 70 || startIndex > 99) {
-        Serial.printf("[DEV MGR] ERROR: Invalid start sensor index %d (must be 70-99)\n", startIndex);
+    // Validate index range - allow control (50-69) and sensor (70-99) ranges
+    if ((startIndex < 50 || startIndex > 69) && 
+        (startIndex < 70 || startIndex > 99)) {
+        Serial.printf("[DEV MGR] ERROR: Invalid start index %d (must be 50-69 or 70-99)\n", startIndex);
         return false;
     }
     
-    // Calculate control index (sensor index - 20)
-    // E.g., sensor 70 → control 50, sensor 80 → control 60
-    uint8_t controlIndex = startIndex - 20;
+    // Calculate control index
+    // Control-only devices (50-69): control index = start index
+    // Sensor devices (70-99): control index = start index - 20
+    uint8_t controlIndex;
+    if (startIndex >= 50 && startIndex <= 69) {
+        // Control-only device
+        controlIndex = startIndex;
+    } else {
+        // Sensor device: sensor 70-99 → control 50-79
+        controlIndex = startIndex - 20;
+    }
     
     // Validate control index range (50-69)
     if (controlIndex < 50 || controlIndex >= 70) {
-        Serial.printf("[DEV MGR] ERROR: Invalid control index %d (calculated from sensor %d)\n", 
+        Serial.printf("[DEV MGR] ERROR: Invalid control index %d (from start index %d)\n", 
                      controlIndex, startIndex);
         return false;
     }
@@ -157,16 +169,21 @@ bool DeviceManager::createDevice(uint8_t startIndex, const IPC_DeviceConfig_t* c
     
     // Get expected object count for this device type
     uint8_t objectCount = getObjectCount((IPC_DeviceType)config->deviceType);
-    if (objectCount == 0) {
+    if (objectCount == 0xFF) {  // 0xFF indicates unknown type
         Serial.printf("[DEV MGR] ERROR: Unknown device type %d\n", config->deviceType);
         return false;
     }
     
-    // Check if slots are available
-    if (!isSlotAvailable(startIndex, objectCount)) {
-        Serial.printf("[DEV MGR] ERROR: Slots %d-%d not available\n", 
-                     startIndex, startIndex + objectCount - 1);
-        return false;
+    // Check if sensor slots are available (only if device has sensors)
+    // Control-only devices (objectCount=0) don't need sensor slots
+    if (objectCount > 0) {
+        if (!isSlotAvailable(startIndex, objectCount)) {
+            Serial.printf("[DEV MGR] ERROR: Slots %d-%d not available\n", 
+                         startIndex, startIndex + objectCount - 1);
+            return false;
+        }
+    } else {
+        Serial.printf("[DEV MGR] Control-only device (no sensor slots needed)\n");
     }
     
     // Find a free device slot
@@ -419,7 +436,24 @@ void* DeviceManager::createDeviceInstance(const IPC_DeviceConfig_t* config) {
     
     // I2C devices (future)
     // SPI devices (future)
-    // Analog devices (future)
+    
+    // Analog output devices
+    if (config->busType == IPC_BUS_ANALOG) {
+        switch(config->deviceType) {
+            case IPC_DEV_PRESSURE_CTRL: {
+                Serial.printf("[DEV MGR] Creating Pressure Controller (DAC %d)\n",
+                             config->busIndex);
+                
+                // Calibration will be applied via config message after creation
+                return new AnaloguePressureController(config->busIndex);
+            }
+            
+            default:
+                Serial.printf("[DEV MGR] ERROR: Unsupported analog device type %d\n",
+                             config->deviceType);
+                return nullptr;
+        }
+    }
     
     Serial.printf("[DEV MGR] ERROR: Unsupported bus type %d\n", config->busType);
     return nullptr;
@@ -443,6 +477,9 @@ void* DeviceManager::getDeviceControlObject(void* instance, IPC_DeviceType type)
         
         case IPC_DEV_ALICAT_MFC:
             return ((AlicatMFC*)instance)->getControlObject();
+        
+        case IPC_DEV_PRESSURE_CTRL:
+            return ((AnaloguePressureController*)instance)->getControlObject();
         
         default:
             Serial.printf("[DEV MGR] ERROR: Unknown device type %d for control object\n", type);
@@ -471,6 +508,10 @@ void DeviceManager::destroyDeviceInstance(ManagedDevice* dev) {
         
         case IPC_DEV_ALICAT_MFC:
             delete (AlicatMFC*)dev->deviceInstance;
+            break;
+        
+        case IPC_DEV_PRESSURE_CTRL:
+            delete (AnaloguePressureController*)dev->deviceInstance;
             break;
         
         default:
@@ -564,6 +605,25 @@ void DeviceManager::registerDeviceObjects(ManagedDevice* dev) {
             
             Serial.printf("[DEV MGR] Registered MFC objects at %d-%d\n",
                          dev->startSensorIndex, dev->startSensorIndex + 1);
+            break;
+        }
+        
+        case IPC_DEV_PRESSURE_CTRL: {
+            // Pressure controller has 1 sensor object (actual DAC feedback)
+            AnaloguePressureController* controller = (AnaloguePressureController*)dev->deviceInstance;
+            
+            // Register actual pressure sensor (reads back DAC output)
+            PressureSensor_t* actualSensor = (PressureSensor_t*)controller->getSensorObject(0);
+            if (actualSensor) {
+                objIndex[dev->startSensorIndex].type = OBJ_T_PRESSURE_SENSOR;
+                objIndex[dev->startSensorIndex].obj = actualSensor;
+                strncpy(objIndex[dev->startSensorIndex].name, "Pressure Actual", 
+                       sizeof(objIndex[dev->startSensorIndex].name) - 1);
+                objIndex[dev->startSensorIndex].valid = true;
+            }
+            
+            Serial.printf("[DEV MGR] Registered Pressure Controller sensor at %d\n",
+                         dev->startSensorIndex);
             break;
         }
         
@@ -666,8 +726,11 @@ uint8_t DeviceManager::getObjectCount(IPC_DeviceType type) {
         case IPC_DEV_INA260:
             return 3;  // Three sensors
         
+        case IPC_DEV_PRESSURE_CTRL:
+            return 1;  // 1 sensor (actual DAC feedback)
+        
         default:
-            return 0;  // Unknown type
+            return 0xFF;  // Unknown type
     }
 }
 
@@ -699,6 +762,15 @@ bool DeviceManager::validateConfig(const IPC_DeviceConfig_t* config) {
                 Serial.printf("[DEV MGR] ERROR: Invalid I2C address 0x%02X\n", config->address);
                 return false;
             }
+            break;
+        
+        case IPC_BUS_ANALOG:
+            // Analog bus: DAC index 0-1
+            if (config->busIndex > 1) {
+                Serial.printf("[DEV MGR] ERROR: Invalid DAC index %d (must be 0-1)\n", config->busIndex);
+                return false;
+            }
+            // No address validation needed for analog devices
             break;
         
         default:

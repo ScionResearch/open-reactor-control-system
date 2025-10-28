@@ -28,6 +28,7 @@
 #include "drivers/peripheral/drv_modbus_hamilton_arc_do.h"
 #include "drivers/peripheral/drv_modbus_hamilton_arc_od.h"
 #include "drivers/peripheral/drv_modbus_alicat_mfc.h"
+#include "drivers/peripheral/drv_analogue_pressure.h"
 #include "drivers/ipc/drv_ipc.h"
 
 // Device Manager (must be after peripheral drivers to avoid circular deps)

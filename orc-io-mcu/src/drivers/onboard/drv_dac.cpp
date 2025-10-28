@@ -85,12 +85,19 @@ bool DAC_writeOutputs(void) {
 void DAC_update(void) {
     static float dacVal[2] = {0, 0};
     if (dacDriver.outputObj[0]->value != dacVal[0] || dacDriver.outputObj[1]->value != dacVal[1]) {
+        Serial.printf("[DAC] Value change detected: CH0: %.1f→%.1f, CH1: %.1f→%.1f\n",
+                     dacVal[0], dacDriver.outputObj[0]->value,
+                     dacVal[1], dacDriver.outputObj[1]->value);
+        
         if (!DAC_writeOutputs()) {
             dacDriver.fault = true;
             dacDriver.newMessage = true;
             sprintf(dacDriver.message, "Failed to write DAC outputs");
+            Serial.println("[DAC] ERROR: Failed to write DAC outputs");
             return;
         }
+        
+        Serial.printf("[DAC] Successfully wrote outputs\n");
         dacVal[0] = dacDriver.outputObj[0]->value;
         dacVal[1] = dacDriver.outputObj[1]->value;
     }

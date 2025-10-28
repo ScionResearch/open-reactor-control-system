@@ -707,7 +707,7 @@ void handleGetInputs() {
   }
   
   // Debug: Log the JSON response size
-  log(LOG_DEBUG, false, "API /api/inputs response (%d bytes)\n", response.length());
+  //log(LOG_DEBUG, false, "API /api/inputs response (%d bytes)\n", response.length());
   
   server.send(200, "application/json", response);
 }
@@ -1439,7 +1439,7 @@ static void deviceConfigToIPC(const DeviceConfig* device, IPC_DeviceConfig_t* ip
     case DEVICE_DRIVER_HAMILTON_DO:  ipcConfig->deviceType = IPC_DEV_HAMILTON_DO; break;
     case DEVICE_DRIVER_HAMILTON_OD:  ipcConfig->deviceType = IPC_DEV_HAMILTON_OD; break;
     case DEVICE_DRIVER_ALICAT_MFC:   ipcConfig->deviceType = IPC_DEV_ALICAT_MFC; break;
-    case DEVICE_DRIVER_PRESSURE_CONTROLLER: ipcConfig->deviceType = IPC_DEV_ANALOG_SENSOR; break;
+    case DEVICE_DRIVER_PRESSURE_CONTROLLER: ipcConfig->deviceType = IPC_DEV_PRESSURE_CTRL; break;
     default: ipcConfig->deviceType = IPC_DEV_NONE; break;
   }
   
@@ -1489,9 +1489,8 @@ void handleGetDevices() {
     device["driverType"] = (uint8_t)ioConfig.devices[i].driverType;
     device["name"] = ioConfig.devices[i].name;
     
-    // Get control object data from cache
-    // Control index = sensor index - 20 (e.g., 70 - 20 = 50)
-    uint8_t controlIndex = ioConfig.devices[i].dynamicIndex - 20;
+    // Get control object data from cache using centralized index calculation
+    uint8_t controlIndex = getDeviceControlIndex(&ioConfig.devices[i]);
     ObjectCache::CachedObject* controlObj = objectCache.getObject(controlIndex);
     
     if (controlObj && controlObj->valid && controlObj->lastUpdate > 0) {
@@ -1527,10 +1526,8 @@ void handleGetDevices() {
     } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
       device["dacOutputIndex"] = ioConfig.devices[i].analogueIO.dacOutputIndex;
       device["unit"] = ioConfig.devices[i].analogueIO.unit;
-      device["minOutput"] = ioConfig.devices[i].analogueIO.minOutput;
-      device["maxOutput"] = ioConfig.devices[i].analogueIO.maxOutput;
-      device["minPressure"] = ioConfig.devices[i].analogueIO.minPressure;
-      device["maxPressure"] = ioConfig.devices[i].analogueIO.maxPressure;
+      device["scale"] = ioConfig.devices[i].analogueIO.scale;
+      device["offset"] = ioConfig.devices[i].analogueIO.offset;
     } else if (ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
       device["usesStepper"] = ioConfig.devices[i].motorDriven.usesStepper;
       device["motorIndex"] = ioConfig.devices[i].motorDriven.motorIndex;
@@ -1586,10 +1583,8 @@ void handleGetDevice() {
   } else if (ioConfig.devices[deviceIdx].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
     doc["dacOutputIndex"] = ioConfig.devices[deviceIdx].analogueIO.dacOutputIndex;
     doc["unit"] = ioConfig.devices[deviceIdx].analogueIO.unit;
-    doc["minOutput"] = ioConfig.devices[deviceIdx].analogueIO.minOutput;
-    doc["maxOutput"] = ioConfig.devices[deviceIdx].analogueIO.maxOutput;
-    doc["minPressure"] = ioConfig.devices[deviceIdx].analogueIO.minPressure;
-    doc["maxPressure"] = ioConfig.devices[deviceIdx].analogueIO.maxPressure;
+    doc["scale"] = ioConfig.devices[deviceIdx].analogueIO.scale;
+    doc["offset"] = ioConfig.devices[deviceIdx].analogueIO.offset;
   } else if (ioConfig.devices[deviceIdx].interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
     doc["usesStepper"] = ioConfig.devices[deviceIdx].motorDriven.usesStepper;
     doc["motorIndex"] = ioConfig.devices[deviceIdx].motorDriven.motorIndex;
@@ -1666,10 +1661,8 @@ void handleCreateDevice() {
     ioConfig.devices[emptySlot].analogueIO.dacOutputIndex = doc["dacOutputIndex"] | 0;
     strncpy(ioConfig.devices[emptySlot].analogueIO.unit, doc["unit"] | "bar", 
             sizeof(ioConfig.devices[emptySlot].analogueIO.unit) - 1);
-    ioConfig.devices[emptySlot].analogueIO.minOutput = doc["minOutput"] | 0.0f;
-    ioConfig.devices[emptySlot].analogueIO.maxOutput = doc["maxOutput"] | 10.0f;
-    ioConfig.devices[emptySlot].analogueIO.minPressure = doc["minPressure"] | 0.0f;
-    ioConfig.devices[emptySlot].analogueIO.maxPressure = doc["maxPressure"] | 10.0f;
+    ioConfig.devices[emptySlot].analogueIO.scale = doc["scale"] | 100.0f;
+    ioConfig.devices[emptySlot].analogueIO.offset = doc["offset"] | 0.0f;
   } else if (interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
     ioConfig.devices[emptySlot].motorDriven.usesStepper = doc["usesStepper"] | false;
     ioConfig.devices[emptySlot].motorDriven.motorIndex = doc["motorIndex"] | 27;
@@ -1831,11 +1824,11 @@ void handleUpdateDevice() {
       strlcpy(ioConfig.devices[deviceIdx].analogueIO.unit, doc["unit"], 
               sizeof(ioConfig.devices[deviceIdx].analogueIO.unit));
     }
-    if (doc.containsKey("minPressure")) {
-      ioConfig.devices[deviceIdx].analogueIO.minPressure = doc["minPressure"];
+    if (doc.containsKey("scale")) {
+      ioConfig.devices[deviceIdx].analogueIO.scale = doc["scale"];
     }
-    if (doc.containsKey("maxPressure")) {
-      ioConfig.devices[deviceIdx].analogueIO.maxPressure = doc["maxPressure"];
+    if (doc.containsKey("offset")) {
+      ioConfig.devices[deviceIdx].analogueIO.offset = doc["offset"];
     }
   } 
   else if (interfaceType == DEVICE_INTERFACE_MOTOR_DRIVEN) {
@@ -1855,19 +1848,40 @@ void handleUpdateDevice() {
   
   // Save configuration
   saveIOConfig();
-  
+
   // Convert to IPC config and send update to IO MCU
   IPC_DeviceConfig_t ipcConfig;
   deviceConfigToIPC(&ioConfig.devices[deviceIdx], &ipcConfig);
-  
-  bool sent = sendDeviceConfigCommand(&ipcConfig);
+
+  bool sent = sendDeviceConfigCommand(dynamicIndex, &ipcConfig);
   if (!sent) {
     log(LOG_WARNING, true, "Failed to send device config update to IO MCU\n");
   }
-  
+
+  // If this is a pressure controller with analogue IO, also send calibration update
+  if (ioConfig.devices[deviceIdx].driverType == DEVICE_DRIVER_PRESSURE_CONTROLLER &&
+      ioConfig.devices[deviceIdx].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
+    
+    IPC_ConfigPressureCtrl_t calibCfg;
+    calibCfg.controlIndex = getDeviceControlIndex(&ioConfig.devices[deviceIdx]);
+    calibCfg.dacIndex = ioConfig.devices[deviceIdx].analogueIO.dacOutputIndex;
+    strncpy(calibCfg.unit, ioConfig.devices[deviceIdx].analogueIO.unit, sizeof(calibCfg.unit) - 1);
+    calibCfg.unit[sizeof(calibCfg.unit) - 1] = '\0';
+    calibCfg.scale = ioConfig.devices[deviceIdx].analogueIO.scale;
+    calibCfg.offset = ioConfig.devices[deviceIdx].analogueIO.offset;
+    
+    bool calibSent = ipc.sendPacket(IPC_MSG_CONFIG_PRESSURE_CTRL, (uint8_t*)&calibCfg, sizeof(calibCfg));
+    if (calibSent) {
+      log(LOG_INFO, false, "Sent pressure controller calibration update: scale=%.6f, offset=%.2f, unit=%s\n",
+          calibCfg.scale, calibCfg.offset, calibCfg.unit);
+    } else {
+      log(LOG_WARNING, true, "Failed to send pressure controller calibration update\n");
+    }
+  }
+
   log(LOG_INFO, true, "Device updated: %s (index %d)\n", 
       ioConfig.devices[deviceIdx].name, dynamicIndex);
-  
+
   // Send success response
   StaticJsonDocument<256> response;
   response["success"] = true;
@@ -3003,7 +3017,8 @@ void setupWebServer()
       Serial.printf("[WEB] Device API route detected: index=%d, indexStr='%s'\n", index, indexStr.c_str());
       
       // Validate it's in the dynamic index range (70-99)
-      if (index >= DYNAMIC_INDEX_START && index <= DYNAMIC_INDEX_END && indexStr.length() > 0) {
+      // All devices now use sensor indices 70-99, control indices are auto-mapped to 50-69
+      if ((index >= DYNAMIC_INDEX_START && index <= DYNAMIC_INDEX_END) && indexStr.length() > 0) {
         // Valid device route - dispatch to appropriate handler
         HTTPMethod method = server.method();
         Serial.printf("[WEB] Dispatching to device handler (method: %d)\n", method);
