@@ -59,12 +59,13 @@ void pollSensors(void) {
   if (now - lastSensorPollTime < SENSOR_POLL_INTERVAL) return;
   lastSensorPollTime = now;
   
-  // Request fixed hardware objects (indices 0-40)
+  // Request fixed hardware objects + controllers (indices 0-42)
   // Sensors: ADC (0-7), DAC (8-9), RTD (10-12), GPIO (13-20)
   // Outputs: Digital Outputs (21-25), Stepper (26), DC Motors (27-30)
   // Energy Monitors: Main Power (31), Heater Power (32)
   // Modbus Ports: (37-40)
-  objectCache.requestBulkUpdate(0, 41);
+  // Temperature Controllers: (40-42)
+  objectCache.requestBulkUpdate(0, 43);
   
   // Request device control objects (indices 50-69)
   // These provide control status for peripheral devices (setpoint, actual, connected, fault)
@@ -75,7 +76,7 @@ void pollSensors(void) {
   // Polling them even if no devices are configured is low overhead
   objectCache.requestBulkUpdate(70, 30);
   
-  //log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-40 (fixed), 50-69 (control), and 70-99 (sensors)\n");
+  //log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-42 (fixed+controllers), 50-69 (control), and 70-99 (sensors)\n");
 }
 
 void manageIPC(void) {

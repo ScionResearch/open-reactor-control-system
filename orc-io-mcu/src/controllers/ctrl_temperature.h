@@ -40,8 +40,8 @@ public:
     bool assignSensor(uint16_t sensorIndex);
     
     /**
-     * @brief Assign analog output by object index
-     * @param outputIndex Index in objIndex[] (must be analog output type)
+     * @brief Assign output by object index
+     * @param outputIndex Index in objIndex[] (digital outputs 21-25 only)
      * @return true if valid output index
      */
     bool assignOutput(uint16_t outputIndex);
@@ -128,12 +128,12 @@ public:
     // ========================================================================
     
     /**
-     * @brief Start relay auto-tune procedure
-     * @param targetSetpoint Temperature to tune around
-     * @param outputStep Output step size for relay (default 50%)
+     * @brief Start auto-tune procedure using relay method
+     * @param targetSetpoint Target setpoint for auto-tune
+     * @param outputStep Output step size for relay (default 100%)
      * @return true if auto-tune started successfully
      */
-    bool startAutotune(float targetSetpoint, float outputStep = 50.0);
+    bool startAutotune(float targetSetpoint, float outputStep = 100.0);
     
     /**
      * @brief Stop auto-tune procedure
@@ -216,6 +216,10 @@ private:
     float _autotuneSetpoint;            // Target for auto-tune
     bool _autotuneLastCrossDirection;   // Last crossing direction (up/down)
     float _autotuneLastTemp;            // Previous temperature reading
+    bool _autotuneAutoEnabled;          // Track if we auto-enabled controller for autotune
+    bool _autotuneLookingForPeak;       // True = looking for peak, False = looking for valley
+    float _autotuneExtreme;             // Current max (for peak) or min (for valley) since last crossing
+    bool _autotuneJustCrossed;          // True right after crossing setpoint
     
     // ========================================================================
     // PRIVATE HELPER METHODS
@@ -245,8 +249,15 @@ private:
     void _updateAutotune();
     
     /**
+     * @brief Calculate ON/OFF output with hysteresis
+     * @param error Current error value
+     * @return Output value (0 or 100)
+     */
+    float _calculateOnOffOutput(float error);
+    
+    /**
      * @brief Calculate PID output
-     * @param error Current error
+     * @param error Current error value
      * @param dt Time delta (seconds)
      * @return Calculated output value
      */

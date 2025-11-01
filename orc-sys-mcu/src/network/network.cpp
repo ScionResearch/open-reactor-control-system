@@ -2673,6 +2673,418 @@ void handleStopDCMotor(uint8_t index) {
 }
 
 // ============================================================================
+// Temperature Controllers API (indices 40-42) - Phase 1
+// ============================================================================
+
+void handleGetControllers() {
+  StaticJsonDocument<2048> doc;
+  JsonArray controllers = doc.createNestedArray("controllers");
+  
+  log(LOG_DEBUG, false, "[API] Loading controllers: checking %d slots\n", MAX_TEMP_CONTROLLERS);
+  
+  for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {
+    log(LOG_DEBUG, false, "[API] Controller %d: isActive=%d, name='%s'\n", 
+        40 + i, ioConfig.tempControllers[i].isActive, ioConfig.tempControllers[i].name);
+    
+    if (!ioConfig.tempControllers[i].isActive) continue;
+    
+    uint8_t index = 40 + i;
+    JsonObject ctrl = controllers.createNestedObject();
+    
+    ctrl["index"] = index;
+    ctrl["name"] = ioConfig.tempControllers[i].name;
+    ctrl["showOnDashboard"] = ioConfig.tempControllers[i].showOnDashboard;
+    ctrl["unit"] = ioConfig.tempControllers[i].unit;
+    ctrl["setpoint"] = ioConfig.tempControllers[i].setpoint;
+    ctrl["controlMethod"] = (uint8_t)ioConfig.tempControllers[i].controlMethod;
+    ctrl["hysteresis"] = ioConfig.tempControllers[i].hysteresis;
+    ctrl["kP"] = ioConfig.tempControllers[i].kP;
+    ctrl["kI"] = ioConfig.tempControllers[i].kI;
+    ctrl["kD"] = ioConfig.tempControllers[i].kD;
+    
+    // Get runtime values from object cache for controller status
+    ObjectCache::CachedObject* obj = objectCache.getObject(index);
+    bool enabled = false;
+    
+    if (obj && obj->valid && obj->lastUpdate > 0) {
+      // Controller object exists - check if enabled
+      enabled = (obj->flags & 0x04) ? true : false;  // Bit 2 (IPC_SENSOR_FLAG_RUNNING) for enabled
+      ctrl["enabled"] = enabled;
+      ctrl["fault"] = (obj->flags & IPC_SENSOR_FLAG_FAULT) ? true : false;
+      ctrl["message"] = obj->message;
+      ctrl["tuning"] = (obj->flags & 0x10) ? true : false;  // Bit 4 for autotune flag
+      
+      // Update in-memory config with runtime PID gains (may have been updated by autotune)
+      // additionalValues: [0]=output%, [1]=kP, [2]=kI, [3]=kD
+      if (obj->valueCount >= 4) {
+        ioConfig.tempControllers[i].kP = obj->additionalValues[1];
+        ioConfig.tempControllers[i].kI = obj->additionalValues[2];
+        ioConfig.tempControllers[i].kD = obj->additionalValues[3];
+      }
+      
+      if (enabled) {
+        // Controller is running - use controller's process value and output
+        ctrl["processValue"] = obj->value;  // Process value (temperature)
+        ctrl["output"] = obj->valueCount > 0 ? obj->additionalValues[0] : 0.0f;  // Output %
+        log(LOG_DEBUG, false, "[API] Controller %d enabled: PV=%.1f, output=%.1f\n",
+            index, obj->value, obj->valueCount > 0 ? obj->additionalValues[0] : 0.0f);
+      }
+    }
+    
+    // If controller is disabled (or doesn't exist), read process value from source sensor
+    if (!enabled) {
+      uint8_t pvSourceIndex = ioConfig.tempControllers[i].pvSourceIndex;
+      ObjectCache::CachedObject* sensorObj = objectCache.getObject(pvSourceIndex);
+      
+      if (sensorObj && sensorObj->valid && sensorObj->lastUpdate > 0) {
+        ctrl["processValue"] = sensorObj->value;  // Read from configured sensor
+      } else {
+        ctrl["processValue"] = nullptr;
+      }
+      
+      // Read output state/value from the output object cache
+      uint8_t outputIndex = ioConfig.tempControllers[i].outputIndex;
+      ObjectCache::CachedObject* outputObj = objectCache.getObject(outputIndex);
+      
+      if (outputObj && outputObj->valid && outputObj->lastUpdate > 0) {
+        ctrl["output"] = outputObj->value;  // Output state (0/1 for digital, 0-100 for PWM/DAC)
+      } else {
+        ctrl["output"] = nullptr;
+      }
+    }
+  }
+  
+  String response;
+  serializeJson(doc, response);
+  log(LOG_DEBUG, false, "[API] Returning %d controllers, JSON length: %d\n", 
+      controllers.size(), response.length());
+  server.send(200, "application/json", response);
+}
+
+void handleGetTempControllerConfig(uint8_t index) {
+  if (index < 40 || index >= 40 + MAX_TEMP_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid controller index\"}");
+    return;
+  }
+  
+  int ctrlIdx = index - 40;
+  StaticJsonDocument<1024> doc;
+  
+  doc["index"] = index;
+  doc["isActive"] = ioConfig.tempControllers[ctrlIdx].isActive;
+  doc["name"] = ioConfig.tempControllers[ctrlIdx].name;
+  doc["enabled"] = ioConfig.tempControllers[ctrlIdx].enabled;
+  doc["showOnDashboard"] = ioConfig.tempControllers[ctrlIdx].showOnDashboard;
+  doc["unit"] = ioConfig.tempControllers[ctrlIdx].unit;
+  doc["pvSourceIndex"] = ioConfig.tempControllers[ctrlIdx].pvSourceIndex;
+  doc["outputIndex"] = ioConfig.tempControllers[ctrlIdx].outputIndex;
+  doc["controlMethod"] = (uint8_t)ioConfig.tempControllers[ctrlIdx].controlMethod;
+  doc["setpoint"] = ioConfig.tempControllers[ctrlIdx].setpoint;
+  doc["hysteresis"] = ioConfig.tempControllers[ctrlIdx].hysteresis;
+  doc["kP"] = ioConfig.tempControllers[ctrlIdx].kP;
+  doc["kI"] = ioConfig.tempControllers[ctrlIdx].kI;
+  doc["kD"] = ioConfig.tempControllers[ctrlIdx].kD;
+  doc["integralWindup"] = ioConfig.tempControllers[ctrlIdx].integralWindup;
+  doc["outputMin"] = ioConfig.tempControllers[ctrlIdx].outputMin;
+  doc["outputMax"] = ioConfig.tempControllers[ctrlIdx].outputMax;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveTempControllerConfig(uint8_t index) {
+  if (index < 40 || index >= 40 + MAX_TEMP_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid controller index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<1024> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  int ctrlIdx = index - 40;
+  
+  // Check for output conflicts
+  uint8_t newOutputIndex = doc["outputIndex"] | 0;
+  if (newOutputIndex > 0) {
+    for (int j = 0; j < MAX_TEMP_CONTROLLERS; j++) {
+      if (j != ctrlIdx && ioConfig.tempControllers[j].isActive && 
+          ioConfig.tempControllers[j].outputIndex == newOutputIndex) {
+        server.send(400, "application/json", 
+                   "{\"error\":\"Output already in use by another controller\"}");
+        return;
+      }
+    }
+  }
+  
+  // Update configuration
+  ioConfig.tempControllers[ctrlIdx].isActive = doc["isActive"] | true;
+  strlcpy(ioConfig.tempControllers[ctrlIdx].name, doc["name"] | "", 
+          sizeof(ioConfig.tempControllers[ctrlIdx].name));
+  // DO NOT save enabled state - runtime only (avoid flash wear)
+  ioConfig.tempControllers[ctrlIdx].enabled = false;
+  
+  // Update showOnDashboard flag
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.tempControllers[ctrlIdx].showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  strlcpy(ioConfig.tempControllers[ctrlIdx].unit, doc["unit"] | "C", 
+          sizeof(ioConfig.tempControllers[ctrlIdx].unit));
+  
+  ioConfig.tempControllers[ctrlIdx].pvSourceIndex = doc["pvSourceIndex"] | 0;
+  ioConfig.tempControllers[ctrlIdx].outputIndex = doc["outputIndex"] | 0;
+  
+  ioConfig.tempControllers[ctrlIdx].controlMethod = (ControlMethod)(doc["controlMethod"] | CONTROL_METHOD_PID);
+  ioConfig.tempControllers[ctrlIdx].setpoint = doc["setpoint"] | 25.0f;
+  
+  ioConfig.tempControllers[ctrlIdx].hysteresis = doc["hysteresis"] | 0.5f;
+  
+  ioConfig.tempControllers[ctrlIdx].kP = doc["kP"] | 2.0f;
+  ioConfig.tempControllers[ctrlIdx].kI = doc["kI"] | 0.5f;
+  ioConfig.tempControllers[ctrlIdx].kD = doc["kD"] | 0.1f;
+  ioConfig.tempControllers[ctrlIdx].integralWindup = doc["integralWindup"] | 100.0f;
+  ioConfig.tempControllers[ctrlIdx].outputMin = doc["outputMin"] | 0.0f;
+  ioConfig.tempControllers[ctrlIdx].outputMax = doc["outputMax"] | 100.0f;
+  
+  // Set output mode based on control method
+  uint8_t outputIdx = ioConfig.tempControllers[ctrlIdx].outputIndex;
+  if (outputIdx >= 21 && outputIdx <= 25) {
+    int digitalIdx = outputIdx - 21;
+    if (ioConfig.tempControllers[ctrlIdx].controlMethod == CONTROL_METHOD_ON_OFF) {
+      ioConfig.digitalOutputs[digitalIdx].mode = OUTPUT_MODE_ON_OFF;
+    } else {
+      ioConfig.digitalOutputs[digitalIdx].mode = OUTPUT_MODE_PWM;
+    }
+  }
+  
+  // Save configuration
+  saveIOConfig();
+  
+  // Send IPC config packet to IO MCU
+  IPC_ConfigTempController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  
+  cfg.index = index;
+  cfg.isActive = ioConfig.tempControllers[ctrlIdx].isActive;
+  strncpy(cfg.name, ioConfig.tempControllers[ctrlIdx].name, sizeof(cfg.name) - 1);
+  cfg.enabled = ioConfig.tempControllers[ctrlIdx].enabled;
+  cfg.pvSourceIndex = ioConfig.tempControllers[ctrlIdx].pvSourceIndex;
+  cfg.outputIndex = ioConfig.tempControllers[ctrlIdx].outputIndex;
+  cfg.controlMethod = (uint8_t)ioConfig.tempControllers[ctrlIdx].controlMethod;
+  cfg.setpoint = ioConfig.tempControllers[ctrlIdx].setpoint;
+  cfg.hysteresis = ioConfig.tempControllers[ctrlIdx].hysteresis;
+  cfg.kP = ioConfig.tempControllers[ctrlIdx].kP;
+  cfg.kI = ioConfig.tempControllers[ctrlIdx].kI;
+  cfg.kD = ioConfig.tempControllers[ctrlIdx].kD;
+  cfg.integralWindup = ioConfig.tempControllers[ctrlIdx].integralWindup;
+  cfg.outputMin = ioConfig.tempControllers[ctrlIdx].outputMin;
+  cfg.outputMax = ioConfig.tempControllers[ctrlIdx].outputMax;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_TEMP_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Saved and sent temperature controller %d configuration to IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved and applied\"}");
+  } else {
+    log(LOG_WARNING, false, "Saved temperature controller %d config but failed to send to IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved but IO MCU update failed\"}");
+  }
+}
+
+// Temperature controller runtime control
+void handleUpdateControllerSetpoint(uint8_t index) {
+  if (index < 40 || index >= 40 + MAX_TEMP_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid controller index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  int ctrlIdx = index - 40;
+  float setpoint = doc["setpoint"] | ioConfig.tempControllers[ctrlIdx].setpoint;
+  
+  // Send IPC command to IO MCU (DO NOT save to config - avoid flash wear)
+  IPC_TempControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = index;
+  cmd.objectType = OBJ_T_TEMPERATURE_CONTROL;
+  cmd.command = TEMP_CTRL_CMD_SET_SETPOINT;
+  cmd.setpoint = setpoint;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    // Update in-memory config (DO NOT save to flash)
+    // This allows the API to return the correct setpoint when web UI polls
+    ioConfig.tempControllers[ctrlIdx].setpoint = setpoint;
+    
+    log(LOG_INFO, false, "Controller %d setpoint updated to %.1f\n", index, setpoint);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Setpoint updated\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send setpoint command to controller %d\n", index);
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleEnableController(uint8_t index) {
+  if (index < 40 || index >= 40 + MAX_TEMP_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid controller index\"}");
+    return;
+  }
+  
+  // Send IPC command to IO MCU (DO NOT save to config - avoid flash wear)
+  IPC_TempControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = index;
+  cmd.objectType = OBJ_T_TEMPERATURE_CONTROL;
+  cmd.command = TEMP_CTRL_CMD_ENABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Controller %d enabled\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Controller enabled\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send enable command to controller %d\n", index);
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleDisableController(uint8_t index) {
+  if (index < 40 || index >= 40 + MAX_TEMP_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid controller index\"}");
+    return;
+  }
+  
+  // Send IPC command to IO MCU (DO NOT save to config - avoid flash wear)
+  IPC_TempControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = index;
+  cmd.objectType = OBJ_T_TEMPERATURE_CONTROL;
+  cmd.command = TEMP_CTRL_CMD_DISABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Controller %d disabled\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Controller disabled\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send disable command to controller %d\n", index);
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleStartController(uint8_t index) {
+  handleEnableController(index);  // Same as enable
+}
+
+void handleStopController(uint8_t index) {
+  handleDisableController(index);  // Same as disable
+}
+
+void handleStartAutotune(uint8_t index) {
+  if (index < 40 || index >= 40 + MAX_TEMP_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid controller index\"}");
+    return;
+  }
+  
+  int ctrlIdx = index - 40;
+  
+  // Verify controller is PID mode
+  if (ioConfig.tempControllers[ctrlIdx].controlMethod != CONTROL_METHOD_PID) {
+    server.send(400, "application/json", "{\"error\":\"Autotune only available for PID controllers\"}");
+    return;
+  }
+  
+  // Get autotune parameters from request body
+  float targetSetpoint = ioConfig.tempControllers[ctrlIdx].setpoint;
+  float outputStep = 100.0f;  // Default 100% output step for aggressive relay
+  
+  if (server.hasArg("plain")) {
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, server.arg("plain"));
+    if (!error) {
+      targetSetpoint = doc["setpoint"] | targetSetpoint;
+      outputStep = doc["outputStep"] | outputStep;
+    }
+  }
+  
+  // Send IPC command to IO MCU
+  IPC_TempControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = index;
+  cmd.objectType = OBJ_T_TEMPERATURE_CONTROL;
+  cmd.command = TEMP_CTRL_CMD_START_AUTOTUNE;
+  cmd.setpoint = targetSetpoint;
+  cmd.autotuneOutputStep = outputStep;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Controller %d autotune started (setpoint=%.1f, step=%.1f%%)\n", 
+        index, targetSetpoint, outputStep);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Autotune started\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send autotune command to controller %d\n", index);
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleDeleteController(uint8_t index) {
+  if (index < 40 || index >= 40 + MAX_TEMP_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid controller index\"}");
+    return;
+  }
+  
+  int ctrlIdx = index - 40;
+  
+  // Disable and mark inactive
+  ioConfig.tempControllers[ctrlIdx].isActive = false;
+  ioConfig.tempControllers[ctrlIdx].enabled = false;
+  memset(ioConfig.tempControllers[ctrlIdx].name, 0, sizeof(ioConfig.tempControllers[ctrlIdx].name));
+  
+  saveIOConfig();
+  
+  // Send IPC delete command to IO MCU
+  IPC_ConfigTempController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.index = index;
+  cfg.isActive = false;  // This signals deletion
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_TEMP_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Controller %d deleted and removed from IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Controller deleted\"}");
+  } else {
+    log(LOG_WARNING, false, "Controller %d deleted from config but failed to remove from IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Controller deleted but IO MCU update failed\"}");
+  }
+}
+
+// ============================================================================
 // Device Control (Peripheral Devices like MFC, pH controllers)
 // ============================================================================
 
@@ -2959,11 +3371,53 @@ void setupWebServer()
   server.on("/api/dcmotor/29/stop", HTTP_POST, []() { handleStopDCMotor(29); });
   server.on("/api/dcmotor/30/stop", HTTP_POST, []() { handleStopDCMotor(30); });
   
+  // ============================================================================
+  // Temperature Controllers API Endpoints (indices 40-42)
+  // ============================================================================
+  
+  // Get all controllers status
+  server.on("/api/controllers", HTTP_GET, handleGetControllers);
+  
+  // Configuration endpoints
+  server.on("/api/config/tempcontroller/40", HTTP_GET, []() { handleGetTempControllerConfig(40); });
+  server.on("/api/config/tempcontroller/41", HTTP_GET, []() { handleGetTempControllerConfig(41); });
+  server.on("/api/config/tempcontroller/42", HTTP_GET, []() { handleGetTempControllerConfig(42); });
+  
+  server.on("/api/config/tempcontroller/40", HTTP_POST, []() { handleSaveTempControllerConfig(40); });
+  server.on("/api/config/tempcontroller/41", HTTP_POST, []() { handleSaveTempControllerConfig(41); });
+  server.on("/api/config/tempcontroller/42", HTTP_POST, []() { handleSaveTempControllerConfig(42); });
+  
+  // Runtime control endpoints (Phase 2 - stubs for now)
+  server.on("/api/controller/40/setpoint", HTTP_POST, []() { handleUpdateControllerSetpoint(40); });
+  server.on("/api/controller/41/setpoint", HTTP_POST, []() { handleUpdateControllerSetpoint(41); });
+  server.on("/api/controller/42/setpoint", HTTP_POST, []() { handleUpdateControllerSetpoint(42); });
+  
+  server.on("/api/controller/40/enable", HTTP_POST, []() { handleEnableController(40); });
+  server.on("/api/controller/41/enable", HTTP_POST, []() { handleEnableController(41); });
+  server.on("/api/controller/42/enable", HTTP_POST, []() { handleEnableController(42); });
+  
+  server.on("/api/controller/40/disable", HTTP_POST, []() { handleDisableController(40); });
+  server.on("/api/controller/41/disable", HTTP_POST, []() { handleDisableController(41); });
+  server.on("/api/controller/42/disable", HTTP_POST, []() { handleDisableController(42); });
+  
+  server.on("/api/controller/40/start", HTTP_POST, []() { handleStartController(40); });
+  server.on("/api/controller/41/start", HTTP_POST, []() { handleStartController(41); });
+  server.on("/api/controller/42/start", HTTP_POST, []() { handleStartController(42); });
+  
+  server.on("/api/controller/40/stop", HTTP_POST, []() { handleStopController(40); });
+  server.on("/api/controller/41/stop", HTTP_POST, []() { handleStopController(41); });
+  server.on("/api/controller/42/stop", HTTP_POST, []() { handleStopController(42); });
+  
+  server.on("/api/controller/40/autotune", HTTP_POST, []() { handleStartAutotune(40); });
+  server.on("/api/controller/41/autotune", HTTP_POST, []() { handleStartAutotune(41); });
+  server.on("/api/controller/42/autotune", HTTP_POST, []() { handleStartAutotune(42); });
+  
   // Device Control (Peripheral Devices) - Control indices 50-69
   // Format: /api/device/{controlIndex}/setpoint
   //         /api/device/{controlIndex}/fault/reset
   // These will be handled dynamically in onNotFound() to support all 20 control slots
   
+  // ...existing code...
   // Setup API endpoints
   setupNetworkAPI();
   setupMqttAPI();
@@ -3030,6 +3484,47 @@ void setupWebServer()
           return;
         } else if (method == HTTP_DELETE) {
           handleDeleteDevice();
+          return;
+        } else {
+          server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
+          return;
+        }
+      }
+    }
+    
+    // Check if this is a controller API route: /api/controller/{number}
+    if (uri.startsWith("/api/controller/")) {
+      // Extract the index part after "/api/controller/"
+      String indexStr = uri.substring(16);
+      
+      // Remove any query parameters or trailing slashes
+      int queryPos = indexStr.indexOf('?');
+      if (queryPos > 0) {
+        indexStr = indexStr.substring(0, queryPos);
+      }
+      int slashPos = indexStr.indexOf('/');
+      if (slashPos > 0) {
+        indexStr = indexStr.substring(0, slashPos);
+      }
+      
+      // Parse as integer
+      uint8_t index = indexStr.toInt();
+      
+      Serial.printf("[WEB] Controller API route detected: index=%d, indexStr='%s'\n", index, indexStr.c_str());
+      
+      // Validate it's in the temperature controller range (40-42)
+      if ((index >= 40 && index < 40 + MAX_TEMP_CONTROLLERS) && indexStr.length() > 0) {
+        // Valid controller route - dispatch to appropriate handler
+        HTTPMethod method = server.method();
+        Serial.printf("[WEB] Dispatching to controller handler (method: %d)\n", method);
+        if (method == HTTP_GET) {
+          handleGetTempControllerConfig(index);
+          return;
+        } else if (method == HTTP_PUT) {
+          handleSaveTempControllerConfig(index);
+          return;
+        } else if (method == HTTP_DELETE) {
+          handleDeleteController(index);
           return;
         } else {
           server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");

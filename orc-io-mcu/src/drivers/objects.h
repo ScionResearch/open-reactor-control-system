@@ -238,11 +238,15 @@ struct MotorDevice_t {
 struct TemperatureControl_t {
     // References to existing objects (by index)
     uint16_t sensorIndex;       // Index in objIndex[] for temperature sensor
-    uint16_t outputIndex;       // Index in objIndex[] for analog output
+    uint16_t outputIndex;       // Index in objIndex[] for digital output
     
     // Control state
     bool enabled;
     bool autotuning;
+    
+    // Control method
+    uint8_t controlMethod;      // 0=On/Off, 1=PID
+    float hysteresis;           // On/Off mode deadband (°C)
     
     // Setpoint & limits
     float setpoint;             // Target temperature

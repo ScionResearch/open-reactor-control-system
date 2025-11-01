@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include "ipc/ipc_protocol.h"
+#include "sys_init.h"
 
 // Forward declarations
 class ScheduledTask;

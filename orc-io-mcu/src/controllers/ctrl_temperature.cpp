@@ -94,8 +94,10 @@ bool TemperatureController::assignOutput(uint16_t outputIndex) {
         return false;
     }
     
-    if (objIndex[outputIndex].type != OBJ_T_ANALOG_OUTPUT) {
-        _setFault("Object is not an analog output");
+    // Only accept digital outputs (21-25) for temperature control
+    // DAC outputs (8-9) are not suitable for heater control
+    if (objIndex[outputIndex].type != OBJ_T_DIGITAL_OUTPUT) {
+        _setFault("Output must be digital output (21-25)");
         return false;
     }
     
@@ -230,8 +232,8 @@ void TemperatureController::setOutputLimits(float minOutput, float maxOutput) {
 // ============================================================================
 
 bool TemperatureController::startAutotune(float targetSetpoint, float outputStep) {
-    if (!_control || !_control->enabled) {
-        _setFault("Cannot start autotune: controller not enabled");
+    if (!_control) {
+        _setFault("Cannot start autotune: invalid controller");
         return false;
     }
     
@@ -246,27 +248,54 @@ bool TemperatureController::startAutotune(float targetSetpoint, float outputStep
         return false;
     }
     
+    // Read current temperature
+    float currentTemp = _readSensor();
+    if (isnan(currentTemp)) {
+        _setFault("Cannot start autotune: sensor fault");
+        return false;
+    }
+    
+    // Verify we're starting below target (need room to heat up)
+    if (currentTemp >= targetSetpoint - 2.0) {
+        _setFault("Start temp must be at least 2°C below target for autotune");
+        return false;
+    }
+    
+    // Auto-enable controller if not already enabled
+    _autotuneAutoEnabled = false;
+    if (!_control->enabled) {
+        _control->enabled = true;
+        _autotuneAutoEnabled = true;
+        Serial.println("[TempCtrl] Auto-enabled controller for autotune");
+    }
+    
     // Initialize auto-tune
-    _autotuneState = AUTOTUNE_WAITING_STABILIZE;
+    _autotuneState = AUTOTUNE_RELAY_HIGH;  // Start heating immediately
     _control->autotuning = true;
     _autotuneSetpoint = targetSetpoint;
     _control->setpoint = targetSetpoint;
     _autotunePeakCount = 0;
     _autotuneStartTime = millis();
     
-    // Calculate relay outputs centered around 50%
-    _autotuneOutputHigh = 50.0 + (outputStep / 2.0);
-    _autotuneOutputLow = 50.0 - (outputStep / 2.0);
+    // Calculate relay outputs for full range (0% to 100% by default)
+    _autotuneOutputHigh = outputStep;  // e.g., 100%
+    _autotuneOutputLow = 0.0;          // 0%
     
     // Clamp to output limits
     if (_autotuneOutputHigh > _control->outputMax) _autotuneOutputHigh = _control->outputMax;
     if (_autotuneOutputLow < _control->outputMin) _autotuneOutputLow = _control->outputMin;
     
-    // Start with low output to see initial trend
-    _writeOutput(_autotuneOutputLow);
-    _autotuneLastTemp = _readSensor();
+    // Start with HIGH output to heat up quickly from below setpoint
+    _writeOutput(_autotuneOutputHigh);
+    _autotuneLastTemp = currentTemp;
     
-    Serial.println("[TempCtrl] Auto-tune started");
+    // Initialize peak/valley tracking
+    _autotuneLookingForPeak = true;   // Start looking for peak (we're heating up)
+    _autotuneExtreme = currentTemp;    // Track max/min temp
+    _autotuneJustCrossed = false;      // Haven't crossed setpoint yet
+    
+    Serial.printf("[TempCtrl] Auto-tune started: setpoint=%.1f, step=%.1f%% (%.0f%% to %.0f%%)\n",
+                  targetSetpoint, outputStep, _autotuneOutputLow, _autotuneOutputHigh);
     sprintf(_control->message, "Auto-tune in progress");
     
     return true;
@@ -278,6 +307,13 @@ void TemperatureController::stopAutotune() {
     _control->autotuning = false;
     _autotuneState = AUTOTUNE_OFF;
     _integral = 0.0;  // Reset integral
+    
+    // Auto-disable controller if we auto-enabled it
+    if (_autotuneAutoEnabled) {
+        _control->enabled = false;
+        _autotuneAutoEnabled = false;
+        Serial.println("[TempCtrl] Auto-disabled controller after autotune");
+    }
     
     Serial.println("[TempCtrl] Auto-tune stopped");
 }
@@ -353,9 +389,18 @@ bool TemperatureController::_writeOutput(float value) {
         value = 100.0 - value;
     }
     
-    // Write to output object
-    AnalogOutput_t* output = (AnalogOutput_t*)objIndex[_control->outputIndex].obj;
-    output->value = value;
+    // Write to digital output object
+    DigitalOutput_t* output = (DigitalOutput_t*)objIndex[_control->outputIndex].obj;
+    
+    if (_control->controlMethod == 0) {
+        // ON/OFF mode: Set state based on threshold
+        output->pwmEnabled = false;
+        output->state = (value > 0.0f);
+    } else {
+        // PID mode: Use PWM
+        output->pwmEnabled = true;
+        output->pwmDuty = value;
+    }
     
     // Update control structure
     _control->currentOutput = value;
@@ -387,8 +432,16 @@ void TemperatureController::_computePID() {
         dt = 0.1;  // Default to 100ms
     }
     
-    // Calculate PID output
-    float output = _calculatePIDOutput(error, dt);
+    float output;
+    
+    // Check control method
+    if (_control->controlMethod == 0) {
+        // ON/OFF control with hysteresis
+        output = _calculateOnOffOutput(error);
+    } else {
+        // PID control
+        output = _calculatePIDOutput(error, dt);
+    }
     
     // Write output
     _writeOutput(output);
@@ -396,6 +449,27 @@ void TemperatureController::_computePID() {
     // Update state
     _lastError = error;
     _lastUpdateTime = currentTime;
+}
+
+float TemperatureController::_calculateOnOffOutput(float error) {
+    // ON/OFF control with hysteresis (deadband)
+    // Error = Setpoint - CurrentTemp
+    // Positive error = too cold, need heating
+    // Negative error = too hot, stop heating
+    
+    float currentOutput = _control->currentOutput;
+    float halfHysteresis = _control->hysteresis / 2.0;
+    
+    if (error > halfHysteresis) {
+        // Too cold - turn ON
+        return 100.0;
+    } else if (error < -halfHysteresis) {
+        // Too hot - turn OFF
+        return 0.0;
+    } else {
+        // Within deadband - maintain current state
+        return currentOutput;
+    }
 }
 
 float TemperatureController::_calculatePIDOutput(float error, float dt) {
@@ -445,47 +519,82 @@ void TemperatureController::_updateAutotune() {
     }
     
     switch (_autotuneState) {
-        case AUTOTUNE_WAITING_STABILIZE:
-            // Wait a bit for initial stabilization
-            if (currentTime - _autotuneStartTime > 30000) {  // 30 seconds
-                _autotuneState = AUTOTUNE_RELAY_LOW;
-                _writeOutput(_autotuneOutputLow);
-                Serial.println("[TempCtrl] Autotune: Starting relay cycles");
-            }
-            break;
-            
-        case AUTOTUNE_RELAY_LOW:
         case AUTOTUNE_RELAY_HIGH:
+        case AUTOTUNE_RELAY_LOW:
         {
-            // Detect setpoint crossings and record peaks/valleys
+            // Detect setpoint crossings to switch relay
             bool crossedUp = (_autotuneLastTemp < _autotuneSetpoint && currentTemp >= _autotuneSetpoint);
             bool crossedDown = (_autotuneLastTemp > _autotuneSetpoint && currentTemp <= _autotuneSetpoint);
             
-            if (crossedUp || crossedDown) {
-                // Record peak/valley before crossing
-                if (_autotunePeakCount < 10) {
-                    _autotunePeaks[_autotunePeakCount] = _autotuneLastTemp;
-                    _autotunePeakTimes[_autotunePeakCount] = currentTime;
-                    _autotunePeakCount++;
-                    
-                    Serial.printf("[TempCtrl] Autotune: Peak %d = %.2f°C\n", 
-                                  _autotunePeakCount, _autotuneLastTemp);
-                }
+            if (crossedUp) {
+                // Crossed setpoint going UP - switch to LOW output and start looking for PEAK
+                _autotuneState = AUTOTUNE_RELAY_LOW;
+                _writeOutput(_autotuneOutputLow);
+                _autotuneLookingForPeak = true;   // Now looking for peak
+                _autotuneExtreme = currentTemp;    // Reset peak tracker
+                _autotuneJustCrossed = true;       // Mark that we just crossed
+                Serial.printf("[TempCtrl] Autotune: Crossed UP at %.2f°C, switching to LOW output\n", currentTemp);
                 
-                // Switch relay output
-                if (_autotuneState == AUTOTUNE_RELAY_LOW) {
-                    _autotuneState = AUTOTUNE_RELAY_HIGH;
-                    _writeOutput(_autotuneOutputHigh);
+            } else if (crossedDown) {
+                // Crossed setpoint going DOWN - switch to HIGH output and start looking for VALLEY
+                _autotuneState = AUTOTUNE_RELAY_HIGH;
+                _writeOutput(_autotuneOutputHigh);
+                _autotuneLookingForPeak = false;   // Now looking for valley
+                _autotuneExtreme = currentTemp;    // Reset valley tracker
+                _autotuneJustCrossed = true;       // Mark that we just crossed
+                Serial.printf("[TempCtrl] Autotune: Crossed DOWN at %.2f°C, switching to HIGH output\n", currentTemp);
+            }
+            
+            // Track peak/valley detection (only after we've crossed setpoint at least once)
+            if (!_autotuneJustCrossed && _autotunePeakCount < 10) {
+                if (_autotuneLookingForPeak) {
+                    // Looking for peak - track maximum temperature
+                    if (currentTemp > _autotuneExtreme) {
+                        // Still rising, update peak
+                        _autotuneExtreme = currentTemp;
+                    } else if ((currentTemp < _autotuneExtreme - 0.1) && (currentTemp > _autotuneSetpoint)) {
+                        // Temperature dropped significantly - we found the peak!
+                        _autotunePeaks[_autotunePeakCount] = _autotuneExtreme;
+                        _autotunePeakTimes[_autotunePeakCount] = currentTime;
+                        Serial.printf("[TempCtrl] Autotune: PEAK %d detected = %.2f°C\n", 
+                                      _autotunePeakCount + 1, _autotuneExtreme);
+                        _autotunePeakCount++;
+                        _autotuneLookingForPeak = false;  // Stop looking until next crossing
+                        
+                        // Check if we have enough data
+                        if (_autotunePeakCount >= 6) {
+                            Serial.println("[TempCtrl] Autotune: Sufficient data collected, analyzing...");
+                            _autotuneState = AUTOTUNE_ANALYZING;
+                        }
+                    }
                 } else {
-                    _autotuneState = AUTOTUNE_RELAY_LOW;
-                    _writeOutput(_autotuneOutputLow);
-                }
-                
-                // Analyze after collecting enough data
-                if (_autotunePeakCount >= 6) {
-                    _autotuneState = AUTOTUNE_ANALYZING;
+                    // Looking for valley - track minimum temperature
+                    if (currentTemp < _autotuneExtreme) {
+                        // Still falling, update valley
+                        _autotuneExtreme = currentTemp;
+                    } else if ((currentTemp > _autotuneExtreme + 0.1) && (currentTemp < _autotuneSetpoint)) {
+                        // Temperature rose significantly - we found the valley!
+                        _autotunePeaks[_autotunePeakCount] = _autotuneExtreme;
+                        _autotunePeakTimes[_autotunePeakCount] = currentTime;
+                        Serial.printf("[TempCtrl] Autotune: VALLEY %d detected = %.2f°C\n", 
+                                      _autotunePeakCount + 1, _autotuneExtreme);
+                        _autotunePeakCount++;
+                        _autotuneLookingForPeak = true;  // Stop looking until next crossing
+                        
+                        // Check if we have enough data
+                        if (_autotunePeakCount >= 6) {
+                            Serial.println("[TempCtrl] Autotune: Sufficient data collected, analyzing...");
+                            _autotuneState = AUTOTUNE_ANALYZING;
+                        }
+                    }
                 }
             }
+            
+            // Clear the "just crossed" flag after first iteration
+            if (_autotuneJustCrossed) {
+                _autotuneJustCrossed = false;
+            }
+            
             break;
         }
             
@@ -494,6 +603,15 @@ void TemperatureController::_updateAutotune() {
             _autotuneState = AUTOTUNE_COMPLETE;
             _control->autotuning = false;
             _resetPIDState();
+            
+            // Auto-disable controller if we auto-enabled it
+            if (_autotuneAutoEnabled) {
+                _control->enabled = false;
+                _autotuneAutoEnabled = false;
+                _writeOutput(0);   // Ensure output is off
+                Serial.println("[TempCtrl] Auto-disabled controller after autotune completion");
+            }
+            
             Serial.println("[TempCtrl] Auto-tune complete");
             sprintf(_control->message, "Autotune complete: Kp=%.2f Ki=%.2f Kd=%.2f",
                     _control->kp, _control->ki, _control->kd);
@@ -583,8 +701,10 @@ bool TemperatureController::_validateIndices() {
         return false;
     }
     
-    if (objIndex[_control->outputIndex].type != OBJ_T_ANALOG_OUTPUT) {
-        _setFault("Output index is not an analog output");
+    // Only accept digital outputs (21-25) for temperature control
+    // DAC outputs (8-9) are not suitable for heater control
+    if (objIndex[_control->outputIndex].type != OBJ_T_DIGITAL_OUTPUT) {
+        _setFault("Output must be digital output (21-25)");
         return false;
     }
     

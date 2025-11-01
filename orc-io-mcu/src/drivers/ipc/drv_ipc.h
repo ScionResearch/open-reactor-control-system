@@ -227,6 +227,7 @@ void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len);
+void ipc_handle_temp_controller_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_read(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_create(const uint8_t *payload, uint16_t len);
@@ -241,6 +242,7 @@ void ipc_handle_config_digital_output(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_dcmotor(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_comport(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_temp_controller(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_pressure_ctrl(const uint8_t *payload, uint16_t len);
 
 // ============================================================================

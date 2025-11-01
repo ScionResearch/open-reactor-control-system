@@ -19,6 +19,7 @@
 #define MAX_STEPPER_MOTORS 1   // Index 26
 #define MAX_DC_MOTORS 4        // Indices 27-30
 #define MAX_ENERGY_SENSORS 2   // Indices 31-32 (Main, Heater)
+#define MAX_TEMP_CONTROLLERS 3  // Indices 40-42 (Temperature Control loops)
 
 /**
  * @brief Calibration structure for analog inputs/outputs
@@ -135,6 +136,44 @@ struct EnergySensorConfig {
 };
 
 /**
+ * @brief Control method for temperature controllers
+ */
+enum ControlMethod {
+    CONTROL_METHOD_ON_OFF = 0,
+    CONTROL_METHOD_PID = 1
+};
+
+/**
+ * @brief Configuration for Temperature Controllers (indices 40-49)
+ */
+struct TemperatureControllerConfig {
+    bool isActive;                  // Controller slot in use
+    char name[40];                  // User-defined name
+    bool enabled;                   // Enable/disable controller
+    bool showOnDashboard;           // Dashboard visibility
+    char unit[8];                   // Temperature unit: "C", "F", "K"
+    
+    // Input/Output Connections
+    uint8_t pvSourceIndex;          // Process value source (sensor index)
+    uint8_t outputIndex;            // Control output (21-25 digital, 8-9 DAC)
+    
+    // Control Configuration
+    ControlMethod controlMethod;    // 0=On/Off, 1=PID
+    float setpoint;                 // Target value
+    
+    // On/Off Parameters
+    float hysteresis;               // Deadband width (only used when controlMethod = ON_OFF)
+    
+    // PID Parameters
+    float kP;                       // Proportional gain
+    float kI;                       // Integral gain
+    float kD;                       // Derivative gain
+    float integralWindup;           // Anti-windup limit
+    float outputMin;                // Output clamp min (0-100%)
+    float outputMax;                // Output clamp max (0-100%)
+};
+
+/**
  * @brief Configuration for Device Sensors (indices 70-99)
  * These are sensor objects created by dynamic devices.
  * Each device can create multiple sensors (e.g., pH probe creates pH + Temperature)
@@ -248,6 +287,7 @@ struct IOConfig {
     StepperMotorConfig stepperMotor;  // Single stepper motor
     DCMotorConfig dcMotors[MAX_DC_MOTORS];
     EnergySensorConfig energySensors[MAX_ENERGY_SENSORS];  // Indices 31-32
+    TemperatureControllerConfig tempControllers[MAX_TEMP_CONTROLLERS];  // Indices 40-42
     ComPortConfig comPorts[MAX_COM_PORTS];  // RS-232 (0-1) and RS-485 (2-3)
     
     // Dynamic peripheral devices (sensor indices 70-99, control indices 50-69)

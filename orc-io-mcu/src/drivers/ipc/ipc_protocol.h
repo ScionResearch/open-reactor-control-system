@@ -87,6 +87,7 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_CONFIG_STEPPER        = 0x68,  // Configure stepper motor
     IPC_MSG_CONFIG_DCMOTOR        = 0x69,  // Configure DC motor
     IPC_MSG_CONFIG_COMPORT        = 0x6A,  // Configure COM port (serial)
+    IPC_MSG_CONFIG_TEMP_CONTROLLER = 0x6C,  // Configure temperature controller
     IPC_MSG_CONFIG_PRESSURE_CTRL  = 0x6E,  // Configure pressure controller
 };
 
@@ -256,6 +257,15 @@ enum DCMotorCommand : uint8_t {
 enum AnalogOutputCommand : uint8_t {
     AOUT_CMD_SET_VALUE = 0x01,  // Set output value in mV (0-10240)
     AOUT_CMD_DISABLE   = 0x02,  // Disable output (set to 0)
+};
+
+// Temperature Controller command types (indices 40-42)
+enum TempControllerCommand : uint8_t {
+    TEMP_CTRL_CMD_SET_SETPOINT    = 0x01,  // Set target setpoint
+    TEMP_CTRL_CMD_ENABLE          = 0x02,  // Enable controller
+    TEMP_CTRL_CMD_DISABLE         = 0x03,  // Disable controller
+    TEMP_CTRL_CMD_START_AUTOTUNE  = 0x04,  // Start PID autotune
+    TEMP_CTRL_CMD_STOP_AUTOTUNE   = 0x05,  // Stop autotune
 };
 
 // Device control command types (for peripheral devices like MFC, pH controllers, etc.)
@@ -627,6 +637,47 @@ struct IPC_ConfigPressureCtrl_t {
     char unit[8];                // Pressure unit (Pa, kPa, bar, PSI, atm, mbar)
     float scale;                 // Calibration scale factor (Pa/mV)
     float offset;                // Calibration offset (Pa)
+} __attribute__((packed));
+
+/**
+ * @brief Temperature Controller configuration
+ * Message type: IPC_MSG_CONFIG_TEMP_CONTROLLER
+ * 
+ * Sent from SYS MCU to IO MCU to configure temperature controllers (indices 40-42)
+ * Supports both On/Off and PID control methods
+ */
+struct IPC_ConfigTempController_t {
+    uint8_t index;               // Controller index (40-42)
+    bool isActive;               // true=create/update, false=delete
+    char name[40];               // Controller name
+    bool enabled;                // Enable/disable controller
+    uint16_t pvSourceIndex;      // Process value sensor index (temperature sensor)
+    uint16_t outputIndex;        // Output index (21-25 digital, 8-9 DAC)
+    uint8_t controlMethod;       // 0=On/Off, 1=PID
+    uint8_t _padding;            // Alignment
+    float setpoint;              // Target temperature
+    float hysteresis;            // On/Off mode hysteresis (deadband)
+    float kP;                    // PID proportional gain
+    float kI;                    // PID integral gain
+    float kD;                    // PID derivative gain
+    float integralWindup;        // Anti-windup limit
+    float outputMin;             // Output clamp min (0-100%)
+    float outputMax;             // Output clamp max (0-100%)
+} __attribute__((packed));
+
+/**
+ * @brief Temperature Controller runtime control
+ * Message type: IPC_MSG_CONTROL_WRITE (with OBJ_T_TEMPERATURE_CONTROL)
+ * 
+ * Runtime commands for temperature controllers: setpoint, enable, disable, autotune
+ */
+struct IPC_TempControllerControl_t {
+    uint16_t index;              // Controller index (40-42)
+    uint8_t objectType;          // OBJ_T_TEMPERATURE_CONTROL
+    uint8_t command;             // TempControllerCommand
+    float setpoint;              // For SET_SETPOINT and AUTOTUNE commands
+    float autotuneOutputStep;    // Output step size for autotune (default 50%)
+    uint8_t reserved[6];         // Reserved for future use
 } __attribute__((packed));
 
 // ============================================================================

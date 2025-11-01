@@ -4,6 +4,7 @@
 #include "../onboard/drv_gpio.h" // For GPIO configuration
 #include "../onboard/drv_output.h" // For output mode switching
 #include "../device_manager.h" // For dynamic device management
+#include "../../controllers/controller_manager.h" // For temperature controller management
 #include "../peripheral/drv_modbus_alicat_mfc.h" // For AlicatMFC setpoint control
 #include "../peripheral/drv_analogue_pressure.h" // For Pressure Controller config
 
@@ -97,6 +98,10 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             
         case IPC_MSG_CONFIG_COMPORT:
             ipc_handle_config_comport(payload, len);
+            break;
+            
+        case IPC_MSG_CONFIG_TEMP_CONTROLLER:
+            ipc_handle_config_temp_controller(payload, len);
             break;
             
         case IPC_MSG_CONFIG_PRESSURE_CTRL:
@@ -565,6 +570,35 @@ bool ipc_sendSensorData(uint16_t index) {
             break;
         }
         
+        case OBJ_T_TEMPERATURE_CONTROL: {
+            TemperatureControl_t *ctrl = (TemperatureControl_t*)obj;
+            data.value = ctrl->currentTemp;  // Process value (temperature)
+            strncpy(data.unit, "C", sizeof(data.unit) - 1);
+            
+            // Flags
+            if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (ctrl->enabled) data.flags |= IPC_SENSOR_FLAG_RUNNING;  // Reuse running flag for enabled
+            if (ctrl->autotuning) data.flags |= (1 << 4);  // Bit 4 for autotuning
+            
+            if (ctrl->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, ctrl->message, sizeof(data.message) - 1);
+                ctrl->newMessage = false;
+            }
+            
+            // Add output and PID gains as additional values
+            data.valueCount = 4;
+            data.additionalValues[0] = ctrl->currentOutput;  // Output percentage
+            data.additionalValues[1] = ctrl->kp;             // PID gains
+            data.additionalValues[2] = ctrl->ki;
+            data.additionalValues[3] = ctrl->kd;
+            strncpy(data.additionalUnits[0], "%", sizeof(data.additionalUnits[0]) - 1);
+            strncpy(data.additionalUnits[1], "", sizeof(data.additionalUnits[1]) - 1);
+            strncpy(data.additionalUnits[2], "", sizeof(data.additionalUnits[2]) - 1);
+            strncpy(data.additionalUnits[3], "", sizeof(data.additionalUnits[3]) - 1);
+            break;
+        }
+        
         case OBJ_T_VOLTAGE_SENSOR: {
             VoltageSensor_t *sensor = (VoltageSensor_t*)obj;
             data.value = sensor->voltage;
@@ -744,6 +778,10 @@ void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
             
         case OBJ_T_BDC_MOTOR:
             ipc_handle_dcmotor_control(payload, len);
+            break;
+            
+        case OBJ_T_TEMPERATURE_CONTROL:
+            ipc_handle_temp_controller_control(payload, len);
             break;
             
         default:
@@ -1118,6 +1156,87 @@ void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
             } else {
                 strcpy(message, "Motor not running");
                 errorCode = CTRL_ERR_NOT_ENABLED;
+            }
+            break;
+            
+        default:
+            strcpy(message, "Unknown command");
+            errorCode = CTRL_ERR_INVALID_CMD;
+            break;
+    }
+    
+    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+}
+
+// Temperature Controller Control Handler
+void ipc_handle_temp_controller_control(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_TempControllerControl_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid temp controller control message size");
+        return;
+    }
+    
+    const IPC_TempControllerControl_t *cmd = (const IPC_TempControllerControl_t*)payload;
+    
+    // Validate index range (40-42)
+    if (cmd->index < 40 || cmd->index >= 40 + MAX_TEMP_CONTROLLERS) {
+        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+                            CTRL_ERR_INVALID_INDEX, "Invalid controller index");
+        return;
+    }
+    
+    bool success = false;
+    char message[100] = "OK";
+    ControlErrorCode errorCode = CTRL_ERR_NONE;
+    
+    switch (cmd->command) {
+        case TEMP_CTRL_CMD_SET_SETPOINT:
+            success = ControllerManager::setSetpoint(cmd->index, cmd->setpoint);
+            if (success) {
+                Serial.printf("[TEMP CTRL] Setpoint updated: %.1f\n", cmd->setpoint);
+            } else {
+                strcpy(message, "Failed to set setpoint");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
+            }
+            break;
+            
+        case TEMP_CTRL_CMD_ENABLE:
+            success = ControllerManager::enableController(cmd->index);
+            if (success) {
+                Serial.printf("[TEMP CTRL] Controller %d enabled\n", cmd->index);
+            } else {
+                strcpy(message, "Failed to enable controller");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
+            }
+            break;
+            
+        case TEMP_CTRL_CMD_DISABLE:
+            success = ControllerManager::disableController(cmd->index);
+            if (success) {
+                Serial.printf("[TEMP CTRL] Controller %d disabled\n", cmd->index);
+            } else {
+                strcpy(message, "Failed to disable controller");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
+            }
+            break;
+            
+        case TEMP_CTRL_CMD_START_AUTOTUNE:
+            success = ControllerManager::startAutotune(cmd->index, cmd->setpoint, cmd->autotuneOutputStep);
+            if (success) {
+                Serial.printf("[TEMP CTRL] Autotune started: setpoint=%.1f, step=%.1f%%\n",
+                             cmd->setpoint, cmd->autotuneOutputStep);
+            } else {
+                strcpy(message, "Failed to start autotune");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
+            }
+            break;
+            
+        case TEMP_CTRL_CMD_STOP_AUTOTUNE:
+            success = ControllerManager::stopAutotune(cmd->index);
+            if (success) {
+                Serial.printf("[TEMP CTRL] Autotune stopped\n");
+            } else {
+                strcpy(message, "Failed to stop autotune");
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -1684,19 +1803,10 @@ void ipc_handle_config_digital_output(const uint8_t *payload, uint16_t len) {
             output->pwmDuty = 0.0f;
             output_force_digital_mode(cfg->index);
         } else if (!wasPWM && output->pwmEnabled) {
-            // Switching from ON/OFF to PWM - re-initialize pin for PWM
-            if (cfg->index == 25) {
-                // Heater output - re-init pin MUX for TCC0
-                analogWrite(PIN_HEAT_OUT, 0);
-                Serial.printf("[OUTPUT] Heater pin re-initialized for PWM mode\n");
-            } else if (cfg->index >= 21 && cfg->index <= 24) {
-                // Regular outputs - re-init pin MUX
-                int arrayIdx = cfg->index - 21;
-                analogWrite(outputDriver.pin[arrayIdx], 0);
-                Serial.printf("[OUTPUT] Output %d pin re-initialized for PWM mode\n", cfg->index);
-            }
-            // Initialize PWM duty to 0
+            // Switching from ON/OFF to PWM mode
+            // Just initialize PWM duty - output_update() will handle pin configuration
             output->pwmDuty = 0.0f;
+            Serial.printf("[OUTPUT] Set output %d to PWM mode, output_update() will configure pin\\n", cfg->index);
         } else if (!wasPWM && !output->pwmEnabled) {
             // Both old and new mode are ON/OFF - ensure pin is in digital mode
             // This handles initial config where analogWrite() may have been called during init
@@ -1862,6 +1972,56 @@ void ipc_handle_config_comport(const uint8_t *payload, uint16_t len) {
         // when it detects the configChanged flag
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "COM port object not initialized");
+    }
+}
+
+/**
+ * @brief Handle temperature controller configuration
+ * 
+ * Creates, updates, or deletes temperature controller instances (indices 40-42).
+ * Uses ControllerManager to manage lifecycle and registration.
+ */
+void ipc_handle_config_temp_controller(const uint8_t *payload, uint16_t len) {
+    Serial.printf("[IPC] Temp controller config: received %d bytes, expected %d bytes\n", 
+                  len, sizeof(IPC_ConfigTempController_t));
+    
+    if (len != sizeof(IPC_ConfigTempController_t)) {
+        char errorMsg[128];
+        snprintf(errorMsg, sizeof(errorMsg), "Invalid size: got %d, expected %d", 
+                len, sizeof(IPC_ConfigTempController_t));
+        ipc_sendError(IPC_ERR_PARSE_FAIL, errorMsg);
+        return;
+    }
+    
+    const IPC_ConfigTempController_t *cfg = (const IPC_ConfigTempController_t*)payload;
+    
+    // Validate index range (40-42 for temperature controllers)
+    if (cfg->index < 40 || cfg->index >= 40 + MAX_TEMP_CONTROLLERS) {
+        ipc_sendError(IPC_ERR_INDEX_INVALID, "Temperature controller index out of range (40-42)");
+        return;
+    }
+    
+    if (cfg->isActive) {
+        // Create or update controller
+        if (ControllerManager::createController(cfg->index, cfg)) {
+            Serial.printf("[IPC] ✓ TempController[%d]: %s, method=%s, sensor=%d, output=%d\n",
+                         cfg->index, cfg->name,
+                         cfg->controlMethod == 0 ? "On/Off" : "PID",
+                         cfg->pvSourceIndex, cfg->outputIndex);
+        } else {
+            char errorMsg[128];
+            snprintf(errorMsg, sizeof(errorMsg), "Failed to create controller %d", cfg->index);
+            ipc_sendError(IPC_ERR_DEVICE_FAIL, errorMsg);
+        }
+    } else {
+        // Delete controller
+        if (ControllerManager::deleteController(cfg->index)) {
+            Serial.printf("[IPC] ✓ Deleted temperature controller %d\n", cfg->index);
+        } else {
+            char errorMsg[128];
+            snprintf(errorMsg, sizeof(errorMsg), "Failed to delete controller %d", cfg->index);
+            ipc_sendError(IPC_ERR_DEVICE_FAIL, errorMsg);
+        }
     }
 }
 

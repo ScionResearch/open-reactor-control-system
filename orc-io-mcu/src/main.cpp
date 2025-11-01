@@ -280,6 +280,13 @@ void setup() {
     Serial.println("Device Manager initialised (dynamic devices: 60-79)");
   }
 
+  Serial.println("Initialising Controller Manager");
+  if (!ControllerManager::init()) {
+    Serial.println("Failed to initialise Controller Manager.");
+  } else {
+    Serial.println("Controller Manager initialised (temperature controllers: 40-42)");
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // ALL FIXED ONBOARD OBJECTS ENROLLED - SET INDEX BOUNDARY
   // ═══════════════════════════════════════════════════════════════════════
@@ -297,8 +304,8 @@ void setup() {
   Serial.println("  31-32 : Power Sensors (V/A/W)");
   Serial.println("  33-36 : Modbus Ports");
   Serial.println("  37-40 : Reserved for future use");
-  Serial.println("  41-59 : Control objects");
-  Serial.println("  60-79 : Dynamic user-created devices");
+  Serial.println("  40-42 : Temperature Controllers (dynamic, ControllerManager)");
+  Serial.println("Dynamic device slots: 60-79 (20 slots via DeviceManager)");
   Serial.println("===========================\n");
 
   // Initialise Hamilton pH probe interface (class-based)

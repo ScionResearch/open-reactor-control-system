@@ -437,14 +437,11 @@ The object index provides a unified addressing scheme for all sensors, actuators
 #### **Onboard Device Feedback (37-39)** 🚧 Reserved
 - **37-39:** Reserved for additional onboard device status/feedback
 
-#### **Controller Objects (40-49)** 🚧 Reserved for Future Implementation
+#### **Controller Objects (40-49)** **WIP**
 - **40-42:** Temperature Control (3 loops) - PID controllers
 - **43:** pH Control - Dosing control
 - **44:** Dissolved Oxygen Control - Gas mixing + stirrer
-- **45:** Optical Density Control - Turbidity/biomass
-- **46-47:** Gas Flow Control (2 channels) - MFC control loops
-- **48:** Pump Control - Peristaltic pump control
-- **49:** Feed/Waste Control - Nutrient/waste sequencers
+- **45-49:** Reserved for future use
 
 **Device Control Objects (50-69):** ✅ **NEW** Peripheral device control
 - Control interface for dynamic devices (setpoints, commands, status)

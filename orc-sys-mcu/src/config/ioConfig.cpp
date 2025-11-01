@@ -114,6 +114,35 @@ void setDefaultIOConfig() {
     }
     
     // ========================================================================
+    // Temperature Controllers (Indices 40-49)
+    // ========================================================================
+    for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {
+        ioConfig.tempControllers[i].isActive = false;
+        snprintf(ioConfig.tempControllers[i].name, sizeof(ioConfig.tempControllers[i].name), 
+                 "Temperature Controller %d", i + 1);
+        ioConfig.tempControllers[i].enabled = false;
+        ioConfig.tempControllers[i].showOnDashboard = false;
+        strlcpy(ioConfig.tempControllers[i].unit, "C", sizeof(ioConfig.tempControllers[i].unit));
+        
+        ioConfig.tempControllers[i].pvSourceIndex = 0;    // Default: no sensor assigned
+        ioConfig.tempControllers[i].outputIndex = 0;      // Default: no output assigned
+        
+        ioConfig.tempControllers[i].controlMethod = CONTROL_METHOD_PID;
+        ioConfig.tempControllers[i].setpoint = 25.0f;     // Default 25°C
+        
+        // On/Off defaults
+        ioConfig.tempControllers[i].hysteresis = 0.5f;    // 0.5°C deadband
+        
+        // PID defaults (conservative starting values)
+        ioConfig.tempControllers[i].kP = 2.0f;
+        ioConfig.tempControllers[i].kI = 0.5f;
+        ioConfig.tempControllers[i].kD = 0.1f;
+        ioConfig.tempControllers[i].integralWindup = 100.0f;
+        ioConfig.tempControllers[i].outputMin = 0.0f;
+        ioConfig.tempControllers[i].outputMax = 100.0f;
+    }
+    
+    // ========================================================================
     // COM Ports (0-1: RS-232, 2-3: RS-485)
     // ========================================================================
     const char* portNames[] = {"RS-232 Port 1", "RS-232 Port 2", "RS-485 Port 1", "RS-485 Port 2"};
@@ -179,7 +208,7 @@ bool loadIOConfig() {
     }
     
     // Allocate JSON document on heap (sized for our config)
-    DynamicJsonDocument doc(8192);
+    DynamicJsonDocument doc(16384);
     DeserializationError error = deserializeJson(doc, configFile);
     configFile.close();
     LittleFS.end();
@@ -340,6 +369,38 @@ bool loadIOConfig() {
     }
     
     // ========================================================================
+    // Parse Temperature Controllers
+    // ========================================================================
+    JsonArray tempCtrlArray = doc["temp_controllers"];
+    if (tempCtrlArray) {
+        for (int i = 0; i < MAX_TEMP_CONTROLLERS && i < tempCtrlArray.size(); i++) {
+            JsonObject ctrl = tempCtrlArray[i];
+            ioConfig.tempControllers[i].isActive = ctrl["isActive"] | false;
+            strlcpy(ioConfig.tempControllers[i].name, ctrl["name"] | "", 
+                    sizeof(ioConfig.tempControllers[i].name));
+            ioConfig.tempControllers[i].enabled = ctrl["enabled"] | false;
+            ioConfig.tempControllers[i].showOnDashboard = ctrl["showOnDashboard"] | false;
+            strlcpy(ioConfig.tempControllers[i].unit, ctrl["unit"] | "C", 
+                    sizeof(ioConfig.tempControllers[i].unit));
+            
+            ioConfig.tempControllers[i].pvSourceIndex = ctrl["pvSourceIndex"] | 0;
+            ioConfig.tempControllers[i].outputIndex = ctrl["outputIndex"] | 0;
+            
+            ioConfig.tempControllers[i].controlMethod = (ControlMethod)(ctrl["controlMethod"] | CONTROL_METHOD_PID);
+            ioConfig.tempControllers[i].setpoint = ctrl["setpoint"] | 25.0f;
+            
+            ioConfig.tempControllers[i].hysteresis = ctrl["hysteresis"] | 0.5f;
+            
+            ioConfig.tempControllers[i].kP = ctrl["kP"] | 2.0f;
+            ioConfig.tempControllers[i].kI = ctrl["kI"] | 0.5f;
+            ioConfig.tempControllers[i].kD = ctrl["kD"] | 0.1f;
+            ioConfig.tempControllers[i].integralWindup = ctrl["integralWindup"] | 100.0f;
+            ioConfig.tempControllers[i].outputMin = ctrl["outputMin"] | 0.0f;
+            ioConfig.tempControllers[i].outputMax = ctrl["outputMax"] | 100.0f;
+        }
+    }
+    
+    // ========================================================================
     // Parse COM Ports
     // ========================================================================
     JsonArray comPortArray = doc["com_ports"];
@@ -419,7 +480,7 @@ void saveIOConfig() {
     }
     
     // Create JSON document on heap to avoid stack overflow
-    DynamicJsonDocument doc(8192);
+    DynamicJsonDocument doc(16384);
     
     // Store magic number and version
     doc["magic"] = IO_CONFIG_MAGIC_NUMBER;
@@ -528,6 +589,34 @@ void saveIOConfig() {
         JsonObject sensor = energyArray.createNestedObject();
         sensor["name"] = ioConfig.energySensors[i].name;
         sensor["showOnDashboard"] = ioConfig.energySensors[i].showOnDashboard;
+    }
+    
+    // ========================================================================
+    // Serialize Temperature Controllers
+    // ========================================================================
+    JsonArray tempCtrlArray = doc.createNestedArray("temp_controllers");
+    for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {
+        JsonObject ctrl = tempCtrlArray.createNestedObject();
+        ctrl["isActive"] = ioConfig.tempControllers[i].isActive;
+        ctrl["name"] = ioConfig.tempControllers[i].name;
+        ctrl["enabled"] = ioConfig.tempControllers[i].enabled;
+        ctrl["showOnDashboard"] = ioConfig.tempControllers[i].showOnDashboard;
+        ctrl["unit"] = ioConfig.tempControllers[i].unit;
+        
+        ctrl["pvSourceIndex"] = ioConfig.tempControllers[i].pvSourceIndex;
+        ctrl["outputIndex"] = ioConfig.tempControllers[i].outputIndex;
+        
+        ctrl["controlMethod"] = (uint8_t)ioConfig.tempControllers[i].controlMethod;
+        ctrl["setpoint"] = ioConfig.tempControllers[i].setpoint;
+        
+        ctrl["hysteresis"] = ioConfig.tempControllers[i].hysteresis;
+        
+        ctrl["kP"] = ioConfig.tempControllers[i].kP;
+        ctrl["kI"] = ioConfig.tempControllers[i].kI;
+        ctrl["kD"] = ioConfig.tempControllers[i].kD;
+        ctrl["integralWindup"] = ioConfig.tempControllers[i].integralWindup;
+        ctrl["outputMin"] = ioConfig.tempControllers[i].outputMin;
+        ctrl["outputMax"] = ioConfig.tempControllers[i].outputMax;
     }
     
     // ========================================================================
@@ -1052,7 +1141,54 @@ void pushIOConfigToIOmcu() {
         }
     }
     
-    log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports + devices)\n", sentCount);
+    // ========================================================================
+    // Push Temperature Controller configurations (indices 40-42)
+    // ========================================================================
+    for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {
+        if (!ioConfig.tempControllers[i].isActive) continue;
+        
+        IPC_ConfigTempController_t cfg;
+        memset(&cfg, 0, sizeof(cfg));
+        
+        cfg.index = 40 + i;
+        cfg.isActive = true;
+        strncpy(cfg.name, ioConfig.tempControllers[i].name, sizeof(cfg.name) - 1);
+        cfg.enabled = ioConfig.tempControllers[i].enabled;
+        cfg.pvSourceIndex = ioConfig.tempControllers[i].pvSourceIndex;
+        cfg.outputIndex = ioConfig.tempControllers[i].outputIndex;
+        cfg.controlMethod = (uint8_t)ioConfig.tempControllers[i].controlMethod;
+        cfg.setpoint = ioConfig.tempControllers[i].setpoint;
+        cfg.hysteresis = ioConfig.tempControllers[i].hysteresis;
+        cfg.kP = ioConfig.tempControllers[i].kP;
+        cfg.kI = ioConfig.tempControllers[i].kI;
+        cfg.kD = ioConfig.tempControllers[i].kD;
+        cfg.integralWindup = ioConfig.tempControllers[i].integralWindup;
+        cfg.outputMin = ioConfig.tempControllers[i].outputMin;
+        cfg.outputMax = ioConfig.tempControllers[i].outputMax;
+        
+        // Retry up to 10 times if queue is full
+        bool sent = false;
+        for (int retry = 0; retry < 10; retry++) {
+            if (ipc.sendPacket(IPC_MSG_CONFIG_TEMP_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg))) {
+                sent = true;
+                sentCount++;
+                log(LOG_INFO, false, "  → TempController[%d]: %s, sensor=%d, output=%d, method=%s\n",
+                    cfg.index, cfg.name, cfg.pvSourceIndex, cfg.outputIndex,
+                    cfg.controlMethod == 0 ? "On/Off" : "PID");
+                break;
+            }
+            ipc.update();
+            delay(10);
+        }
+        
+        if (!sent) {
+            log(LOG_WARNING, false, "  ✗ Failed to send TempController[%d] config after retries\n", 40 + i);
+        }
+        
+        delay(10);
+    }
+    
+    log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports + devices + controllers)\n", sentCount);
 }
 
 // ============================================================================

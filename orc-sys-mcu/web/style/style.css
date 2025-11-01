@@ -2459,3 +2459,147 @@ input:checked + .slider:before { transform: translateX(26px); }
         grid-template-columns: 1fr;
     }
 }
+
+/* ========================================================================== */
+/* CONTROLLERS TAB STYLING */
+/* ========================================================================== */
+
+.controllers-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.controllers-section-card {
+    background-color: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    padding: 24px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.controllers-section-card h3 {
+    color: #2c3e50;
+    margin: 0 0 20px 0;
+    font-size: 1.3em;
+    font-weight: 600;
+}
+
+.controllers-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 20px;
+}
+
+/* Controller Card Styles - reuse device-card structure */
+.controller-card {
+    background-color: #fff;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s;
+}
+
+.controller-card:hover {
+    border-color: var(--accent-color);
+    box-shadow: 0 4px 8px rgba(88, 180, 135, 0.2);
+}
+
+/* Controller value display */
+.controller-values {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 15px 0;
+}
+
+.controller-value-item {
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.controller-value-label {
+    font-size: 0.75em;
+    color: #6c757d;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+    letter-spacing: 0.5px;
+}
+
+.controller-value-display {
+    font-size: 1.3em;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+/* Controller info row */
+.controller-info-row {
+    display: flex;
+    gap: 20px;
+    margin: 15px 0;
+    font-size: 0.9em;
+    color: #495057;
+    flex-wrap: wrap;
+}
+
+.controller-info-row strong {
+    color: #2c3e50;
+}
+
+/* Setpoint control */
+.controller-setpoint-control {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin: 15px 0;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.controller-setpoint-control label {
+    font-weight: 500;
+    color: #495057;
+}
+
+.controller-setpoint-control input {
+    width: 100px;
+    padding: 6px 10px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.95em;
+}
+
+.controller-setpoint-control .unit-label {
+    margin-left: 5px;
+    color: #6c757d;
+}
+
+/* Controller button group */
+.controller-button-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+    flex-wrap: wrap;
+}
+
+/* Responsive controllers */
+@media (max-width: 768px) {
+    .controllers-list {
+        grid-template-columns: 1fr;
+    }
+    
+    .controller-values {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .controller-button-group {
+        flex-direction: column;
+    }
+    
+    .controller-button-group button {
+        width: 100%;
+    }
+}

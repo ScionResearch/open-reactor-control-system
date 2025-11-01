@@ -30,9 +30,12 @@
 #include "drivers/peripheral/drv_modbus_alicat_mfc.h"
 #include "drivers/peripheral/drv_analogue_pressure.h"
 #include "drivers/ipc/drv_ipc.h"
+#include "drivers/ipc/ipc_protocol.h"
 
-// Device Manager (must be after peripheral drivers to avoid circular deps)
 #include "drivers/device_manager.h"
+
+#include "controllers/ctrl_temperature.h"
+#include "controllers/controller_manager.h"
 
 // Utility
 #include "utility/calibrate.h"
