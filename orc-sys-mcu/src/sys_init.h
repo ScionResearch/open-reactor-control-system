@@ -10,7 +10,7 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
-#include "Adafruit_Neopixel.h"
+#include "Adafruit_NeoPixel.h"
 #include "MCP79410.h"
 #include "IPCProtocol.h"
 #include "IPCDataStructs.h"
