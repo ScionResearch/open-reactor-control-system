@@ -2680,12 +2680,7 @@ void handleGetControllers() {
   StaticJsonDocument<2048> doc;
   JsonArray controllers = doc.createNestedArray("controllers");
   
-  log(LOG_DEBUG, false, "[API] Loading controllers: checking %d slots\n", MAX_CONTROLLERS);
-  
-  for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {
-    log(LOG_DEBUG, false, "[API] Controller %d: isActive=%d, name='%s'\n", 
-        40 + i, ioConfig.tempControllers[i].isActive, ioConfig.tempControllers[i].name);
-    
+  for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {    
     if (!ioConfig.tempControllers[i].isActive) continue;
     
     uint8_t index = 40 + i;
@@ -2726,8 +2721,6 @@ void handleGetControllers() {
         // Controller is running - use controller's process value and output
         ctrl["processValue"] = obj->value;  // Process value (temperature)
         ctrl["output"] = obj->valueCount > 0 ? obj->additionalValues[0] : 0.0f;  // Output %
-        log(LOG_DEBUG, false, "[API] Controller %d enabled: PV=%.1f, output=%.1f\n",
-            index, obj->value, obj->valueCount > 0 ? obj->additionalValues[0] : 0.0f);
       }
     }
     
@@ -2754,7 +2747,6 @@ void handleGetControllers() {
     }
   }
   
-  // Add pH Controller (index 43)
   if (ioConfig.phController.isActive) {
     uint8_t index = 43;
     JsonObject ctrl = controllers.createNestedObject();
@@ -2777,7 +2769,7 @@ void handleGetControllers() {
     
     if (obj && obj->valid && obj->lastUpdate > 0) {
       // Controller object exists - check if enabled
-      enabled = (obj->flags & 0x04) ? true : false;  // Bit 2 (IPC_SENSOR_FLAG_RUNNING) for enabled
+      enabled = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
       ctrl["enabled"] = enabled;
       ctrl["fault"] = (obj->flags & IPC_SENSOR_FLAG_FAULT) ? true : false;
       ctrl["message"] = obj->message;
@@ -2807,8 +2799,6 @@ void handleGetControllers() {
   
   String response;
   serializeJson(doc, response);
-  log(LOG_DEBUG, false, "[API] Returning %d controllers, JSON length: %d\n", 
-      controllers.size(), response.length());
   server.send(200, "application/json", response);
 }
 

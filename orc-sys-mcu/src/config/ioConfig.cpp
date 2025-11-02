@@ -428,6 +428,44 @@ bool loadIOConfig() {
     }
     
     // ========================================================================
+    // Parse pH Controller (Index 43)
+    // ========================================================================
+    JsonObject phCtrl = doc["ph_controller"];
+    if (phCtrl) {
+        ioConfig.phController.isActive = phCtrl["isActive"] | false;
+        strlcpy(ioConfig.phController.name, phCtrl["name"] | "pH Controller", 
+                sizeof(ioConfig.phController.name));
+        ioConfig.phController.enabled = phCtrl["enabled"] | false;
+        ioConfig.phController.showOnDashboard = phCtrl["showOnDashboard"] | false;
+        
+        ioConfig.phController.pvSourceIndex = phCtrl["pvSourceIndex"] | 0;
+        ioConfig.phController.setpoint = phCtrl["setpoint"] | 7.0f;
+        ioConfig.phController.deadband = phCtrl["deadband"] | 0.2f;
+        
+        // Acid dosing configuration
+        JsonObject acid = phCtrl["acidDosing"];
+        if (acid) {
+            ioConfig.phController.acidDosing.enabled = acid["enabled"] | false;
+            ioConfig.phController.acidDosing.outputType = acid["outputType"] | 0;
+            ioConfig.phController.acidDosing.outputIndex = acid["outputIndex"] | 21;
+            ioConfig.phController.acidDosing.motorPower = acid["motorPower"] | 50;
+            ioConfig.phController.acidDosing.dosingTime_ms = acid["dosingTime_ms"] | 1000;
+            ioConfig.phController.acidDosing.dosingInterval_ms = acid["dosingInterval_ms"] | 60000;
+        }
+        
+        // Alkaline dosing configuration
+        JsonObject alkaline = phCtrl["alkalineDosing"];
+        if (alkaline) {
+            ioConfig.phController.alkalineDosing.enabled = alkaline["enabled"] | false;
+            ioConfig.phController.alkalineDosing.outputType = alkaline["outputType"] | 0;
+            ioConfig.phController.alkalineDosing.outputIndex = alkaline["outputIndex"] | 22;
+            ioConfig.phController.alkalineDosing.motorPower = alkaline["motorPower"] | 50;
+            ioConfig.phController.alkalineDosing.dosingTime_ms = alkaline["dosingTime_ms"] | 1000;
+            ioConfig.phController.alkalineDosing.dosingInterval_ms = alkaline["dosingInterval_ms"] | 60000;
+        }
+    }
+    
+    // ========================================================================
     // Parse COM Ports
     // ========================================================================
     JsonArray comPortArray = doc["com_ports"];
@@ -645,6 +683,37 @@ void saveIOConfig() {
         ctrl["outputMin"] = ioConfig.tempControllers[i].outputMin;
         ctrl["outputMax"] = ioConfig.tempControllers[i].outputMax;
     }
+    
+    // ========================================================================
+    // Serialize pH Controller
+    // ========================================================================
+    JsonObject phCtrl = doc.createNestedObject("ph_controller");
+    phCtrl["isActive"] = ioConfig.phController.isActive;
+    phCtrl["name"] = ioConfig.phController.name;
+    phCtrl["enabled"] = ioConfig.phController.enabled;
+    phCtrl["showOnDashboard"] = ioConfig.phController.showOnDashboard;
+    
+    phCtrl["pvSourceIndex"] = ioConfig.phController.pvSourceIndex;
+    phCtrl["setpoint"] = ioConfig.phController.setpoint;
+    phCtrl["deadband"] = ioConfig.phController.deadband;
+    
+    // Acid dosing configuration
+    JsonObject acid = phCtrl.createNestedObject("acidDosing");
+    acid["enabled"] = ioConfig.phController.acidDosing.enabled;
+    acid["outputType"] = ioConfig.phController.acidDosing.outputType;
+    acid["outputIndex"] = ioConfig.phController.acidDosing.outputIndex;
+    acid["motorPower"] = ioConfig.phController.acidDosing.motorPower;
+    acid["dosingTime_ms"] = ioConfig.phController.acidDosing.dosingTime_ms;
+    acid["dosingInterval_ms"] = ioConfig.phController.acidDosing.dosingInterval_ms;
+    
+    // Alkaline dosing configuration
+    JsonObject alkaline = phCtrl.createNestedObject("alkalineDosing");
+    alkaline["enabled"] = ioConfig.phController.alkalineDosing.enabled;
+    alkaline["outputType"] = ioConfig.phController.alkalineDosing.outputType;
+    alkaline["outputIndex"] = ioConfig.phController.alkalineDosing.outputIndex;
+    alkaline["motorPower"] = ioConfig.phController.alkalineDosing.motorPower;
+    alkaline["dosingTime_ms"] = ioConfig.phController.alkalineDosing.dosingTime_ms;
+    alkaline["dosingInterval_ms"] = ioConfig.phController.alkalineDosing.dosingInterval_ms;
     
     // ========================================================================
     // Serialize COM Ports

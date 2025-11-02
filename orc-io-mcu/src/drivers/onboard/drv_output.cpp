@@ -124,6 +124,7 @@ void output_update(void) {
     if (heaterOutput[0].pwmEnabled) {
         // PWM Mode
         if (!heaterPWMEnabled) {
+            analogWrite(PIN_HEAT_OUT, 0);
             // Switching to PWM mode - enable TCC0
             TCC0->CTRLA.bit.ENABLE = 1;
             while (TCC0->SYNCBUSY.bit.ENABLE);

@@ -65,7 +65,8 @@ void pollSensors(void) {
   // Energy Monitors: Main Power (31), Heater Power (32)
   // Modbus Ports: (37-40)
   // Temperature Controllers: (40-42)
-  objectCache.requestBulkUpdate(0, 43);
+  // pH Controller: (43)
+  objectCache.requestBulkUpdate(0, 44);
   
   // Request device control objects (indices 50-69)
   // These provide control status for peripheral devices (setpoint, actual, connected, fault)
