@@ -2131,36 +2131,6 @@ void ipc_handle_config_ph_controller(const uint8_t *payload, uint16_t len) {
         return;
     }
     
-    // Validate dosing configuration - at least one must be enabled
-    if (!cfg->acidEnabled && !cfg->alkalineEnabled) {
-        ipc_sendError(IPC_ERR_PARAM_INVALID, "At least one dosing direction (acid or alkaline) must be enabled");
-        return;
-    }
-    
-    // Validate acid dosing output indices if enabled
-    if (cfg->acidEnabled) {
-        if (cfg->acidOutputType == 0 && (cfg->acidOutputIndex < 21 || cfg->acidOutputIndex > 25)) {
-            ipc_sendError(IPC_ERR_INDEX_INVALID, "Acid digital output index must be 21-25");
-            return;
-        }
-        if (cfg->acidOutputType == 1 && (cfg->acidOutputIndex < 27 || cfg->acidOutputIndex > 30)) {
-            ipc_sendError(IPC_ERR_INDEX_INVALID, "Acid DC motor index must be 27-30");
-            return;
-        }
-    }
-    
-    // Validate alkaline dosing output indices if enabled
-    if (cfg->alkalineEnabled) {
-        if (cfg->alkalineOutputType == 0 && (cfg->alkalineOutputIndex < 21 || cfg->alkalineOutputIndex > 25)) {
-            ipc_sendError(IPC_ERR_INDEX_INVALID, "Alkaline digital output index must be 21-25");
-            return;
-        }
-        if (cfg->alkalineOutputType == 1 && (cfg->alkalineOutputIndex < 27 || cfg->alkalineOutputIndex > 30)) {
-            ipc_sendError(IPC_ERR_INDEX_INVALID, "Alkaline DC motor index must be 27-30");
-            return;
-        }
-    }
-    
     bool success;
     
     if (!cfg->isActive) {
@@ -2172,7 +2142,39 @@ void ipc_handle_config_ph_controller(const uint8_t *payload, uint16_t len) {
             ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to delete pH controller");
         }
     } else {
-        // Create or update controller
+        // Create or update controller - validate configuration first
+        
+        // Validate dosing configuration - at least one must be enabled
+        if (!cfg->acidEnabled && !cfg->alkalineEnabled) {
+            ipc_sendError(IPC_ERR_PARAM_INVALID, "At least one dosing direction (acid or alkaline) must be enabled");
+            return;
+        }
+        
+        // Validate acid dosing output indices if enabled
+        if (cfg->acidEnabled) {
+            if (cfg->acidOutputType == 0 && (cfg->acidOutputIndex < 21 || cfg->acidOutputIndex > 25)) {
+                ipc_sendError(IPC_ERR_INDEX_INVALID, "Acid digital output index must be 21-25");
+                return;
+            }
+            if (cfg->acidOutputType == 1 && (cfg->acidOutputIndex < 27 || cfg->acidOutputIndex > 30)) {
+                ipc_sendError(IPC_ERR_INDEX_INVALID, "Acid DC motor index must be 27-30");
+                return;
+            }
+        }
+        
+        // Validate alkaline dosing output indices if enabled
+        if (cfg->alkalineEnabled) {
+            if (cfg->alkalineOutputType == 0 && (cfg->alkalineOutputIndex < 21 || cfg->alkalineOutputIndex > 25)) {
+                ipc_sendError(IPC_ERR_INDEX_INVALID, "Alkaline digital output index must be 21-25");
+                return;
+            }
+            if (cfg->alkalineOutputType == 1 && (cfg->alkalineOutputIndex < 27 || cfg->alkalineOutputIndex > 30)) {
+                ipc_sendError(IPC_ERR_INDEX_INVALID, "Alkaline DC motor index must be 27-30");
+                return;
+            }
+        }
+        
+        // Validation passed - create or update controller
         success = ControllerManager::createpHController(cfg);
         if (success) {
             Serial.printf("[IPC] ✓ pH Controller[%d]: %s, setpoint=%.2f, deadband=%.2f\n",

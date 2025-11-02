@@ -3375,6 +3375,31 @@ void handleDosepHAlkaline() {
   }
 }
 
+void handleDeletepHController() {
+  // Disable and mark inactive
+  ioConfig.phController.isActive = false;
+  ioConfig.phController.enabled = false;
+  memset(ioConfig.phController.name, 0, sizeof(ioConfig.phController.name));
+  
+  saveIOConfig();
+  
+  // Send IPC delete command to IO MCU
+  IPC_ConfigpHController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.index = 43;
+  cfg.isActive = false;  // This signals deletion
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "pH controller deleted and removed from IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller deleted\"}");
+  } else {
+    log(LOG_WARNING, false, "pH controller deleted from config but failed to remove from IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller deleted but IO MCU update failed\"}");
+  }
+}
+
 // ============================================================================
 // Device Control (Peripheral Devices like MFC, pH controllers)
 // ============================================================================
@@ -3454,7 +3479,10 @@ void setupWebServer()
   }
 
 
-  // ...existing code...
+  // Setup API endpoints that are defined in separate functions
+  setupNetworkAPI();
+  setupMqttAPI();
+  setupTimeAPI();
 
   // NEW: Comprehensive status endpoint for the UI
   server.on("/api/status/all", HTTP_GET, handleGetAllStatus);
@@ -3470,8 +3498,6 @@ void setupWebServer()
 
   // SD Card File Manager API endpoint
   server.on("/api/sd/list", HTTP_GET, handleSDListDirectory);
-
-  // ...existing code...
 
   // System reboot endpoint
   server.on("/api/system/reboot", HTTP_POST, []() {
@@ -3663,13 +3689,13 @@ void setupWebServer()
   server.on("/api/dcmotor/30/stop", HTTP_POST, []() { handleStopDCMotor(30); });
   
   // ============================================================================
-  // Temperature Controllers API Endpoints (indices 40-42)
+  // Temperature Controllers & pH Controller API Endpoints (indices 40-43)
   // ============================================================================
   
-  // Get all controllers status
+  // Get all controllers status (temp + pH)
   server.on("/api/controllers", HTTP_GET, handleGetControllers);
   
-  // Configuration endpoints
+  // Configuration endpoints (used by web UI)
   server.on("/api/config/tempcontroller/40", HTTP_GET, []() { handleGetTempControllerConfig(40); });
   server.on("/api/config/tempcontroller/41", HTTP_GET, []() { handleGetTempControllerConfig(41); });
   server.on("/api/config/tempcontroller/42", HTTP_GET, []() { handleGetTempControllerConfig(42); });
@@ -3678,7 +3704,10 @@ void setupWebServer()
   server.on("/api/config/tempcontroller/41", HTTP_POST, []() { handleSaveTempControllerConfig(41); });
   server.on("/api/config/tempcontroller/42", HTTP_POST, []() { handleSaveTempControllerConfig(42); });
   
-  // Runtime control endpoints (Phase 2 - stubs for now)
+  server.on("/api/config/phcontroller/43", HTTP_GET, handleGetpHControllerConfig);
+  server.on("/api/config/phcontroller/43", HTTP_POST, handleSavepHControllerConfig);
+  
+  // Temperature controller control endpoints (runtime actions)
   server.on("/api/controller/40/setpoint", HTTP_POST, []() { handleUpdateControllerSetpoint(40); });
   server.on("/api/controller/41/setpoint", HTTP_POST, []() { handleUpdateControllerSetpoint(41); });
   server.on("/api/controller/42/setpoint", HTTP_POST, []() { handleUpdateControllerSetpoint(42); });
@@ -3703,28 +3732,32 @@ void setupWebServer()
   server.on("/api/controller/41/autotune", HTTP_POST, []() { handleStartAutotune(41); });
   server.on("/api/controller/42/autotune", HTTP_POST, []() { handleStartAutotune(42); });
   
-  // pH Controller endpoints (Index 43)
-  server.on("/api/config/phcontroller/43", HTTP_GET, handleGetpHControllerConfig);
-  server.on("/api/config/phcontroller/43", HTTP_POST, handleSavepHControllerConfig);
-  
+  // pH controller control endpoints (runtime actions)
   server.on("/api/phcontroller/43/setpoint", HTTP_POST, handleUpdatepHSetpoint);
   server.on("/api/phcontroller/43/enable", HTTP_POST, handleEnablepHController);
   server.on("/api/phcontroller/43/disable", HTTP_POST, handleDisablepHController);
   server.on("/api/phcontroller/43/dose-acid", HTTP_POST, handleDosepHAcid);
   server.on("/api/phcontroller/43/dose-alkaline", HTTP_POST, handleDosepHAlkaline);
   
-  // Device Control (Peripheral Devices) - Control indices 50-69
-  // Format: /api/device/{controlIndex}/setpoint
-  //         /api/device/{controlIndex}/fault/reset
-  // These will be handled dynamically in onNotFound() to support all 20 control slots
+  // Note: RESTful controller endpoints are handled dynamically in onNotFound():
+  //   - GET    /api/controller/{40-43}     - Get controller config (REST)
+  //   - PUT    /api/controller/{40-43}     - Save controller config (REST)
+  //   - DELETE /api/controller/{40-43}     - Delete controller (REST)
+  //
+  // Both endpoint styles are supported:
+  //   1. Config endpoints: /api/config/tempcontroller/{40-42} (static, for backward compatibility)
+  //   2. REST endpoints: /api/controller/{40-43} (dynamic, cleaner URLs)
+  //   3. Control endpoints: /api/controller/{40-42}/{action} and /api/phcontroller/43/{action} (static)
   
-  // ...existing code...
-  // Setup API endpoints
-  setupNetworkAPI();
-  setupMqttAPI();
-  setupTimeAPI();
+  // ============================================================================
+  // Device Control API Endpoints (Peripheral Devices - Control indices 50-69)
+  // ============================================================================
+  
+  // Note: Device control endpoints are handled dynamically in onNotFound():
+  //   - POST /api/device/{50-69}/setpoint    - Set device setpoint
+  //   - POST /api/device/{50-69}/fault/reset - Reset device fault
 
-  // Handle dynamic device routes and static files
+  // Handle dynamic routes and static files
   server.onNotFound([]() {
     String uri = server.uri();
     Serial.printf("[WEB] onNotFound: %s (method: %d)\\n", uri.c_str(), server.method());
@@ -3813,23 +3846,42 @@ void setupWebServer()
       
       Serial.printf("[WEB] Controller API route detected: index=%d, indexStr='%s'\n", index, indexStr.c_str());
       
-      // Validate it's in the temperature controller range (40-42)
-      if ((index >= 40 && index < 40 + MAX_TEMP_CONTROLLERS) && indexStr.length() > 0) {
+      // Validate controller range: temp controllers (40-42) or pH controller (43)
+      if (((index >= 40 && index < 40 + MAX_TEMP_CONTROLLERS) || index == 43) && indexStr.length() > 0) {
         // Valid controller route - dispatch to appropriate handler
         HTTPMethod method = server.method();
         Serial.printf("[WEB] Dispatching to controller handler (method: %d)\n", method);
-        if (method == HTTP_GET) {
-          handleGetTempControllerConfig(index);
-          return;
-        } else if (method == HTTP_PUT) {
-          handleSaveTempControllerConfig(index);
-          return;
-        } else if (method == HTTP_DELETE) {
-          handleDeleteController(index);
-          return;
+        
+        if (index == 43) {
+          // pH Controller (index 43)
+          if (method == HTTP_GET) {
+            handleGetpHControllerConfig();
+            return;
+          } else if (method == HTTP_PUT) {
+            handleSavepHControllerConfig();
+            return;
+          } else if (method == HTTP_DELETE) {
+            handleDeletepHController();
+            return;
+          } else {
+            server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
+            return;
+          }
         } else {
-          server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
-          return;
+          // Temperature Controllers (40-42)
+          if (method == HTTP_GET) {
+            handleGetTempControllerConfig(index);
+            return;
+          } else if (method == HTTP_PUT) {
+            handleSaveTempControllerConfig(index);
+            return;
+          } else if (method == HTTP_DELETE) {
+            handleDeleteController(index);
+            return;
+          } else {
+            server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
+            return;
+          }
         }
       }
     }
