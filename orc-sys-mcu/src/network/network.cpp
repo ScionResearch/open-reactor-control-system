@@ -2673,14 +2673,14 @@ void handleStopDCMotor(uint8_t index) {
 }
 
 // ============================================================================
-// Temperature Controllers API (indices 40-42) - Phase 1
+// Controllers API (indices 40-49) - Phase 1
 // ============================================================================
 
 void handleGetControllers() {
   StaticJsonDocument<2048> doc;
   JsonArray controllers = doc.createNestedArray("controllers");
   
-  log(LOG_DEBUG, false, "[API] Loading controllers: checking %d slots\n", MAX_TEMP_CONTROLLERS);
+  log(LOG_DEBUG, false, "[API] Loading controllers: checking %d slots\n", MAX_CONTROLLERS);
   
   for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {
     log(LOG_DEBUG, false, "[API] Controller %d: isActive=%d, name='%s'\n", 
@@ -2751,6 +2751,57 @@ void handleGetControllers() {
       } else {
         ctrl["output"] = nullptr;
       }
+    }
+  }
+  
+  // Add pH Controller (index 43)
+  if (ioConfig.phController.isActive) {
+    uint8_t index = 43;
+    JsonObject ctrl = controllers.createNestedObject();
+    
+    ctrl["index"] = index;
+    ctrl["name"] = ioConfig.phController.name;
+    ctrl["showOnDashboard"] = ioConfig.phController.showOnDashboard;
+    ctrl["unit"] = "pH";  // pH units
+    ctrl["setpoint"] = ioConfig.phController.setpoint;
+    ctrl["controlMethod"] = 2;  // Use 2 for pH controller type
+    ctrl["deadband"] = ioConfig.phController.deadband;
+    
+    // Dosing configuration info
+    ctrl["acidEnabled"] = ioConfig.phController.acidDosing.enabled;
+    ctrl["alkalineEnabled"] = ioConfig.phController.alkalineDosing.enabled;
+    
+    // Get runtime values from object cache for controller status
+    ObjectCache::CachedObject* obj = objectCache.getObject(index);
+    bool enabled = false;
+    
+    if (obj && obj->valid && obj->lastUpdate > 0) {
+      // Controller object exists - check if enabled
+      enabled = (obj->flags & 0x04) ? true : false;  // Bit 2 (IPC_SENSOR_FLAG_RUNNING) for enabled
+      ctrl["enabled"] = enabled;
+      ctrl["fault"] = (obj->flags & IPC_SENSOR_FLAG_FAULT) ? true : false;
+      ctrl["message"] = obj->message;
+      
+      if (enabled) {
+        // Controller is running - use controller's process value and output
+        ctrl["processValue"] = obj->value;  // Process value (pH)
+        // additionalValues: [0]=setpoint, [1]=currentOutput (0=off, 1=acid, 2=alkaline)
+        ctrl["output"] = obj->valueCount > 1 ? obj->additionalValues[1] : 0.0f;  // Dosing state
+      }
+    }
+    
+    // If controller is disabled (or doesn't exist), read process value from source sensor
+    if (!enabled) {
+      uint8_t pvSourceIndex = ioConfig.phController.pvSourceIndex;
+      ObjectCache::CachedObject* sensorObj = objectCache.getObject(pvSourceIndex);
+      
+      if (sensorObj && sensorObj->valid && sensorObj->lastUpdate > 0) {
+        ctrl["processValue"] = sensorObj->value;  // Read from configured pH sensor
+      } else {
+        ctrl["processValue"] = nullptr;
+      }
+      
+      ctrl["output"] = 0;  // No dosing when disabled
     }
   }
   
@@ -3085,6 +3136,256 @@ void handleDeleteController(uint8_t index) {
 }
 
 // ============================================================================
+// pH Controller Configuration and Control (Index 43)
+// ============================================================================
+
+void handleGetpHControllerConfig() {
+  StaticJsonDocument<1024> doc;
+  
+  doc["index"] = 43;
+  doc["isActive"] = ioConfig.phController.isActive;
+  doc["name"] = ioConfig.phController.name;
+  doc["enabled"] = ioConfig.phController.enabled;
+  doc["showOnDashboard"] = ioConfig.phController.showOnDashboard;
+  doc["pvSourceIndex"] = ioConfig.phController.pvSourceIndex;
+  doc["setpoint"] = ioConfig.phController.setpoint;
+  doc["deadband"] = ioConfig.phController.deadband;
+  
+  // Acid dosing configuration
+  JsonObject acid = doc.createNestedObject("acidDosing");
+  acid["enabled"] = ioConfig.phController.acidDosing.enabled;
+  acid["outputType"] = ioConfig.phController.acidDosing.outputType;
+  acid["outputIndex"] = ioConfig.phController.acidDosing.outputIndex;
+  acid["motorPower"] = ioConfig.phController.acidDosing.motorPower;
+  acid["dosingTime_ms"] = ioConfig.phController.acidDosing.dosingTime_ms;
+  acid["dosingInterval_ms"] = ioConfig.phController.acidDosing.dosingInterval_ms;
+  
+  // Alkaline dosing configuration
+  JsonObject alkaline = doc.createNestedObject("alkalineDosing");
+  alkaline["enabled"] = ioConfig.phController.alkalineDosing.enabled;
+  alkaline["outputType"] = ioConfig.phController.alkalineDosing.outputType;
+  alkaline["outputIndex"] = ioConfig.phController.alkalineDosing.outputIndex;
+  alkaline["motorPower"] = ioConfig.phController.alkalineDosing.motorPower;
+  alkaline["dosingTime_ms"] = ioConfig.phController.alkalineDosing.dosingTime_ms;
+  alkaline["dosingInterval_ms"] = ioConfig.phController.alkalineDosing.dosingInterval_ms;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSavepHControllerConfig() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<1024> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  // Validate dosing configuration - at least one must be enabled
+  bool acidEnabled = doc["acidDosing"]["enabled"] | false;
+  bool alkalineEnabled = doc["alkalineDosing"]["enabled"] | false;
+  
+  if (!acidEnabled && !alkalineEnabled) {
+    server.send(400, "application/json", "{\"error\":\"At least one dosing direction must be enabled\"}");
+    return;
+  }
+  
+  // Update configuration
+  ioConfig.phController.isActive = doc["isActive"] | true;
+  strlcpy(ioConfig.phController.name, doc["name"] | "", sizeof(ioConfig.phController.name));
+  // DO NOT save enabled state - runtime only (avoid flash wear)
+  ioConfig.phController.enabled = false;
+  
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.phController.showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  ioConfig.phController.pvSourceIndex = doc["pvSourceIndex"] | 0;
+  ioConfig.phController.setpoint = doc["setpoint"] | 7.0f;
+  ioConfig.phController.deadband = doc["deadband"] | 0.2f;
+  
+  // Acid dosing configuration
+  JsonObject acid = doc["acidDosing"];
+  ioConfig.phController.acidDosing.enabled = acid["enabled"] | false;
+  ioConfig.phController.acidDosing.outputType = acid["outputType"] | 0;
+  ioConfig.phController.acidDosing.outputIndex = acid["outputIndex"] | 21;
+  ioConfig.phController.acidDosing.motorPower = acid["motorPower"] | 50;
+  ioConfig.phController.acidDosing.dosingTime_ms = acid["dosingTime_ms"] | 1000;
+  ioConfig.phController.acidDosing.dosingInterval_ms = acid["dosingInterval_ms"] | 60000;
+  
+  // Alkaline dosing configuration
+  JsonObject alkaline = doc["alkalineDosing"];
+  ioConfig.phController.alkalineDosing.enabled = alkaline["enabled"] | false;
+  ioConfig.phController.alkalineDosing.outputType = alkaline["outputType"] | 0;
+  ioConfig.phController.alkalineDosing.outputIndex = alkaline["outputIndex"] | 22;
+  ioConfig.phController.alkalineDosing.motorPower = alkaline["motorPower"] | 50;
+  ioConfig.phController.alkalineDosing.dosingTime_ms = alkaline["dosingTime_ms"] | 1000;
+  ioConfig.phController.alkalineDosing.dosingInterval_ms = alkaline["dosingInterval_ms"] | 60000;
+  
+  // Save configuration
+  saveIOConfig();
+  
+  // Send IPC config packet to IO MCU
+  IPC_ConfigpHController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  
+  cfg.index = 43;
+  cfg.isActive = ioConfig.phController.isActive;
+  strncpy(cfg.name, ioConfig.phController.name, sizeof(cfg.name) - 1);
+  cfg.enabled = ioConfig.phController.enabled;
+  cfg.pvSourceIndex = ioConfig.phController.pvSourceIndex;
+  cfg.setpoint = ioConfig.phController.setpoint;
+  cfg.deadband = ioConfig.phController.deadband;
+  
+  cfg.acidEnabled = ioConfig.phController.acidDosing.enabled;
+  cfg.acidOutputType = ioConfig.phController.acidDosing.outputType;
+  cfg.acidOutputIndex = ioConfig.phController.acidDosing.outputIndex;
+  cfg.acidMotorPower = ioConfig.phController.acidDosing.motorPower;
+  cfg.acidDosingTime_ms = ioConfig.phController.acidDosing.dosingTime_ms;
+  cfg.acidDosingInterval_ms = ioConfig.phController.acidDosing.dosingInterval_ms;
+  
+  cfg.alkalineEnabled = ioConfig.phController.alkalineDosing.enabled;
+  cfg.alkalineOutputType = ioConfig.phController.alkalineDosing.outputType;
+  cfg.alkalineOutputIndex = ioConfig.phController.alkalineDosing.outputIndex;
+  cfg.alkalineMotorPower = ioConfig.phController.alkalineDosing.motorPower;
+  cfg.alkalineDosingTime_ms = ioConfig.phController.alkalineDosing.dosingTime_ms;
+  cfg.alkalineDosingInterval_ms = ioConfig.phController.alkalineDosing.dosingInterval_ms;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Saved and sent pH controller configuration to IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved and applied\"}");
+  } else {
+    log(LOG_WARNING, false, "Saved pH controller config but failed to send to IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved but IO MCU update failed\"}");
+  }
+}
+
+void handleUpdatepHSetpoint() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  float setpoint = doc["setpoint"] | ioConfig.phController.setpoint;
+  
+  // Validate pH range
+  if (setpoint < 0.0f || setpoint > 14.0f) {
+    server.send(400, "application/json", "{\"error\":\"pH must be between 0 and 14\"}");
+    return;
+  }
+  
+  // Send IPC command to IO MCU (DO NOT save to config - avoid flash wear)
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_SET_SETPOINT;
+  cmd.setpoint = setpoint;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    // Update in-memory config (DO NOT save to flash)
+    ioConfig.phController.setpoint = setpoint;
+    
+    log(LOG_INFO, false, "pH controller setpoint updated to %.2f\n", setpoint);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Setpoint updated\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send pH setpoint command\n");
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleEnablepHController() {
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_ENABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "pH controller enabled\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller enabled\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send pH enable command\n");
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleDisablepHController() {
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_DISABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "pH controller disabled\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller disabled\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send pH disable command\n");
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleDosepHAcid() {
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_DOSE_ACID;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Manual acid dose command sent\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Acid dose started\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send acid dose command\n");
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleDosepHAlkaline() {
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_DOSE_ALKALINE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Manual alkaline dose command sent\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Alkaline dose started\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send alkaline dose command\n");
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+// ============================================================================
 // Device Control (Peripheral Devices like MFC, pH controllers)
 // ============================================================================
 
@@ -3411,6 +3712,16 @@ void setupWebServer()
   server.on("/api/controller/40/autotune", HTTP_POST, []() { handleStartAutotune(40); });
   server.on("/api/controller/41/autotune", HTTP_POST, []() { handleStartAutotune(41); });
   server.on("/api/controller/42/autotune", HTTP_POST, []() { handleStartAutotune(42); });
+  
+  // pH Controller endpoints (Index 43)
+  server.on("/api/config/phcontroller/43", HTTP_GET, handleGetpHControllerConfig);
+  server.on("/api/config/phcontroller/43", HTTP_POST, handleSavepHControllerConfig);
+  
+  server.on("/api/phcontroller/43/setpoint", HTTP_POST, handleUpdatepHSetpoint);
+  server.on("/api/phcontroller/43/enable", HTTP_POST, handleEnablepHController);
+  server.on("/api/phcontroller/43/disable", HTTP_POST, handleDisablepHController);
+  server.on("/api/phcontroller/43/dose-acid", HTTP_POST, handleDosepHAcid);
+  server.on("/api/phcontroller/43/dose-alkaline", HTTP_POST, handleDosepHAlkaline);
   
   // Device Control (Peripheral Devices) - Control indices 50-69
   // Format: /api/device/{controlIndex}/setpoint

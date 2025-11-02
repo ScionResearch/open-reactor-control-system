@@ -170,14 +170,6 @@ bool ipc_sendSensorBatch(const uint16_t *indices, uint8_t count);
 bool ipc_sendFault(uint16_t index, uint8_t severity, const char *message);
 
 /**
- * @brief Send control acknowledgment (legacy)
- * @param index Object index
- * @param success Success status
- * @param message Response message
- */
-bool ipc_sendControlAck(uint16_t index, bool success, const char *message);
-
-/**
  * @brief Send enhanced control acknowledgment with error codes
  * @param index Object index
  * @param objectType Object type
@@ -186,7 +178,7 @@ bool ipc_sendControlAck(uint16_t index, bool success, const char *message);
  * @param errorCode Error code if failed
  * @param message Response message
  */
-bool ipc_sendControlAck_v2(uint16_t index, uint8_t objectType, uint8_t command,
+bool ipc_sendControlAck(uint16_t index, uint8_t objectType, uint8_t command,
                           bool success, uint8_t errorCode, const char *message);
 
 /**
@@ -228,6 +220,7 @@ void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_temp_controller_control(const uint8_t *payload, uint16_t len);
+void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_control_read(const uint8_t *payload, uint16_t len);
 void ipc_handle_device_create(const uint8_t *payload, uint16_t len);
@@ -243,6 +236,7 @@ void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_dcmotor(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_comport(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_temp_controller(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_ph_controller(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_pressure_ctrl(const uint8_t *payload, uint16_t len);
 
 // ============================================================================

@@ -1,4 +1,5 @@
 #include "controller_manager.h"
+#include "ctrl_ph.h"
 #include "../sys_init.h"
 #include "../drivers/onboard/drv_output.h"
 
@@ -9,6 +10,7 @@ extern int numObjects;
 
 // Static member initialization
 ManagedController ControllerManager::controllers[MAX_TEMP_CONTROLLERS];
+ManagedpHController ControllerManager::phController;
 bool ControllerManager::initialized = false;
 
 // ============================================================================
@@ -356,6 +358,189 @@ bool ControllerManager::stopAutotune(uint8_t index) {
     
     ctrl->controllerInstance->stopAutotune();
     return true;
+}
+
+// ============================================================================
+// pH CONTROLLER FUNCTIONS (Index 43)
+// ============================================================================
+
+bool ControllerManager::createpHController(const IPC_ConfigpHController_t* config) {
+    if (config->index != 43) {
+        Serial.printf("[CTRL MGR] pH controller must use index 43\n");
+        return false;
+    }
+    
+    // Delete existing controller if present
+    if (phController.active) {
+        deletepHController();
+    }
+    
+    // Allocate control object
+    pHControl_t* control = new pHControl_t();
+    if (control == nullptr) {
+        Serial.println("[CTRL MGR] Failed to allocate pH control object");
+        return false;
+    }
+    
+    // Initialize control object
+    memset(control, 0, sizeof(pHControl_t));
+    control->sensorIndex = config->pvSourceIndex;
+    control->enabled = config->enabled;
+    control->setpoint = config->setpoint;
+    control->deadband = config->deadband;
+    
+    // Acid dosing configuration
+    control->acidEnabled = config->acidEnabled;
+    control->acidOutputType = config->acidOutputType;
+    control->acidOutputIndex = config->acidOutputIndex;
+    control->acidMotorPower = config->acidMotorPower;
+    control->acidDosingTime_ms = config->acidDosingTime_ms;
+    control->acidDosingInterval_ms = config->acidDosingInterval_ms;
+    control->lastAcidDoseTime = 0;
+    
+    // Alkaline dosing configuration
+    control->alkalineEnabled = config->alkalineEnabled;
+    control->alkalineOutputType = config->alkalineOutputType;
+    control->alkalineOutputIndex = config->alkalineOutputIndex;
+    control->alkalineMotorPower = config->alkalineMotorPower;
+    control->alkalineDosingTime_ms = config->alkalineDosingTime_ms;
+    control->alkalineDosingInterval_ms = config->alkalineDosingInterval_ms;
+    control->lastAlkalineDoseTime = 0;
+    
+    // Create controller instance
+    pHController* controller = new pHController(control);
+    if (controller == nullptr) {
+        Serial.println("[CTRL MGR] Failed to create pH controller instance");
+        delete control;
+        return false;
+    }
+    
+    // Register in object index
+    if (config->index >= MAX_NUM_OBJECTS) {
+        Serial.println("[CTRL MGR] pH controller index out of range");
+        delete controller;
+        delete control;
+        return false;
+    }
+    
+    objIndex[config->index].valid = true;
+    objIndex[config->index].type = OBJ_T_PH_CONTROL;
+    objIndex[config->index].obj = control;
+    strncpy(objIndex[config->index].name, config->name, sizeof(objIndex[config->index].name) - 1);
+    
+    // Create scheduler task (100ms = 10Hz)
+    auto taskWrapper = []() {
+        if (ControllerManager::phController.controllerInstance) {
+            ControllerManager::phController.controllerInstance->update();
+        }
+    };
+    
+    ScheduledTask* task = tasks.addTask(taskWrapper, 100);
+    if (task == nullptr) {
+        Serial.println("[CTRL MGR] Failed to create pH controller task");
+        objIndex[config->index].valid = false;
+        delete controller;
+        delete control;
+        return false;
+    }
+    
+    // Store in managed controller
+    phController.index = config->index;
+    phController.controllerInstance = controller;
+    phController.controlObject = control;
+    phController.updateTask = task;
+    phController.active = true;
+    
+    Serial.printf("[CTRL MGR] Created pH controller at index %d\n", config->index);
+    return true;
+}
+
+bool ControllerManager::deletepHController() {
+    if (!phController.active) {
+        return false;
+    }
+    
+    // Remove scheduler task
+    if (phController.updateTask != nullptr) {
+        tasks.removeTask(phController.updateTask);
+        phController.updateTask = nullptr;
+    }
+    
+    // Delete controller instance
+    if (phController.controllerInstance != nullptr) {
+        delete phController.controllerInstance;
+        phController.controllerInstance = nullptr;
+    }
+    
+    // Delete control object
+    if (phController.controlObject != nullptr) {
+        delete phController.controlObject;
+        phController.controlObject = nullptr;
+    }
+    
+    // Unregister from object index
+    if (phController.index < MAX_NUM_OBJECTS) {
+        objIndex[phController.index].valid = false;
+        objIndex[phController.index].obj = nullptr;
+        objIndex[phController.index].name[0] = '\0';
+    }
+    
+    phController.active = false;
+    phController.index = 0;
+    
+    Serial.println("[CTRL MGR] Deleted pH controller");
+    return true;
+}
+
+bool ControllerManager::configurepHController(const IPC_ConfigpHController_t* config) {
+    // For now, recreate the controller
+    // Future optimization: update in-place for parameter changes
+    return createpHController(config);
+}
+
+bool ControllerManager::setpHSetpoint(float setpoint) {
+    if (!phController.active || phController.controllerInstance == nullptr) {
+        return false;
+    }
+    
+    phController.controllerInstance->setSetpoint(setpoint);
+    return true;
+}
+
+bool ControllerManager::enablepHController() {
+    if (!phController.active || phController.controlObject == nullptr) {
+        return false;
+    }
+    
+    phController.controlObject->enabled = true;
+    Serial.println("[CTRL MGR] pH controller enabled");
+    return true;
+}
+
+bool ControllerManager::disablepHController() {
+    if (!phController.active || phController.controlObject == nullptr) {
+        return false;
+    }
+    
+    phController.controlObject->enabled = false;
+    Serial.println("[CTRL MGR] pH controller disabled");
+    return true;
+}
+
+bool ControllerManager::dosepHAcid() {
+    if (!phController.active || phController.controllerInstance == nullptr) {
+        return false;
+    }
+    
+    return phController.controllerInstance->doseAcid();
+}
+
+bool ControllerManager::dosepHAlkaline() {
+    if (!phController.active || phController.controllerInstance == nullptr) {
+        return false;
+    }
+    
+    return phController.controllerInstance->doseAlkaline();
 }
 
 // ============================================================================

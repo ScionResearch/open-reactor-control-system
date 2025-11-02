@@ -104,6 +104,10 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             ipc_handle_config_temp_controller(payload, len);
             break;
             
+        case IPC_MSG_CONFIG_PH_CONTROLLER:
+            ipc_handle_config_ph_controller(payload, len);
+            break;
+            
         case IPC_MSG_CONFIG_PRESSURE_CTRL:
             ipc_handle_config_pressure_ctrl(payload, len);
             break;
@@ -599,6 +603,30 @@ bool ipc_sendSensorData(uint16_t index) {
             break;
         }
         
+        case OBJ_T_PH_CONTROL: {
+            pHControl_t *ctrl = (pHControl_t*)obj;
+            data.value = ctrl->currentpH;  // Process value (pH)
+            strncpy(data.unit, "pH", sizeof(data.unit) - 1);
+            
+            // Flags
+            if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (ctrl->enabled) data.flags |= IPC_SENSOR_FLAG_RUNNING;  // Reuse running flag for enabled
+            
+            if (ctrl->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, ctrl->message, sizeof(data.message) - 1);
+                ctrl->newMessage = false;
+            }
+            
+            // Add setpoint and output state as additional values
+            data.valueCount = 2;
+            data.additionalValues[0] = ctrl->setpoint;        // Target pH
+            data.additionalValues[1] = ctrl->currentOutput;   // 0=off, 1=acid, 2=alkaline
+            strncpy(data.additionalUnits[0], "pH", sizeof(data.additionalUnits[0]) - 1);
+            strncpy(data.additionalUnits[1], "", sizeof(data.additionalUnits[1]) - 1);
+            break;
+        }
+        
         case OBJ_T_VOLTAGE_SENSOR: {
             VoltageSensor_t *sensor = (VoltageSensor_t*)obj;
             data.value = sensor->voltage;
@@ -752,13 +780,13 @@ void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
     
     // Validate index
     if (index >= MAX_NUM_OBJECTS || !objIndex[index].valid) {
-        ipc_sendControlAck_v2(index, objectType, 0, false, CTRL_ERR_INVALID_INDEX, "Invalid object index");
+        ipc_sendControlAck(index, objectType, 0, false, CTRL_ERR_INVALID_INDEX, "Invalid object index");
         return;
     }
     
     // Verify type matches
     if (objIndex[index].type != objectType) {
-        ipc_sendControlAck_v2(index, objectType, 0, false, CTRL_ERR_TYPE_MISMATCH, "Object type mismatch");
+        ipc_sendControlAck(index, objectType, 0, false, CTRL_ERR_TYPE_MISMATCH, "Object type mismatch");
         return;
     }
     
@@ -782,6 +810,10 @@ void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
             
         case OBJ_T_TEMPERATURE_CONTROL:
             ipc_handle_temp_controller_control(payload, len);
+            break;
+            
+        case OBJ_T_PH_CONTROL:
+            ipc_handle_ph_controller_control(payload, len);
             break;
             
         default:
@@ -817,14 +849,14 @@ void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len) {
     
     // Validate index range (21-25)
     if (cmd->index < 21 || cmd->index > 25) {
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false, 
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false, 
                             CTRL_ERR_INVALID_INDEX, "Index out of range for digital output");
         return;
     }
     
     DigitalOutput_t *output = (DigitalOutput_t*)objIndex[cmd->index].obj;
     if (!output) {
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Output object not found");
         return;
     }
@@ -869,7 +901,7 @@ void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success,
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success,
                         success ? CTRL_ERR_NONE : CTRL_ERR_INVALID_CMD, message);
 }
 
@@ -890,7 +922,7 @@ void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len) {
     // Validate index range (8-9)
     if (cmd->index < 8 || cmd->index > 9) {
         Serial.printf("[DAC] ERROR: Index %d out of range\n", cmd->index);
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false, 
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false, 
                             CTRL_ERR_INVALID_INDEX, "Index out of range for analog output");
         return;
     }
@@ -900,7 +932,7 @@ void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len) {
                  cmd->index, output, objIndex[cmd->index].valid);
     if (!output) {
         Serial.printf("[DAC] ERROR: Object not found at index %d\n", cmd->index);
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Output object not found");
         return;
     }
@@ -931,7 +963,7 @@ void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success,
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success,
                         success ? CTRL_ERR_NONE : CTRL_ERR_INVALID_CMD, message);
 }
 
@@ -949,14 +981,14 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
     
     // Validate index (must be 26)
     if (cmd->index != 26) {
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Invalid stepper motor index");
         return;
     }
     
     StepperDevice_t *stepper = (StepperDevice_t*)objIndex[26].obj;
     if (!stepper) {
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Stepper object not found");
         return;
     }
@@ -1052,7 +1084,7 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 // DC Motor Control Handler
@@ -1066,7 +1098,7 @@ void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
     
     // Validate index range (27-30)
     if (cmd->index < 27 || cmd->index > 30) {
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Invalid DC motor index");
         return;
     }
@@ -1074,7 +1106,7 @@ void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
     uint8_t motorNum = cmd->index - 27;
     MotorDevice_t *motor = (MotorDevice_t*)objIndex[cmd->index].obj;
     if (!motor) {
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Motor object not found");
         return;
     }
@@ -1165,7 +1197,7 @@ void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 // Temperature Controller Control Handler
@@ -1179,7 +1211,7 @@ void ipc_handle_temp_controller_control(const uint8_t *payload, uint16_t len) {
     
     // Validate index range (40-42)
     if (cmd->index < 40 || cmd->index >= 40 + MAX_TEMP_CONTROLLERS) {
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Invalid controller index");
         return;
     }
@@ -1246,7 +1278,7 @@ void ipc_handle_temp_controller_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 void ipc_handle_control_read(const uint8_t *payload, uint16_t len) {
@@ -1262,7 +1294,7 @@ void ipc_handle_control_read(const uint8_t *payload, uint16_t len) {
 }
 
 // Enhanced acknowledgment with error codes (for output control)
-bool ipc_sendControlAck_v2(uint16_t index, uint8_t objectType, uint8_t command,
+bool ipc_sendControlAck(uint16_t index, uint8_t objectType, uint8_t command,
                           bool success, uint8_t errorCode, const char *message) {
     IPC_ControlAck_t ack;
     ack.index = index;
@@ -1274,12 +1306,6 @@ bool ipc_sendControlAck_v2(uint16_t index, uint8_t objectType, uint8_t command,
     ack.message[sizeof(ack.message) - 1] = '\0';
     
     return ipc_sendPacket(IPC_MSG_CONTROL_ACK, (uint8_t*)&ack, sizeof(ack));
-}
-
-// Legacy acknowledgment (for control loops - backward compatible)
-bool ipc_sendControlAck(uint16_t index, bool success, const char *message) {
-    return ipc_sendControlAck_v2(index, 0, 0, success, 
-                                success ? CTRL_ERR_NONE : CTRL_ERR_DRIVER_FAULT, message);
 }
 
 // ============================================================================
@@ -1410,7 +1436,7 @@ void ipc_handle_device_control(const uint8_t *payload, uint16_t len) {
     // Validate control object index (50-69)
     if (cmd->index < 50 || cmd->index >= 70) {
         Serial.printf("[IPC] ERROR: Invalid control index %d (must be 50-69)\n", cmd->index);
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false, 
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false, 
                             CTRL_ERR_INVALID_INDEX, "Control index out of range");
         return;
     }
@@ -1418,7 +1444,7 @@ void ipc_handle_device_control(const uint8_t *payload, uint16_t len) {
     // Check object is valid and is a device control object
     if (!objIndex[cmd->index].valid || objIndex[cmd->index].type != OBJ_T_DEVICE_CONTROL) {
         Serial.printf("[IPC] ERROR: Index %d is not a valid device control object\n", cmd->index);
-        ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_TYPE_MISMATCH, "Not a device control object");
         return;
     }
@@ -1533,8 +1559,7 @@ void ipc_handle_device_control(const uint8_t *payload, uint16_t len) {
     }
     
     // Send acknowledgment
-    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, 
-                         success, errorCode, message);
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 bool ipc_sendDeviceStatus(uint8_t startIndex, bool active, bool fault,
@@ -2075,4 +2100,183 @@ void ipc_handle_config_pressure_ctrl(const uint8_t *payload, uint16_t len) {
     
     Serial.printf("[IPC] ✓ Pressure Controller[%d]: scale=%.6f, offset=%.2f, unit=%s, DAC=%d\n",
                  cfg->controlIndex, cfg->scale, cfg->offset, cfg->unit, cfg->dacIndex);
+}
+
+// ============================================================================
+// pH CONTROLLER HANDLERS
+// ============================================================================
+
+/**
+ * @brief Handle pH controller configuration message
+ * 
+ * Creates, updates, or deletes pH controller instance (index 43).
+ * Uses ControllerManager to manage lifecycle and registration.
+ */
+void ipc_handle_config_ph_controller(const uint8_t *payload, uint16_t len) {
+    Serial.printf("[IPC] pH controller config: received %d bytes, expected %d bytes\n", 
+                  len, sizeof(IPC_ConfigpHController_t));
+    
+    if (len != sizeof(IPC_ConfigpHController_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid pH controller config message size");
+        return;
+    }
+    
+    const IPC_ConfigpHController_t *cfg = (const IPC_ConfigpHController_t*)payload;
+    
+    // Validate controller index (must be 43)
+    if (cfg->index != 43) {
+        char errMsg[100];
+        snprintf(errMsg, sizeof(errMsg), "Invalid pH controller index %d (must be 43)", cfg->index);
+        ipc_sendError(IPC_ERR_INDEX_INVALID, errMsg);
+        return;
+    }
+    
+    // Validate dosing configuration - at least one must be enabled
+    if (!cfg->acidEnabled && !cfg->alkalineEnabled) {
+        ipc_sendError(IPC_ERR_PARAM_INVALID, "At least one dosing direction (acid or alkaline) must be enabled");
+        return;
+    }
+    
+    // Validate acid dosing output indices if enabled
+    if (cfg->acidEnabled) {
+        if (cfg->acidOutputType == 0 && (cfg->acidOutputIndex < 21 || cfg->acidOutputIndex > 25)) {
+            ipc_sendError(IPC_ERR_INDEX_INVALID, "Acid digital output index must be 21-25");
+            return;
+        }
+        if (cfg->acidOutputType == 1 && (cfg->acidOutputIndex < 27 || cfg->acidOutputIndex > 30)) {
+            ipc_sendError(IPC_ERR_INDEX_INVALID, "Acid DC motor index must be 27-30");
+            return;
+        }
+    }
+    
+    // Validate alkaline dosing output indices if enabled
+    if (cfg->alkalineEnabled) {
+        if (cfg->alkalineOutputType == 0 && (cfg->alkalineOutputIndex < 21 || cfg->alkalineOutputIndex > 25)) {
+            ipc_sendError(IPC_ERR_INDEX_INVALID, "Alkaline digital output index must be 21-25");
+            return;
+        }
+        if (cfg->alkalineOutputType == 1 && (cfg->alkalineOutputIndex < 27 || cfg->alkalineOutputIndex > 30)) {
+            ipc_sendError(IPC_ERR_INDEX_INVALID, "Alkaline DC motor index must be 27-30");
+            return;
+        }
+    }
+    
+    bool success;
+    
+    if (!cfg->isActive) {
+        // Delete controller
+        success = ControllerManager::deletepHController();
+        if (success) {
+            Serial.printf("[IPC] ✓ pH Controller deleted\n");
+        } else {
+            ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to delete pH controller");
+        }
+    } else {
+        // Create or update controller
+        success = ControllerManager::createpHController(cfg);
+        if (success) {
+            Serial.printf("[IPC] ✓ pH Controller[%d]: %s, setpoint=%.2f, deadband=%.2f\n",
+                         cfg->index, cfg->name, cfg->setpoint, cfg->deadband);
+        } else {
+            ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to create/update pH controller");
+        }
+    }
+}
+
+/**
+ * @brief Handle pH controller runtime control message
+ * 
+ * Processes runtime commands for pH controller: setpoint, enable, disable, manual dosing
+ */
+void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_pHControllerControl_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid pH controller control message size");
+        return;
+    }
+    
+    const IPC_pHControllerControl_t *cmd = (const IPC_pHControllerControl_t*)payload;
+    
+    // Validate index
+    if (cmd->index != 43) {
+        char errMsg[100];
+        snprintf(errMsg, sizeof(errMsg), "Invalid pH controller index %d (must be 43)", cmd->index);
+        ipc_sendError(IPC_ERR_INDEX_INVALID, errMsg);
+        return;
+    }
+    
+    // Validate object type
+    if (cmd->objectType != OBJ_T_PH_CONTROL) {
+        ipc_sendError(IPC_ERR_TYPE_MISMATCH, "Object type mismatch");
+        return;
+    }
+    
+    bool success = false;
+    char message[128] = "";
+    uint8_t errorCode = CTRL_ERR_NONE;
+    
+    switch (cmd->command) {
+        case PH_CMD_SET_SETPOINT:
+            if (cmd->setpoint >= 0.0f && cmd->setpoint <= 14.0f) {
+                success = ControllerManager::setpHSetpoint(cmd->setpoint);
+                if (success) {
+                    snprintf(message, sizeof(message), "Setpoint updated to %.2f", cmd->setpoint);
+                    Serial.printf("[pH CTRL] Setpoint set to %.2f\n", cmd->setpoint);
+                } else {
+                    strcpy(message, "Failed to update setpoint");
+                    errorCode = IPC_ERR_DEVICE_FAIL;
+                }
+            } else {
+                strcpy(message, "Setpoint out of range (0-14 pH)");
+                errorCode = CTRL_ERR_OUT_OF_RANGE;
+            }
+            break;
+            
+        case PH_CMD_ENABLE:
+            success = ControllerManager::enablepHController();
+            if (success) {
+                strcpy(message, "pH controller enabled");
+            } else {
+                strcpy(message, "Failed to enable controller");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case PH_CMD_DISABLE:
+            success = ControllerManager::disablepHController();
+            if (success) {
+                strcpy(message, "pH controller disabled");
+            } else {
+                strcpy(message, "Failed to disable controller");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case PH_CMD_DOSE_ACID:
+            success = ControllerManager::dosepHAcid();
+            if (success) {
+                strcpy(message, "Manual acid dose started");
+            } else {
+                strcpy(message, "Failed to start acid dose");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case PH_CMD_DOSE_ALKALINE:
+            success = ControllerManager::dosepHAlkaline();
+            if (success) {
+                strcpy(message, "Manual alkaline dose started");
+            } else {
+                strcpy(message, "Failed to start alkaline dose");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        default:
+            strcpy(message, "Invalid command");
+            errorCode = CTRL_ERR_INVALID_CMD;
+            break;
+    }
+    
+    // Send acknowledgment
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }

@@ -5448,7 +5448,11 @@ function updateControllerCard(ctrl) {
         const outputText = ctrl.output !== null 
             ? (ctrl.controlMethod === 0 
                 ? (ctrl.output > 0 ? 'ON' : 'OFF')
-                : ctrl.output.toFixed(0) + '%')
+                : ctrl.controlMethod === 1
+                ? ctrl.output.toFixed(0) + '%'
+                : (ctrl.output === 0 ? 'OFF' 
+                   : ctrl.output === 1 ? 'DOSING ACID' 
+                   : 'DOSING ALKALINE'))
             : '--';
         processValueDisplays[2].textContent = outputText;
     }
@@ -5519,7 +5523,7 @@ function createControllerCard(ctrl) {
     card.innerHTML = `
         <div class="output-header">
             <div class="output-header-left">
-                <span class="output-name">[${ctrl.index}] ${ctrl.name}</span>
+                <span class="output-name">${ctrl.name}</span>
             </div>
             <div class="output-header-right">
                 <div class="device-status ${statusClass}">${statusText}</div>
@@ -5546,19 +5550,25 @@ function createControllerCard(ctrl) {
                 <div class="controller-value-display">${
                     ctrl.output !== null 
                         ? (ctrl.controlMethod === 0 
-                            ? (ctrl.output > 0 ? 'ON' : 'OFF')  // On/Off mode: show state
-                            : ctrl.output.toFixed(0) + '%')      // PID mode: show percentage
+                            ? (ctrl.output > 0 ? 'ON' : 'OFF')          // On/Off mode: show state
+                            : ctrl.controlMethod === 1
+                            ? ctrl.output.toFixed(0) + '%'              // PID mode: show percentage
+                            : (ctrl.output === 0 ? 'OFF' 
+                               : ctrl.output === 1 ? 'DOSING ACID' 
+                               : 'DOSING ALKALINE'))                    // pH mode: show dosing state
                         : '--'
                 }</div>
             </div>
         </div>
         
         <div class="controller-info-row">
-            <span><strong>Mode:</strong> ${ctrl.controlMethod === 0 ? 'On/Off' : 'PID'}</span>
+            <span><strong>Mode:</strong> ${ctrl.controlMethod === 0 ? 'On/Off' : ctrl.controlMethod === 1 ? 'PID' : 'pH Dosing'}</span>
             ${ctrl.controlMethod === 1 ? `
                 <span id="ctrl-gains-${ctrl.index}"><strong>Gains:</strong> P=${ctrl.kP.toFixed(2)}, I=${ctrl.kI.toFixed(2)}, D=${ctrl.kD.toFixed(2)}</span>
+            ` : ctrl.controlMethod === 2 ? `
+                <span><strong>Deadband:</strong> ±${ctrl.deadband.toFixed(2)}${ctrl.unit}</span>
             ` : `
-                <span><strong>Hysteresis:</strong> ${ctrl.hysteresis}${ctrl.unit}</span>
+                <span><strong>Hysteresis:</strong> ${ctrl.hysteresis.toFixed(2)}${ctrl.unit}</span>
             `}
         </div>
         
@@ -5596,6 +5606,19 @@ function createControllerCard(ctrl) {
                         ${autotuneJustCompleted.get(ctrl.index) ? '' : 'disabled'}>
                     Save PID Values
                 </button>
+            ` : ctrl.controlMethod === 2 ? `
+                ${ctrl.acidEnabled ? `
+                    <button class="output-btn output-btn-warning" 
+                            onclick="dosepHAcid(${ctrl.index})">
+                        Dose Acid
+                    </button>
+                ` : ''}
+                ${ctrl.alkalineEnabled ? `
+                    <button class="output-btn output-btn-info" 
+                            onclick="dosepHAlkaline(${ctrl.index})">
+                        Dose Alkaline
+                    </button>
+                ` : ''}
             ` : ''}
         </div>
     `;
@@ -5647,7 +5670,7 @@ async function updateSensorOptions() {
     console.log('[CONTROLLERS] Selected type:', selectedControllerType?.name);
     
     // Load sensors and outputs
-    const sensors = await loadAvailableSensors();
+    const sensors = await loadTempSensors();
     const outputs = await loadAvailableOutputs();
     
     // Check for available slots
@@ -5670,63 +5693,70 @@ async function updateSensorOptions() {
     const configForm = document.querySelector('#addControllerModal .config-form');
     const expandedDiv = document.createElement('div');
     expandedDiv.id = 'controllerExpandedFields';
-    expandedDiv.innerHTML = `
-        <hr style="margin: 20px 0; border: none; border-top: 1px solid #dee2e6;">
-        
-        <div class="form-group">
-            <label for="ctrlName">Name:</label>
-            <input type="text" id="ctrlName" value="${selectedControllerType.name} ${availableIndices[0]}" maxlength="39">
-        </div>
-        
-        <div class="form-group">
-            <label>
-                <input type="checkbox" id="ctrlShowDashboard">
-                Show on Dashboard
-            </label>
-        </div>
-        
-        <div class="form-group">
-            <label for="ctrlTempSensor">Temperature Sensor:</label>
-            <select id="ctrlTempSensor">
-                <option value="">-- Select Sensor --</option>
-                ${sensors.map(s => `<option value="${s.index}">${s.name}</option>`).join('')}
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="ctrlOutput">Heater Output:</label>
-            <select id="ctrlOutput">
-                <option value="">-- Select Output --</option>
-                ${outputs.map(o => `<option value="${o.index}">${o.name}</option>`).join('')}
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="ctrlMode">Control Mode:</label>
-            <select id="ctrlMode" onchange="toggleControlModeFields()">
-                <option value="0">On/Off</option>
-                <option value="1">PID</option>
-            </select>
-        </div>
-        
-        <div id="onOffParams">
+    
+    // Render appropriate form based on controller type
+    if (selectedControllerType.value === 1) {
+        // pH Controller
+        await renderpHAddForm(expandedDiv, sensors, outputs, availableIndices[0]);
+    } else {
+        // Temperature Controller
+        expandedDiv.innerHTML = `
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #dee2e6;">
+            
             <div class="form-group">
-                <label for="ctrlHysteresis">Hysteresis (°C):</label>
-                <input type="number" id="ctrlHysteresis" value="0.5" step="0.1" min="0.1">
+                <label for="ctrlName">Name:</label>
+                <input type="text" id="ctrlName" value="${selectedControllerType.name} ${availableIndices[0]}" maxlength="39">
             </div>
-        </div>
-        
-        <div id="pidParams" style="display: none;">
+            
             <div class="form-group">
-                <label for="ctrlKp">Proportional Gain (kP):</label>
-                <input type="number" id="ctrlKp" value="2.0" step="0.1">
+                <label>
+                    <input type="checkbox" id="ctrlShowDashboard">
+                    Show on Dashboard
+                </label>
             </div>
+            
             <div class="form-group">
-                <label for="ctrlKi">Integral Gain (kI):</label>
-                <input type="number" id="ctrlKi" value="0.5" step="0.01">
+                <label for="ctrlTempSensor">Temperature Sensor:</label>
+                <select id="ctrlTempSensor">
+                    <option value="">-- Select Sensor --</option>
+                    ${sensors.map(s => `<option value="${s.index}">${s.name}</option>`).join('')}
+                </select>
             </div>
+            
             <div class="form-group">
-                <label for="ctrlKd">Derivative Gain (kD):</label>
+                <label for="ctrlOutput">Heater Output:</label>
+                <select id="ctrlOutput">
+                    <option value="">-- Select Output --</option>
+                    ${outputs.map(o => `<option value="${o.index}">${o.name}</option>`).join('')}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="ctrlMode">Control Mode:</label>
+                <select id="ctrlMode" onchange="toggleControlModeFields()">
+                    <option value="0">On/Off</option>
+                    <option value="1">PID</option>
+                </select>
+            </div>
+            
+            <div id="onOffParams">
+                <div class="form-group">
+                    <label for="ctrlHysteresis">Hysteresis (°C):</label>
+                    <input type="number" id="ctrlHysteresis" value="0.5" step="0.1" min="0.1">
+                </div>
+            </div>
+            
+            <div id="pidParams" style="display: none;">
+                <div class="form-group">
+                    <label for="ctrlKp">Proportional Gain (kP):</label>
+                    <input type="number" id="ctrlKp" value="2.0" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label for="ctrlKi">Integral Gain (kI):</label>
+                    <input type="number" id="ctrlKi" value="0.5" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label for="ctrlKd">Derivative Gain (kD):</label>
                 <input type="number" id="ctrlKd" value="0.1" step="0.01">
             </div>
             <div class="form-group">
@@ -5748,8 +5778,219 @@ async function updateSensorOptions() {
             <input type="number" id="ctrlSetpoint" value="25.0" step="0.1">
         </div>
     `;
-    
+    }
     configForm.appendChild(expandedDiv);
+}
+
+async function renderpHAddForm(expandedDiv, sensors, outputs, indexNum) {
+    // Get pH sensors from device sensors
+    let phSensors = [];
+    try {
+        const inputsResponse = await fetch('/api/inputs');
+        if (inputsResponse.ok) {
+            const inputsData = await inputsResponse.json();
+            if (inputsData.devices) {
+                phSensors = inputsData.devices
+                    .filter(ds => ds.t && ds.t == 3)
+                    .map(ds => ({ index: ds.i, name: `[${ds.i}] ${ds.n || 'pH Sensor'} (${ds.v.toFixed(1)}${ds.u})` }));
+            }
+        }
+    } catch (error) {
+        console.error('[pH ADD] Error loading pH sensors:', error);
+    }
+    
+    // Get DC motors for dosing options
+    let dcMotors = [];
+    try {
+        const outputsResponse = await fetch('/api/outputs');
+        if (outputsResponse.ok) {
+            const outputsData = await outputsResponse.json();
+            if (outputsData.dcMotors) {
+                dcMotors = outputsData.dcMotors.map(m => ({ index: m.index, name: m.name }));
+            }
+        }
+    } catch (error) {
+        console.error('[pH ADD] Error loading DC motors:', error);
+    }
+    
+    expandedDiv.innerHTML = `
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #dee2e6;">
+        
+        <div class="form-group">
+            <label for="ctrlName">Name:</label>
+            <input type="text" id="ctrlName" value="pH Controller ${indexNum}" maxlength="39">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="ctrlShowDashboard">
+                Show on Dashboard
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="ctrlpHSensor">pH Sensor:</label>
+            <select id="ctrlpHSensor">
+                <option value="">-- Select pH Sensor --</option>
+                ${phSensors.map(s => `<option value="${s.index}">${s.name}</option>`).join('')}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="ctrlSetpoint">Setpoint (pH):</label>
+            <input type="number" id="ctrlSetpoint" value="7.0" step="0.1" min="0" max="14">
+        </div>
+        
+        <div class="form-group">
+            <label for="ctrlDeadband">Deadband (pH):</label>
+            <input type="number" id="ctrlDeadband" value="0.2" step="0.05" min="0.05">
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        
+        <h4 style="margin-bottom: 15px;">Acid Dosing</h4>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="ctrlAcidEnabled" checked onchange="toggleAddDosingFields()">
+                Enable Acid Dosing
+            </label>
+        </div>
+        
+        <div id="acidDosingAddFields">
+            <div class="form-group">
+                <label for="ctrlAcidOutputType">Output Type:</label>
+                <select id="ctrlAcidOutputType" onchange="updateAddpHOutputOptions('acid')">
+                    <option value="0">Digital Output</option>
+                    <option value="1">DC Motor</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="ctrlAcidOutput">Output:</label>
+                <select id="ctrlAcidOutput">
+                    <option value="">-- Select Output --</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="acidAddMotorPowerGroup" style="display: none;">
+                <label for="ctrlAcidMotorPower">Motor Power (%):</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="ctrlAcidMotorPower" value="50" min="1" max="100" style="flex: 1;">
+                    <span>%</span>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="ctrlAcidDoseTime">Dose Time (ms):</label>
+                <input type="number" id="ctrlAcidDoseTime" value="1000" min="100" max="60000" step="100">
+            </div>
+            
+            <div class="form-group">
+                <label for="ctrlAcidDoseInterval">Dose Interval (ms):</label>
+                <input type="number" id="ctrlAcidDoseInterval" value="60000" min="1000" max="3600000" step="1000">
+            </div>
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        
+        <h4 style="margin-bottom: 15px;">Alkaline Dosing</h4>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="ctrlAlkalineEnabled" onchange="toggleAddDosingFields()">
+                Enable Alkaline Dosing
+            </label>
+        </div>
+        
+        <div id="alkalineDosingAddFields" style="display: none;">
+            <div class="form-group">
+                <label for="ctrlAlkalineOutputType">Output Type:</label>
+                <select id="ctrlAlkalineOutputType" onchange="updateAddpHOutputOptions('alkaline')">
+                    <option value="0">Digital Output</option>
+                    <option value="1">DC Motor</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="ctrlAlkalineOutput">Output:</label>
+                <select id="ctrlAlkalineOutput">
+                    <option value="">-- Select Output --</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="alkalineAddMotorPowerGroup" style="display: none;">
+                <label for="ctrlAlkalineMotorPower">Motor Power (%):</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="ctrlAlkalineMotorPower" value="50" min="1" max="100" style="flex: 1;">
+                    <span>%</span>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="ctrlAlkalineDoseTime">Dose Time (ms):</label>
+                <input type="number" id="ctrlAlkalineDoseTime" value="1000" min="100" max="60000" step="100">
+            </div>
+            
+            <div class="form-group">
+                <label for="ctrlAlkalineDoseInterval">Dose Interval (ms):</label>
+                <input type="number" id="ctrlAlkalineDoseInterval" value="60000" min="1000" max="3600000" step="1000">
+            </div>
+        </div>
+    `;
+    
+    // Store outputs and motors for later use (do this BEFORE calling update functions)
+    window.phAddOutputs = outputs;
+    window.phAddMotors = dcMotors;
+    
+    // Wait a tick to ensure DOM is ready, then initialize output dropdowns
+    setTimeout(() => {
+        updateAddpHOutputOptions('acid');
+        updateAddpHOutputOptions('alkaline');
+    }, 0);
+}
+
+function toggleAddDosingFields() {
+    const acidEnabled = document.getElementById('ctrlAcidEnabled')?.checked || false;
+    const alkalineEnabled = document.getElementById('ctrlAlkalineEnabled')?.checked || false;
+    
+    const acidFields = document.getElementById('acidDosingAddFields');
+    const alkalineFields = document.getElementById('alkalineDosingAddFields');
+    
+    if (acidFields) acidFields.style.display = acidEnabled ? 'block' : 'none';
+    if (alkalineFields) alkalineFields.style.display = alkalineEnabled ? 'block' : 'none';
+}
+
+function updateAddpHOutputOptions(type) {
+    const outputTypeSelect = document.getElementById(`ctrl${type.charAt(0).toUpperCase() + type.slice(1)}OutputType`);
+    const outputSelect = document.getElementById(`ctrl${type.charAt(0).toUpperCase() + type.slice(1)}Output`);
+    const motorPowerGroup = document.getElementById(`${type}AddMotorPowerGroup`);
+    
+    if (!outputTypeSelect || !outputSelect) return;
+    
+    const outputType = parseInt(outputTypeSelect.value);
+    const outputs = window.phAddOutputs || [];
+    const motors = window.phAddMotors || [];
+    
+    // Show/hide motor power field
+    if (motorPowerGroup) {
+        motorPowerGroup.style.display = outputType === 1 ? 'block' : 'none';
+    }
+    
+    // Populate output dropdown
+    outputSelect.innerHTML = '<option value="">-- Select Output --</option>';
+    
+    if (outputType === 0) {
+        // Digital outputs (21-25)
+        outputs.forEach(output => {
+            outputSelect.innerHTML += `<option value="${output.index}">${output.name}</option>`;
+        });
+    } else {
+        // DC motors (27-30)
+        motors.forEach(motor => {
+            outputSelect.innerHTML += `<option value="${motor.index}">${motor.name}</option>`;
+        });
+    }
 }
 
 async function createController() {
@@ -5770,6 +6011,17 @@ async function createController() {
     
     const index = availableIndices[0];
     
+    // Route to appropriate creation function based on controller type
+    if (selectedControllerType.value === 1) {
+        // pH Controller
+        await createpHController(index);
+    } else {
+        // Temperature Controller
+        await createTempController(index);
+    }
+}
+
+async function createTempController(index) {
     // Gather config data from the expanded form
     const configData = {
         isActive: true,
@@ -5807,10 +6059,10 @@ async function createController() {
     }
     
     try {
-        console.log(`[CONTROLLERS] Creating controller at index ${index}`, configData);
+        console.log(`[CONTROLLERS] Creating temp controller at index ${index}`, configData);
         
-        const response = await fetch(`/api/controller/${index}`, {
-            method: 'PUT',
+        const response = await fetch(`/api/config/tempcontroller/${index}`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(configData)
         });
@@ -5820,7 +6072,7 @@ async function createController() {
             throw new Error(error.error || 'Failed to create controller');
         }
         
-        showToast('success', 'Success', 'Controller created successfully');
+        showToast('success', 'Success', 'Temperature controller created successfully');
         closeAddControllerModal();
         await loadControllers();
         
@@ -5830,16 +6082,109 @@ async function createController() {
     }
 }
 
+async function createpHController(index) {
+    // Gather config data from the expanded form
+    const configData = {
+        isActive: true,
+        name: document.getElementById('ctrlName').value,
+        showOnDashboard: document.getElementById('ctrlShowDashboard').checked,
+        pvSourceIndex: parseInt(document.getElementById('ctrlpHSensor').value),
+        setpoint: parseFloat(document.getElementById('ctrlSetpoint').value),
+        deadband: parseFloat(document.getElementById('ctrlDeadband').value),
+        acidDosing: {
+            enabled: document.getElementById('ctrlAcidEnabled').checked,
+            outputType: parseInt(document.getElementById('ctrlAcidOutputType').value),
+            outputIndex: parseInt(document.getElementById('ctrlAcidOutput').value),
+            motorPower: parseInt(document.getElementById('ctrlAcidMotorPower').value),
+            dosingTime_ms: parseInt(document.getElementById('ctrlAcidDoseTime').value),
+            dosingInterval_ms: parseInt(document.getElementById('ctrlAcidDoseInterval').value)
+        },
+        alkalineDosing: {
+            enabled: document.getElementById('ctrlAlkalineEnabled').checked,
+            outputType: parseInt(document.getElementById('ctrlAlkalineOutputType').value),
+            outputIndex: parseInt(document.getElementById('ctrlAlkalineOutput').value),
+            motorPower: parseInt(document.getElementById('ctrlAlkalineMotorPower').value),
+            dosingTime_ms: parseInt(document.getElementById('ctrlAlkalineDoseTime').value),
+            dosingInterval_ms: parseInt(document.getElementById('ctrlAlkalineDoseInterval').value)
+        }
+    };
+    
+    // Validation
+    if (!configData.name) {
+        showToast('warning', 'Validation Error', 'Please enter a name');
+        return;
+    }
+    
+    if (!configData.pvSourceIndex || isNaN(configData.pvSourceIndex)) {
+        showToast('warning', 'Validation Error', 'Please select a pH sensor');
+        return;
+    }
+    
+    if (!configData.acidDosing.enabled && !configData.alkalineDosing.enabled) {
+        showToast('warning', 'Validation Error', 'At least one dosing direction must be enabled');
+        return;
+    }
+    
+    if (configData.acidDosing.enabled && (!configData.acidDosing.outputIndex || isNaN(configData.acidDosing.outputIndex))) {
+        showToast('warning', 'Validation Error', 'Please select an acid dosing output');
+        return;
+    }
+    
+    if (configData.alkalineDosing.enabled && (!configData.alkalineDosing.outputIndex || isNaN(configData.alkalineDosing.outputIndex))) {
+        showToast('warning', 'Validation Error', 'Please select an alkaline dosing output');
+        return;
+    }
+    
+    try {
+        console.log(`[CONTROLLERS] Creating pH controller at index ${index}`, configData);
+        
+        const response = await fetch(`/api/config/phcontroller/${index}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to create controller');
+        }
+        
+        showToast('success', 'Success', 'pH Controller created successfully');
+        closeAddControllerModal();
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[pH CTRL] Error creating:', error);
+        showToast('error', 'Error', error.message);
+    }
+}
+
 async function openControllerConfig(index) {
     currentConfigIndex = index;
     console.log(`[CONTROLLERS] Opening config for controller ${index}`);
     
     try {
-        const response = await fetch(`/api/controller/${index}`);
+        // Determine endpoint based on controller type
+        let endpoint;
+        if (index === 43) {
+            endpoint = `/api/config/phcontroller/${index}`;
+        } else if (index >= 40 && index <= 42) {
+            endpoint = `/api/config/tempcontroller/${index}`;
+        } else {
+            endpoint = `/api/controller/${index}`;
+        }
+        
+        const response = await fetch(endpoint);
         if (!response.ok) throw new Error('Failed to load config');
         
         const config = await response.json();
-        await renderConfigForm(config);
+        
+        // Render appropriate form based on controller type
+        if (index === 43) {
+            await renderpHConfigForm(config);
+        } else {
+            await renderConfigForm(config);
+        }
         
         const modal = document.getElementById('controllerConfigModal');
         modal.style.display = 'flex';
@@ -5864,7 +6209,7 @@ async function renderConfigForm(config) {
     const container = document.getElementById('controllerConfigContent');
     if (!container) return;
     
-    const sensors = await loadAvailableSensors();
+    const sensors = await loadTempSensors();
     const outputs = await loadAvailableOutputs();
     
     const controlMethod = config.controlMethod || 0;
@@ -5953,7 +6298,7 @@ function toggleControlModeFields() {
     document.getElementById('pidParams').style.display = mode === 1 ? 'block' : 'none';
 }
 
-async function loadAvailableSensors() {
+async function loadTempSensors() {
     const sensors = [];
     
     try {
@@ -5971,12 +6316,12 @@ async function loadAvailableSensors() {
             });
         }
         
-        if (data.deviceSensors) {
-            data.deviceSensors.forEach(ds => {
-                if (ds.n.toLowerCase().includes('temp')) {
+        if (data.devices) {
+            data.devices.forEach(ds => {
+                if (ds.t == 2) {
                     sensors.push({
                         index: ds.i,
-                        name: `[${ds.i}] ${ds.n}`
+                        name: `[${ds.i}] ${ds.n || 'Temperature Sensor'} (${ds.v.toFixed(1)}${ds.u})`
                     });
                 }
             });
@@ -5997,9 +6342,6 @@ async function loadAvailableOutputs() {
         if (!response.ok) return outputs;
         
         const data = await response.json();
-        
-        // Only show digital outputs (21-25) for temperature controllers
-        // DAC outputs (8-9) are not suitable for heater control
         if (data.digitalOutputs) {
             data.digitalOutputs.forEach(output => {
                 outputs.push({
@@ -6016,8 +6358,234 @@ async function loadAvailableOutputs() {
     return outputs;
 }
 
+async function renderpHConfigForm(config) {
+    const container = document.getElementById('controllerConfigContent');
+    if (!container) return;
+    
+    // Get pH sensors from device sensors
+    let phSensors = [];
+    try {
+        const inputsResponse = await fetch('/api/inputs');
+        if (inputsResponse.ok) {
+            const inputsData = await inputsResponse.json();
+            if (inputsData.devices) {
+                phSensors = inputsData.devices
+                    .filter(ds => ds.t && ds.t == 3)
+                    .map(ds => ({ index: ds.i, name: `[${ds.i}] ${ds.n || 'pH Sensor'} (${ds.v.toFixed(1)}${ds.u})` }));
+            }
+        }
+    } catch (error) {
+        console.error('[pH CONFIG] Error loading pH sensors:', error);
+    }
+    
+    const outputs = await loadAvailableOutputs();
+    
+    // Get DC motors for dosing options
+    let dcMotors = [];
+    try {
+        const outputsResponse = await fetch('/api/outputs');
+        if (outputsResponse.ok) {
+            const outputsData = await outputsResponse.json();
+            if (outputsData.dcMotors) {
+                dcMotors = outputsData.dcMotors.map(m => ({ index: m.index, name: m.name }));
+            }
+        }
+    } catch (error) {
+        console.error('[pH CONFIG] Error loading DC motors:', error);
+    }
+    
+    container.innerHTML = `
+        <div class="form-group">
+            <label for="phCtrlName">Name:</label>
+            <input type="text" id="phCtrlName" value="${config.name || ''}" maxlength="39">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="phCtrlShowDashboard" ${config.showOnDashboard ? 'checked' : ''}>
+                Show on Dashboard
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="phCtrlSensor">pH Sensor:</label>
+            <select id="phCtrlSensor">
+                <option value="">-- Select pH Sensor --</option>
+                ${phSensors.map(s => `<option value="${s.index}" ${config.pvSourceIndex === s.index ? 'selected' : ''}>${s.name}</option>`).join('')}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="phCtrlSetpoint">Setpoint (pH):</label>
+            <input type="number" id="phCtrlSetpoint" value="${config.setpoint || 7.0}" step="0.1" min="0" max="14">
+        </div>
+        
+        <div class="form-group">
+            <label for="phCtrlDeadband">Deadband (pH):</label>
+            <input type="number" id="phCtrlDeadband" value="${config.deadband || 0.2}" step="0.05" min="0.05">
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        
+        <h4 style="margin-bottom: 15px;">Acid Dosing Configuration</h4>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="phAcidEnabled" ${config.acidDosing?.enabled ? 'checked' : ''} onchange="toggleDosingFields()">
+                Enable Acid Dosing
+            </label>
+        </div>
+        
+        <div id="acidDosingFields" style="display: ${config.acidDosing?.enabled ? 'block' : 'none'};">
+            <div class="form-group">
+                <label for="phAcidOutputType">Output Type:</label>
+                <select id="phAcidOutputType" onchange="updatepHOutputOptions('acid')">
+                    <option value="0" ${config.acidDosing?.outputType === 0 ? 'selected' : ''}>Digital Output</option>
+                    <option value="1" ${config.acidDosing?.outputType === 1 ? 'selected' : ''}>DC Motor</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="phAcidOutput">Output:</label>
+                <select id="phAcidOutput">
+                    <option value="">-- Select Output --</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="acidMotorPowerGroup" style="display: ${config.acidDosing?.outputType === 1 ? 'block' : 'none'};">
+                <label for="phAcidMotorPower">Motor Power (%):</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="phAcidMotorPower" value="${config.acidDosing?.motorPower || 50}" min="1" max="100" style="flex: 1;">
+                    <span>%</span>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="phAcidDoseTime">Dose Time (ms):</label>
+                <input type="number" id="phAcidDoseTime" value="${config.acidDosing?.dosingTime_ms || 1000}" min="100" max="60000" step="100">
+            </div>
+            
+            <div class="form-group">
+                <label for="phAcidDoseInterval">Dose Interval (ms):</label>
+                <input type="number" id="phAcidDoseInterval" value="${config.acidDosing?.dosingInterval_ms || 60000}" min="1000" max="3600000" step="1000">
+            </div>
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        
+        <h4 style="margin-bottom: 15px;">Alkaline Dosing Configuration</h4>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="phAlkalineEnabled" ${config.alkalineDosing?.enabled ? 'checked' : ''} onchange="toggleDosingFields()">
+                Enable Alkaline Dosing
+            </label>
+        </div>
+        
+        <div id="alkalineDosingFields" style="display: ${config.alkalineDosing?.enabled ? 'block' : 'none'};">
+            <div class="form-group">
+                <label for="phAlkalineOutputType">Output Type:</label>
+                <select id="phAlkalineOutputType" onchange="updatepHOutputOptions('alkaline')">
+                    <option value="0" ${config.alkalineDosing?.outputType === 0 ? 'selected' : ''}>Digital Output</option>
+                    <option value="1" ${config.alkalineDosing?.outputType === 1 ? 'selected' : ''}>DC Motor</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="phAlkalineOutput">Output:</label>
+                <select id="phAlkalineOutput">
+                    <option value="">-- Select Output --</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="alkalineMotorPowerGroup" style="display: ${config.alkalineDosing?.outputType === 1 ? 'block' : 'none'};">
+                <label for="phAlkalineMotorPower">Motor Power (%):</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="phAlkalineMotorPower" value="${config.alkalineDosing?.motorPower || 50}" min="1" max="100" style="flex: 1;">
+                    <span>%</span>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="phAlkalineDoseTime">Dose Time (ms):</label>
+                <input type="number" id="phAlkalineDoseTime" value="${config.alkalineDosing?.dosingTime_ms || 1000}" min="100" max="60000" step="100">
+            </div>
+            
+            <div class="form-group">
+                <label for="phAlkalineDoseInterval">Dose Interval (ms):</label>
+                <input type="number" id="phAlkalineDoseInterval" value="${config.alkalineDosing?.dosingInterval_ms || 60000}" min="1000" max="3600000" step="1000">
+            </div>
+        </div>
+    `;
+    
+    // Store outputs and motors for later use
+    window.phConfigOutputs = outputs;
+    window.phConfigMotors = dcMotors;
+    window.phConfigData = config;
+    
+    // Wait a tick to ensure DOM is ready, then initialize output dropdowns
+    setTimeout(() => {
+        updatepHOutputOptions('acid');
+        updatepHOutputOptions('alkaline');
+    }, 0);
+}
+
+function toggleDosingFields() {
+    const acidEnabled = document.getElementById('phAcidEnabled')?.checked || false;
+    const alkalineEnabled = document.getElementById('phAlkalineEnabled')?.checked || false;
+    
+    const acidFields = document.getElementById('acidDosingFields');
+    const alkalineFields = document.getElementById('alkalineDosingFields');
+    
+    if (acidFields) acidFields.style.display = acidEnabled ? 'block' : 'none';
+    if (alkalineFields) alkalineFields.style.display = alkalineEnabled ? 'block' : 'none';
+}
+
+function updatepHOutputOptions(type) {
+    const outputTypeSelect = document.getElementById(`ph${type.charAt(0).toUpperCase() + type.slice(1)}OutputType`);
+    const outputSelect = document.getElementById(`ph${type.charAt(0).toUpperCase() + type.slice(1)}Output`);
+    const motorPowerGroup = document.getElementById(`${type}MotorPowerGroup`);
+    
+    if (!outputTypeSelect || !outputSelect) return;
+    
+    const outputType = parseInt(outputTypeSelect.value);
+    const outputs = window.phConfigOutputs || [];
+    const motors = window.phConfigMotors || [];
+    const config = window.phConfigData || {};
+    
+    // Show/hide motor power field
+    if (motorPowerGroup) {
+        motorPowerGroup.style.display = outputType === 1 ? 'block' : 'none';
+    }
+    
+    // Populate output dropdown
+    outputSelect.innerHTML = '<option value="">-- Select Output --</option>';
+    
+    if (outputType === 0) {
+        // Digital outputs (21-25)
+        outputs.forEach(output => {
+            const selected = (type === 'acid' && config.acidDosing?.outputIndex === output.index) ||
+                           (type === 'alkaline' && config.alkalineDosing?.outputIndex === output.index);
+            outputSelect.innerHTML += `<option value="${output.index}" ${selected ? 'selected' : ''}>${output.name}</option>`;
+        });
+    } else {
+        // DC motors (27-30)
+        motors.forEach(motor => {
+            const selected = (type === 'acid' && config.acidDosing?.outputIndex === motor.index) ||
+                           (type === 'alkaline' && config.alkalineDosing?.outputIndex === motor.index);
+            outputSelect.innerHTML += `<option value="${motor.index}" ${selected ? 'selected' : ''}>${motor.name}</option>`;
+        });
+    }
+}
+
 async function saveControllerConfig() {
     if (currentConfigIndex === null) return;
+    
+    // Route to appropriate save function based on controller type
+    if (currentConfigIndex === 43) {
+        await savepHControllerConfig();
+        return;
+    }
     
     const configData = {
         isActive: true,
@@ -6054,8 +6622,8 @@ async function saveControllerConfig() {
     }
     
     try {
-        const response = await fetch(`/api/controller/${currentConfigIndex}`, {
-            method: 'PUT',
+        const response = await fetch(`/api/config/tempcontroller/${currentConfigIndex}`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(configData)
         });
@@ -6071,6 +6639,80 @@ async function saveControllerConfig() {
         
     } catch (error) {
         console.error('[CONTROLLERS] Error saving:', error);
+        showToast('error', 'Error', error.message);
+    }
+}
+
+async function savepHControllerConfig() {
+    const configData = {
+        isActive: true,
+        name: document.getElementById('phCtrlName').value,
+        showOnDashboard: document.getElementById('phCtrlShowDashboard').checked,
+        pvSourceIndex: parseInt(document.getElementById('phCtrlSensor').value),
+        setpoint: parseFloat(document.getElementById('phCtrlSetpoint').value),
+        deadband: parseFloat(document.getElementById('phCtrlDeadband').value),
+        acidDosing: {
+            enabled: document.getElementById('phAcidEnabled').checked,
+            outputType: parseInt(document.getElementById('phAcidOutputType').value),
+            outputIndex: parseInt(document.getElementById('phAcidOutput').value),
+            motorPower: parseInt(document.getElementById('phAcidMotorPower').value),
+            dosingTime_ms: parseInt(document.getElementById('phAcidDoseTime').value),
+            dosingInterval_ms: parseInt(document.getElementById('phAcidDoseInterval').value)
+        },
+        alkalineDosing: {
+            enabled: document.getElementById('phAlkalineEnabled').checked,
+            outputType: parseInt(document.getElementById('phAlkalineOutputType').value),
+            outputIndex: parseInt(document.getElementById('phAlkalineOutput').value),
+            motorPower: parseInt(document.getElementById('phAlkalineMotorPower').value),
+            dosingTime_ms: parseInt(document.getElementById('phAlkalineDoseTime').value),
+            dosingInterval_ms: parseInt(document.getElementById('phAlkalineDoseInterval').value)
+        }
+    };
+    
+    // Validation
+    if (!configData.name) {
+        showToast('warning', 'Validation Error', 'Please enter a name');
+        return;
+    }
+    
+    if (!configData.pvSourceIndex || isNaN(configData.pvSourceIndex)) {
+        showToast('warning', 'Validation Error', 'Please select a pH sensor');
+        return;
+    }
+    
+    if (!configData.acidDosing.enabled && !configData.alkalineDosing.enabled) {
+        showToast('warning', 'Validation Error', 'At least one dosing direction must be enabled');
+        return;
+    }
+    
+    if (configData.acidDosing.enabled && (!configData.acidDosing.outputIndex || isNaN(configData.acidDosing.outputIndex))) {
+        showToast('warning', 'Validation Error', 'Please select an acid dosing output');
+        return;
+    }
+    
+    if (configData.alkalineDosing.enabled && (!configData.alkalineDosing.outputIndex || isNaN(configData.alkalineDosing.outputIndex))) {
+        showToast('warning', 'Validation Error', 'Please select an alkaline dosing output');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/config/phcontroller/43`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to save configuration');
+        }
+        
+        showToast('success', 'Success', 'pH Controller configuration saved');
+        closeControllerConfigModal();
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[pH CTRL] Error saving:', error);
         showToast('error', 'Error', error.message);
     }
 }
@@ -6109,8 +6751,11 @@ async function updateControllerSetpoint(index) {
     
     const setpoint = parseFloat(input.value);
     
+    // Determine endpoint based on controller type
+    const endpoint = (index === 43) ? `/api/phcontroller/${index}/setpoint` : `/api/controller/${index}/setpoint`;
+    
     try {
-        const response = await fetch(`/api/controller/${index}/setpoint`, {
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ setpoint })
@@ -6128,8 +6773,11 @@ async function updateControllerSetpoint(index) {
 }
 
 async function enableController(index) {
+    // Determine endpoint based on controller type
+    const endpoint = (index === 43) ? `/api/phcontroller/${index}/enable` : `/api/controller/${index}/enable`;
+    
     try {
-        const response = await fetch(`/api/controller/${index}/enable`, {
+        const response = await fetch(endpoint, {
             method: 'POST'
         });
         
@@ -6146,8 +6794,11 @@ async function enableController(index) {
 }
 
 async function disableController(index) {
+    // Determine endpoint based on controller type
+    const endpoint = (index === 43) ? `/api/phcontroller/${index}/disable` : `/api/controller/${index}/disable`;
+    
     try {
-        const response = await fetch(`/api/controller/${index}/disable`, {
+        const response = await fetch(endpoint, {
             method: 'POST'
         });
         
@@ -6160,6 +6811,42 @@ async function disableController(index) {
     } catch (error) {
         console.error('[CONTROLLERS] Error disabling:', error);
         showToast('error', 'Error', 'Failed to disable controller');
+    }
+}
+
+async function dosepHAcid(index) {
+    try {
+        const response = await fetch(`/api/phcontroller/${index}/dose-acid`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) throw new Error('Failed to dose acid');
+        
+        console.log(`[pH CTRL] Manual acid dose for ${index}`);
+        showToast('info', 'Dosing', 'Acid dose started');
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[pH CTRL] Error dosing acid:', error);
+        showToast('error', 'Error', 'Failed to dose acid');
+    }
+}
+
+async function dosepHAlkaline(index) {
+    try {
+        const response = await fetch(`/api/phcontroller/${index}/dose-alkaline`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) throw new Error('Failed to dose alkaline');
+        
+        console.log(`[pH CTRL] Manual alkaline dose for ${index}`);
+        showToast('info', 'Dosing', 'Alkaline dose started');
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[pH CTRL] Error dosing alkaline:', error);
+        showToast('error', 'Error', 'Failed to dose alkaline');
     }
 }
 

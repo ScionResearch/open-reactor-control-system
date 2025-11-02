@@ -19,7 +19,10 @@
 #define MAX_STEPPER_MOTORS 1   // Index 26
 #define MAX_DC_MOTORS 4        // Indices 27-30
 #define MAX_ENERGY_SENSORS 2   // Indices 31-32 (Main, Heater)
+#define MAX_CONTROLLERS 10     // Indices 40-49 (Control loops)
 #define MAX_TEMP_CONTROLLERS 3  // Indices 40-42 (Temperature Control loops)
+#define MAX_PH_CONTROLLERS 1   // Indices 43 (pH controller)
+#define MAX_DO_CONTROLLERS 1   // Indices 44 (Dissolved Oxygen controller)
 
 /**
  * @brief Calibration structure for analog inputs/outputs
@@ -187,6 +190,39 @@ struct DeviceSensorConfig {
 };
 
 /**
+ * @brief Dosing configuration for acid or alkaline
+ */
+struct pHDosingConfig {
+    bool enabled;                    // Is this dosing direction enabled?
+    uint8_t outputType;              // 0=Digital Output, 1=DC Motor
+    uint8_t outputIndex;             // Digital output (21-25) or DC motor (27-30)
+    uint8_t motorPower;              // Power level if motor (0-100%), ignored for digital
+    uint16_t dosingTime_ms;          // How long to activate output (milliseconds)
+    uint32_t dosingInterval_ms;      // Minimum time between doses (milliseconds)
+};
+
+/**
+ * @brief Configuration for pH Controller (index 43)
+ */
+struct pHControllerConfig {
+    bool isActive;                   // Controller slot in use
+    char name[40];                   // User-defined name
+    bool enabled;                    // Enable/disable controller (runtime only, not saved)
+    bool showOnDashboard;            // Dashboard visibility
+    
+    // Input Connection
+    uint8_t pvSourceIndex;           // pH sensor index (typically 70-99 for Hamilton pH probes)
+    
+    // Control Configuration
+    float setpoint;                  // Target pH
+    float deadband;                  // Hysteresis around setpoint to prevent oscillation
+    
+    // Dosing Configuration
+    pHDosingConfig acidDosing;       // Acid dosing (when pH too high)
+    pHDosingConfig alkalineDosing;   // Alkaline dosing (when pH too low)
+};
+
+/**
  * @brief Configuration for COM ports (serial communication)
  * Ports: 0-1 = RS-232, 2-3 = RS-485
  */
@@ -288,6 +324,7 @@ struct IOConfig {
     DCMotorConfig dcMotors[MAX_DC_MOTORS];
     EnergySensorConfig energySensors[MAX_ENERGY_SENSORS];  // Indices 31-32
     TemperatureControllerConfig tempControllers[MAX_TEMP_CONTROLLERS];  // Indices 40-42
+    pHControllerConfig phController;  // Index 43 (single controller)
     ComPortConfig comPorts[MAX_COM_PORTS];  // RS-232 (0-1) and RS-485 (2-3)
     
     // Dynamic peripheral devices (sensor indices 70-99, control indices 50-69)

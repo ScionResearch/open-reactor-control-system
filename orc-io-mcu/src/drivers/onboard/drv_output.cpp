@@ -124,13 +124,11 @@ void output_update(void) {
     if (heaterOutput[0].pwmEnabled) {
         // PWM Mode
         if (!heaterPWMEnabled) {
-            // Switching to PWM mode - reconfigure pin MUX and enable TCC0
-            // analogWrite() reconfigures the pin MUX to connect to TCC0 peripheral
-            analogWrite(PIN_HEAT_OUT, 0);
+            // Switching to PWM mode - enable TCC0
             TCC0->CTRLA.bit.ENABLE = 1;
             while (TCC0->SYNCBUSY.bit.ENABLE);
             heaterPWMEnabled = true;
-            Serial.printf("[OUTPUT] Heater pin reconfigured and switched to PWM mode\n");
+            Serial.printf("[OUTPUT] Heater switched to PWM mode\n");
         }
         if (pwmDuty != heaterOutput[0].pwmDuty) {
             if (heaterOutput[0].pwmDuty > 100) heaterOutput[0].pwmDuty = 100;

@@ -143,6 +143,33 @@ void setDefaultIOConfig() {
     }
     
     // ========================================================================
+    // pH Controller (Index 43)
+    // ========================================================================
+    ioConfig.phController.isActive = false;
+    strlcpy(ioConfig.phController.name, "pH Controller", sizeof(ioConfig.phController.name));
+    ioConfig.phController.enabled = false;
+    ioConfig.phController.showOnDashboard = false;
+    ioConfig.phController.pvSourceIndex = 0;    // Default: no sensor assigned
+    ioConfig.phController.setpoint = 7.0f;       // Default neutral pH
+    ioConfig.phController.deadband = 0.2f;       // 0.2 pH units deadband
+    
+    // Acid dosing defaults
+    ioConfig.phController.acidDosing.enabled = false;
+    ioConfig.phController.acidDosing.outputType = 0;      // Digital output
+    ioConfig.phController.acidDosing.outputIndex = 21;    // Default to first digital output
+    ioConfig.phController.acidDosing.motorPower = 50;     // 50% power for motor
+    ioConfig.phController.acidDosing.dosingTime_ms = 1000;      // 1 second dose
+    ioConfig.phController.acidDosing.dosingInterval_ms = 60000;  // 60 seconds between doses
+    
+    // Alkaline dosing defaults
+    ioConfig.phController.alkalineDosing.enabled = false;
+    ioConfig.phController.alkalineDosing.outputType = 0;      // Digital output
+    ioConfig.phController.alkalineDosing.outputIndex = 22;    // Default to second digital output
+    ioConfig.phController.alkalineDosing.motorPower = 50;     // 50% power for motor
+    ioConfig.phController.alkalineDosing.dosingTime_ms = 1000;      // 1 second dose
+    ioConfig.phController.alkalineDosing.dosingInterval_ms = 60000;  // 60 seconds between doses
+    
+    // ========================================================================
     // COM Ports (0-1: RS-232, 2-3: RS-485)
     // ========================================================================
     const char* portNames[] = {"RS-232 Port 1", "RS-232 Port 2", "RS-485 Port 1", "RS-485 Port 2"};
@@ -1183,6 +1210,58 @@ void pushIOConfigToIOmcu() {
         
         if (!sent) {
             log(LOG_WARNING, false, "  ✗ Failed to send TempController[%d] config after retries\n", 40 + i);
+        }
+        
+        delay(10);
+    }
+    
+    // ========================================================================
+    // Push pH Controller configuration (index 43)
+    // ========================================================================
+    if (ioConfig.phController.isActive) {
+        IPC_ConfigpHController_t cfg;
+        memset(&cfg, 0, sizeof(cfg));
+        
+        cfg.index = 43;
+        cfg.isActive = true;
+        strncpy(cfg.name, ioConfig.phController.name, sizeof(cfg.name) - 1);
+        cfg.enabled = ioConfig.phController.enabled;
+        cfg.pvSourceIndex = ioConfig.phController.pvSourceIndex;
+        cfg.setpoint = ioConfig.phController.setpoint;
+        cfg.deadband = ioConfig.phController.deadband;
+        
+        // Acid dosing configuration
+        cfg.acidEnabled = ioConfig.phController.acidDosing.enabled;
+        cfg.acidOutputType = ioConfig.phController.acidDosing.outputType;
+        cfg.acidOutputIndex = ioConfig.phController.acidDosing.outputIndex;
+        cfg.acidMotorPower = ioConfig.phController.acidDosing.motorPower;
+        cfg.acidDosingTime_ms = ioConfig.phController.acidDosing.dosingTime_ms;
+        cfg.acidDosingInterval_ms = ioConfig.phController.acidDosing.dosingInterval_ms;
+        
+        // Alkaline dosing configuration
+        cfg.alkalineEnabled = ioConfig.phController.alkalineDosing.enabled;
+        cfg.alkalineOutputType = ioConfig.phController.alkalineDosing.outputType;
+        cfg.alkalineOutputIndex = ioConfig.phController.alkalineDosing.outputIndex;
+        cfg.alkalineMotorPower = ioConfig.phController.alkalineDosing.motorPower;
+        cfg.alkalineDosingTime_ms = ioConfig.phController.alkalineDosing.dosingTime_ms;
+        cfg.alkalineDosingInterval_ms = ioConfig.phController.alkalineDosing.dosingInterval_ms;
+        
+        // Retry up to 10 times if queue is full
+        bool sent = false;
+        for (int retry = 0; retry < 10; retry++) {
+            if (ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg))) {
+                sent = true;
+                sentCount++;
+                log(LOG_INFO, false, "  → pHController[43]: %s, sensor=%d, setpoint=%.2f\n",
+                    cfg.name, cfg.pvSourceIndex, cfg.setpoint);
+                break;
+            }
+            ipc.update();
+            delay(10);
+        }
+        
+        if (!sent) {
+            log(LOG_WARNING, false, "  ✗ Failed to send pHController[43] config after retries\n");
         }
         
         delay(10);

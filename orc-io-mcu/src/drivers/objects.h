@@ -274,12 +274,41 @@ struct TemperatureControl_t {
     char message[100];
 };
 
-struct PhControl_t {
-    PhSensor_t sensor;
+struct pHControl_t {
+    // References to existing objects (by index)
+    uint16_t sensorIndex;            // Index in objIndex[] for pH sensor
+    
+    // Control state
     bool enabled;
-    float setpoint;
-    float interval;
-    float maxDoseTime;
+    bool fault;
+    bool newMessage;
+    char message[100];
+    
+    // Setpoint & deadband
+    float setpoint;                  // Target pH
+    float deadband;                  // Hysteresis around setpoint to prevent oscillation
+    
+    // Current values
+    float currentpH;                 // Last measured pH
+    float currentOutput;             // Output state: 0=off, 1=dosing acid, 2=dosing alkaline
+    
+    // Acid dosing configuration
+    bool acidEnabled;
+    uint8_t acidOutputType;          // 0=Digital output, 1=DC motor
+    uint8_t acidOutputIndex;         // Digital output (21-25) or DC motor (27-30)
+    uint8_t acidMotorPower;          // Motor power level (0-100%), ignored if digital
+    uint16_t acidDosingTime_ms;      // Duration to activate output (milliseconds)
+    uint32_t acidDosingInterval_ms;  // Minimum time between doses (milliseconds)
+    uint32_t lastAcidDoseTime;       // Runtime: last dose timestamp (millis())
+    
+    // Alkaline dosing configuration
+    bool alkalineEnabled;
+    uint8_t alkalineOutputType;      // 0=Digital output, 1=DC motor
+    uint8_t alkalineOutputIndex;     // Digital output (21-25) or DC motor (27-30)
+    uint8_t alkalineMotorPower;      // Motor power level (0-100%), ignored if digital
+    uint16_t alkalineDosingTime_ms;  // Duration to activate output (milliseconds)
+    uint32_t alkalineDosingInterval_ms;  // Minimum time between doses (milliseconds)
+    uint32_t lastAlkalineDoseTime;   // Runtime: last dose timestamp (millis())
 };
 
 // Device control object (indices 50-69)

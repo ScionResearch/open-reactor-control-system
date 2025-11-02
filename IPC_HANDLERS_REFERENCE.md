@@ -142,7 +142,7 @@ void ipc_handle_device_control(const uint8_t *payload, uint16_t len) {
     }
     
     // Send acknowledgment
-    ipc_sendControlAck_v2(cmd->index, cmd->objectType, cmd->command, 
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, 
                          success, errorCode, message);
 }
 ```
@@ -266,7 +266,7 @@ case DEV_CMD_RESET_FAULT: {
 Acknowledgment is sent automatically:
 
 ```cpp
-ipc_sendControlAck_v2(
+ipc_sendControlAck(
     cmd->index,        // Control index (50-69)
     cmd->objectType,   // OBJ_T_DEVICE_CONTROL
     cmd->command,      // Command that was executed
@@ -375,7 +375,7 @@ snprintf(message, sizeof(message), "Setpoint %.2f sent", setpoint);
              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │ 7. Send IPC acknowledgment                                      │
-│    ipc_sendControlAck_v2(52, success=true, "Setpoint sent")    │
+│    ipc_sendControlAck(52, success=true, "Setpoint sent")    │
 └────────────┬────────────────────────────────────────────────────┘
              │
              ▼  (IPC_MSG_CONTROL_ACK via UART)

@@ -91,6 +91,7 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_CONFIG_DCMOTOR        = 0x69,  // Configure DC motor
     IPC_MSG_CONFIG_COMPORT        = 0x6A,  // Configure COM port (serial)
     IPC_MSG_CONFIG_TEMP_CONTROLLER = 0x6C,  // Configure temperature controller
+    IPC_MSG_CONFIG_PH_CONTROLLER  = 0x6D,  // Configure pH controller
     IPC_MSG_CONFIG_PRESSURE_CTRL  = 0x6E,  // Configure pressure controller
 };
 
@@ -839,6 +840,69 @@ typedef struct __attribute__((packed)) {
     float autotuneOutputStep;    // Output step size for autotune (default 50%)
     uint8_t reserved[6];         // Reserved for future use
 } IPC_TempControllerControl_t;
+
+/**
+ * @brief pH Controller configuration
+ * Message type: IPC_MSG_CONFIG_PH_CONTROLLER
+ * 
+ * Sent from SYS MCU to IO MCU to configure pH controller (index 43)
+ * Supports acid and/or alkaline dosing with configurable outputs
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t index;               // Controller index (always 43)
+    bool isActive;               // true=create/update, false=delete
+    char name[40];               // Controller name
+    bool enabled;                // Enable/disable controller
+    uint16_t pvSourceIndex;      // pH sensor index (typically 70-99 for Hamilton pH probes)
+    float setpoint;              // Target pH (0-14)
+    float deadband;              // Hysteresis around setpoint
+    
+    // Acid dosing configuration
+    bool acidEnabled;            // Enable acid dosing
+    uint8_t acidOutputType;      // 0=Digital output, 1=DC motor
+    uint8_t acidOutputIndex;     // Digital output (21-25) or DC motor (27-30)
+    uint8_t acidMotorPower;      // Motor power (0-100%), ignored if digital
+    uint16_t acidDosingTime_ms;  // Dose duration (milliseconds)
+    uint32_t acidDosingInterval_ms;  // Minimum time between doses (milliseconds)
+    
+    // Alkaline dosing configuration
+    bool alkalineEnabled;        // Enable alkaline dosing
+    uint8_t alkalineOutputType;  // 0=Digital output, 1=DC motor
+    uint8_t alkalineOutputIndex; // Digital output (21-25) or DC motor (27-30)
+    uint8_t alkalineMotorPower;  // Motor power (0-100%), ignored if digital
+    uint16_t alkalineDosingTime_ms;  // Dose duration (milliseconds)
+    uint32_t alkalineDosingInterval_ms;  // Minimum time between doses (milliseconds)
+    
+    uint8_t _padding[2];         // Alignment padding (must match IO MCU struct)
+} IPC_ConfigpHController_t;
+
+// Verify struct size matches IO MCU (should be 75 bytes with padding)
+static_assert(sizeof(IPC_ConfigpHController_t) == 75, "IPC_ConfigpHController_t size mismatch");
+
+/**
+ * @brief pH Controller runtime control
+ * Message type: IPC_MSG_CONTROL_WRITE (with OBJ_T_PH_CONTROL)
+ * 
+ * Runtime commands for pH controller: setpoint, enable, disable, manual dosing
+ */
+typedef struct __attribute__((packed)) {
+    uint16_t index;              // Controller index (always 43)
+    uint8_t objectType;          // OBJ_T_PH_CONTROL
+    uint8_t command;             // pHControllerCommand
+    float setpoint;              // For SET_SETPOINT command (0-14 pH)
+    uint8_t reserved[8];         // Reserved for future use
+} IPC_pHControllerControl_t;
+
+/**
+ * @brief pH Controller command enum
+ */
+enum pHControllerCommand : uint8_t {
+    PH_CMD_SET_SETPOINT     = 0x00,  // Set target pH
+    PH_CMD_ENABLE           = 0x01,  // Enable controller (automatic dosing)
+    PH_CMD_DISABLE          = 0x02,  // Disable controller
+    PH_CMD_DOSE_ACID        = 0x03,  // Manual acid dose
+    PH_CMD_DOSE_ALKALINE    = 0x04,  // Manual alkaline dose
+};
 
 /**
  * @brief Pressure controller calibration configuration

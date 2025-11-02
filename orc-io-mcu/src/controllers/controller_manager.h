@@ -6,6 +6,10 @@
 // Forward declarations
 class ScheduledTask;
 class TaskScheduler;
+class pHController;
+
+// IPC structures
+struct IPC_ConfigpHController_t;
 
 // Maximum number of temperature controllers (matches ioConfig.h)
 #define MAX_TEMP_CONTROLLERS 3
@@ -19,6 +23,20 @@ struct ManagedController {
     uint8_t index;                          // Controller object index (40-42)
     TemperatureController* controllerInstance;  // Pointer to controller class instance
     TemperatureControl_t* controlObject;    // Pointer to control structure in objIndex
+    ScheduledTask* updateTask;              // Scheduler task for periodic update()
+    bool active;                            // Controller is active and updating
+    char message[100];                      // Status/error message
+};
+
+/**
+ * @brief Managed pH Controller Entry
+ * 
+ * Tracks all information needed for the pH controller (index 43)
+ */
+struct ManagedpHController {
+    uint8_t index;                          // Controller object index (always 43)
+    pHController* controllerInstance;       // Pointer to pH controller class instance
+    pHControl_t* controlObject;             // Pointer to control structure in objIndex
     ScheduledTask* updateTask;              // Scheduler task for periodic update()
     bool active;                            // Controller is active and updating
     char message[100];                      // Status/error message
@@ -128,6 +146,73 @@ public:
     static bool stopAutotune(uint8_t index);
     
     // ========================================================================
+    // pH Controller Lifecycle (Index 43)
+    // ========================================================================
+    
+    /**
+     * @brief Create a new pH controller instance
+     * 
+     * @param config Controller configuration from IPC
+     * @return true if controller created successfully
+     */
+    static bool createpHController(const IPC_ConfigpHController_t* config);
+    
+    /**
+     * @brief Delete the pH controller instance
+     * 
+     * @return true if controller deleted successfully
+     */
+    static bool deletepHController();
+    
+    /**
+     * @brief Update pH controller configuration
+     * 
+     * @param config New controller configuration
+     * @return true if configuration updated successfully
+     */
+    static bool configurepHController(const IPC_ConfigpHController_t* config);
+    
+    // ========================================================================
+    // pH Controller Control Commands
+    // ========================================================================
+    
+    /**
+     * @brief Set pH controller setpoint
+     * 
+     * @param setpoint New target pH
+     * @return true if setpoint updated successfully
+     */
+    static bool setpHSetpoint(float setpoint);
+    
+    /**
+     * @brief Enable pH controller
+     * 
+     * @return true if controller enabled successfully
+     */
+    static bool enablepHController();
+    
+    /**
+     * @brief Disable pH controller
+     * 
+     * @return true if controller disabled successfully
+     */
+    static bool disablepHController();
+    
+    /**
+     * @brief Manual acid dose
+     * 
+     * @return true if dose started successfully
+     */
+    static bool dosepHAcid();
+    
+    /**
+     * @brief Manual alkaline dose
+     * 
+     * @return true if dose started successfully
+     */
+    static bool dosepHAlkaline();
+    
+    // ========================================================================
     // Controller Query
     // ========================================================================
     
@@ -164,6 +249,7 @@ public:
     
 private:
     static ManagedController controllers[MAX_TEMP_CONTROLLERS];  // Controller array (3 slots)
+    static ManagedpHController phController;  // Single pH controller (index 43)
     static bool initialized;
     
     // ========================================================================
