@@ -2767,6 +2767,8 @@ void handleGetControllers() {
     // Dosing configuration info
     ctrl["acidEnabled"] = ioConfig.phController.acidDosing.enabled;
     ctrl["alkalineEnabled"] = ioConfig.phController.alkalineDosing.enabled;
+    ctrl["acidVolumePerDose_mL"] = ioConfig.phController.acidDosing.volumePerDose_mL;
+    ctrl["alkalineVolumePerDose_mL"] = ioConfig.phController.alkalineDosing.volumePerDose_mL;
     
     // Get runtime values from object cache for controller status
     ObjectCache::CachedObject* obj = objectCache.getObject(index);
@@ -2782,8 +2784,10 @@ void handleGetControllers() {
       if (enabled) {
         // Controller is running - use controller's process value and output
         ctrl["processValue"] = obj->value;  // Process value (pH)
-        // additionalValues: [0]=setpoint, [1]=currentOutput (0=off, 1=acid, 2=alkaline)
+        // additionalValues: [0]=setpoint, [1]=currentOutput, [2]=acidVolume_mL, [3]=alkalineVolume_mL
         ctrl["output"] = obj->valueCount > 1 ? obj->additionalValues[1] : 0.0f;  // Dosing state
+        ctrl["acidVolumeTotal_mL"] = obj->valueCount > 2 ? obj->additionalValues[2] : 0.0f;
+        ctrl["alkalineVolumeTotal_mL"] = obj->valueCount > 3 ? obj->additionalValues[3] : 0.0f;
       }
     }
     
@@ -2799,6 +2803,8 @@ void handleGetControllers() {
       }
       
       ctrl["output"] = 0;  // No dosing when disabled
+      ctrl["acidVolumeTotal_mL"] = 0.0f;
+      ctrl["alkalineVolumeTotal_mL"] = 0.0f;
     }
   }
   
@@ -3158,6 +3164,7 @@ void handleGetpHControllerConfig() {
   acid["motorPower"] = ioConfig.phController.acidDosing.motorPower;
   acid["dosingTime_ms"] = ioConfig.phController.acidDosing.dosingTime_ms;
   acid["dosingInterval_ms"] = ioConfig.phController.acidDosing.dosingInterval_ms;
+  acid["volumePerDose_mL"] = ioConfig.phController.acidDosing.volumePerDose_mL;
   
   // Alkaline dosing configuration
   JsonObject alkaline = doc.createNestedObject("alkalineDosing");
@@ -3167,6 +3174,7 @@ void handleGetpHControllerConfig() {
   alkaline["motorPower"] = ioConfig.phController.alkalineDosing.motorPower;
   alkaline["dosingTime_ms"] = ioConfig.phController.alkalineDosing.dosingTime_ms;
   alkaline["dosingInterval_ms"] = ioConfig.phController.alkalineDosing.dosingInterval_ms;
+  alkaline["volumePerDose_mL"] = ioConfig.phController.alkalineDosing.volumePerDose_mL;
   
   String response;
   serializeJson(doc, response);
@@ -3218,6 +3226,7 @@ void handleSavepHControllerConfig() {
   ioConfig.phController.acidDosing.motorPower = acid["motorPower"] | 50;
   ioConfig.phController.acidDosing.dosingTime_ms = acid["dosingTime_ms"] | 1000;
   ioConfig.phController.acidDosing.dosingInterval_ms = acid["dosingInterval_ms"] | 60000;
+  ioConfig.phController.acidDosing.volumePerDose_mL = acid["volumePerDose_mL"] | 0.5f;
   
   // Alkaline dosing configuration
   JsonObject alkaline = doc["alkalineDosing"];
@@ -3227,6 +3236,7 @@ void handleSavepHControllerConfig() {
   ioConfig.phController.alkalineDosing.motorPower = alkaline["motorPower"] | 50;
   ioConfig.phController.alkalineDosing.dosingTime_ms = alkaline["dosingTime_ms"] | 1000;
   ioConfig.phController.alkalineDosing.dosingInterval_ms = alkaline["dosingInterval_ms"] | 60000;
+  ioConfig.phController.alkalineDosing.volumePerDose_mL = alkaline["volumePerDose_mL"] | 0.5f;
   
   // Save configuration
   saveIOConfig();
@@ -3249,6 +3259,7 @@ void handleSavepHControllerConfig() {
   cfg.acidMotorPower = ioConfig.phController.acidDosing.motorPower;
   cfg.acidDosingTime_ms = ioConfig.phController.acidDosing.dosingTime_ms;
   cfg.acidDosingInterval_ms = ioConfig.phController.acidDosing.dosingInterval_ms;
+  cfg.acidVolumePerDose_mL = ioConfig.phController.acidDosing.volumePerDose_mL;
   
   cfg.alkalineEnabled = ioConfig.phController.alkalineDosing.enabled;
   cfg.alkalineOutputType = ioConfig.phController.alkalineDosing.outputType;
@@ -3256,6 +3267,7 @@ void handleSavepHControllerConfig() {
   cfg.alkalineMotorPower = ioConfig.phController.alkalineDosing.motorPower;
   cfg.alkalineDosingTime_ms = ioConfig.phController.alkalineDosing.dosingTime_ms;
   cfg.alkalineDosingInterval_ms = ioConfig.phController.alkalineDosing.dosingInterval_ms;
+  cfg.alkalineVolumePerDose_mL = ioConfig.phController.alkalineDosing.volumePerDose_mL;
   
   bool sent = ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
   
@@ -3380,6 +3392,42 @@ void handleDosepHAlkaline() {
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Alkaline dose started\"}");
   } else {
     log(LOG_WARNING, false, "Failed to send alkaline dose command\n");
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleResetpHAcidVolume() {
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_RESET_ACID_VOLUME;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "pH acid cumulative volume reset command sent\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Acid volume reset to 0.0 mL\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send acid volume reset command\n");
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleResetpHAlkalineVolume() {
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_RESET_BASE_VOLUME;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "pH alkaline cumulative volume reset command sent\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Alkaline volume reset to 0.0 mL\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send alkaline volume reset command\n");
     server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
   }
 }
@@ -3747,6 +3795,8 @@ void setupWebServer()
   server.on("/api/phcontroller/43/disable", HTTP_POST, handleDisablepHController);
   server.on("/api/phcontroller/43/dose-acid", HTTP_POST, handleDosepHAcid);
   server.on("/api/phcontroller/43/dose-alkaline", HTTP_POST, handleDosepHAlkaline);
+  server.on("/api/phcontroller/43/reset-acid-volume", HTTP_POST, handleResetpHAcidVolume);
+  server.on("/api/phcontroller/43/reset-alkaline-volume", HTTP_POST, handleResetpHAlkalineVolume);
   
   // Note: RESTful controller endpoints are handled dynamically in onNotFound():
   //   - GET    /api/controller/{40-43}     - Get controller config (REST)

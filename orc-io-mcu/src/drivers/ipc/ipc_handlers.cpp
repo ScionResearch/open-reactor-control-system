@@ -618,12 +618,16 @@ bool ipc_sendSensorData(uint16_t index) {
                 ctrl->newMessage = false;
             }
             
-            // Add setpoint and output state as additional values
-            data.valueCount = 2;
-            data.additionalValues[0] = ctrl->setpoint;        // Target pH
-            data.additionalValues[1] = ctrl->currentOutput;   // 0=off, 1=acid, 2=alkaline
+            // Add setpoint, output state, and cumulative volumes as additional values
+            data.valueCount = 4;
+            data.additionalValues[0] = ctrl->setpoint;                    // Target pH
+            data.additionalValues[1] = ctrl->currentOutput;               // 0=off, 1=acid, 2=alkaline
+            data.additionalValues[2] = ctrl->acidCumulativeVolume_mL;     // Acid dosed (mL)
+            data.additionalValues[3] = ctrl->alkalineCumulativeVolume_mL; // Alkaline dosed (mL)
             strncpy(data.additionalUnits[0], "pH", sizeof(data.additionalUnits[0]) - 1);
             strncpy(data.additionalUnits[1], "", sizeof(data.additionalUnits[1]) - 1);
+            strncpy(data.additionalUnits[2], "mL", sizeof(data.additionalUnits[2]) - 1);
+            strncpy(data.additionalUnits[3], "mL", sizeof(data.additionalUnits[3]) - 1);
             break;
         }
         
@@ -2269,6 +2273,26 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "Manual alkaline dose started");
             } else {
                 strcpy(message, "Failed to start alkaline dose");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case PH_CMD_RESET_ACID_VOLUME:
+            success = ControllerManager::resetpHAcidVolume();
+            if (success) {
+                strcpy(message, "Acid cumulative volume reset to 0.0 mL");
+            } else {
+                strcpy(message, "Failed to reset acid volume");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case PH_CMD_RESET_BASE_VOLUME:
+            success = ControllerManager::resetpHAlkalineVolume();
+            if (success) {
+                strcpy(message, "Alkaline cumulative volume reset to 0.0 mL");
+            } else {
+                strcpy(message, "Failed to reset alkaline volume");
                 errorCode = IPC_ERR_DEVICE_FAIL;
             }
             break;

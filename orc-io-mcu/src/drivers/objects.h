@@ -300,6 +300,8 @@ struct pHControl_t {
     uint16_t acidDosingTime_ms;      // Duration to activate output (milliseconds)
     uint32_t acidDosingInterval_ms;  // Minimum time between doses (milliseconds)
     uint32_t lastAcidDoseTime;       // Runtime: last dose timestamp (millis())
+    float acidVolumePerDose_mL;      // Volume per dose in mL (user configured)
+    float acidCumulativeVolume_mL;   // Runtime: total acid dosed in mL (RAM only)
     
     // Alkaline dosing configuration
     bool alkalineEnabled;
@@ -309,6 +311,8 @@ struct pHControl_t {
     uint16_t alkalineDosingTime_ms;  // Duration to activate output (milliseconds)
     uint32_t alkalineDosingInterval_ms;  // Minimum time between doses (milliseconds)
     uint32_t lastAlkalineDoseTime;   // Runtime: last dose timestamp (millis())
+    float alkalineVolumePerDose_mL;  // Volume per dose in mL (user configured)
+    float alkalineCumulativeVolume_mL; // Runtime: total alkaline dosed in mL (RAM only)
 };
 
 // Device control object (indices 50-69)

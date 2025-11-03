@@ -702,6 +702,7 @@ struct IPC_ConfigpHController_t {
     uint8_t acidMotorPower;          // Motor power level (0-100%), ignored if digital
     uint16_t acidDosingTime_ms;      // Duration to activate output (milliseconds)
     uint32_t acidDosingInterval_ms;  // Minimum time between doses (milliseconds)
+    float acidVolumePerDose_mL;      // Volume per dose in mL (user configured)
     
     // Alkaline dosing configuration  
     bool alkalineEnabled;
@@ -710,6 +711,7 @@ struct IPC_ConfigpHController_t {
     uint8_t alkalineMotorPower;      // Motor power level (0-100%), ignored if digital
     uint16_t alkalineDosingTime_ms;  // Duration to activate output (milliseconds)
     uint32_t alkalineDosingInterval_ms;  // Minimum time between doses (milliseconds)
+    float alkalineVolumePerDose_mL;  // Volume per dose in mL (user configured)
     
     uint8_t _padding[2];             // Alignment
 } __attribute__((packed));
@@ -722,7 +724,9 @@ enum pHControllerCommand : uint8_t {
     PH_CMD_ENABLE = 1,
     PH_CMD_DISABLE = 2,
     PH_CMD_DOSE_ACID = 3,           // Manual acid dose
-    PH_CMD_DOSE_ALKALINE = 4        // Manual alkaline dose
+    PH_CMD_DOSE_ALKALINE = 4,       // Manual alkaline dose
+    PH_CMD_RESET_ACID_VOLUME = 5,   // Reset acid cumulative volume
+    PH_CMD_RESET_BASE_VOLUME = 6    // Reset alkaline cumulative volume
 };
 
 /**

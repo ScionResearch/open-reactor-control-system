@@ -5492,6 +5492,51 @@ function updateControllerCard(ctrl) {
         }
     }
     
+    // Update controller name
+    const nameElement = card.querySelector('.output-name');
+    if (nameElement) {
+        nameElement.textContent = ctrl.name;
+    }
+    
+    // Update config info row fields (deadband, hysteresis, dose volumes)
+    if (ctrl.controlMethod === 0) {
+        // On/Off mode - update hysteresis
+        const hysteresisSpan = card.querySelector(`#ctrl-hysteresis-${ctrl.index}`);
+        if (hysteresisSpan) {
+            hysteresisSpan.textContent = ctrl.hysteresis.toFixed(2) + ctrl.unit;
+        }
+    } else if (ctrl.controlMethod === 2) {
+        // pH mode - update deadband and dose volumes
+        const deadbandSpan = card.querySelector(`#ctrl-deadband-${ctrl.index}`);
+        if (deadbandSpan) {
+            deadbandSpan.textContent = '±' + ctrl.deadband.toFixed(2) + ctrl.unit;
+        }
+        
+        const acidDoseSpan = card.querySelector(`#ctrl-acid-dose-vol-${ctrl.index}`);
+        if (acidDoseSpan) {
+            acidDoseSpan.textContent = (ctrl.acidVolumePerDose_mL || 0).toFixed(2) + ' mL';
+        }
+        
+        const baseDoseSpan = card.querySelector(`#ctrl-base-dose-vol-${ctrl.index}`);
+        if (baseDoseSpan) {
+            baseDoseSpan.textContent = (ctrl.alkalineVolumePerDose_mL || 0).toFixed(2) + ' mL';
+        }
+    }
+    
+    // Update cumulative volumes if in pH mode
+    if (ctrl.controlMethod === 2) {
+        const volumeDisplay = card.querySelector(`#ph-volume-${ctrl.index}`);
+        if (volumeDisplay) {
+            const volumeValues = volumeDisplay.querySelectorAll('.ph-volume-value');
+            if (volumeValues[0]) {
+                volumeValues[0].textContent = (ctrl.acidVolumeTotal_mL || 0).toFixed(2) + ' mL';
+            }
+            if (volumeValues[1]) {
+                volumeValues[1].textContent = (ctrl.alkalineVolumeTotal_mL || 0).toFixed(2) + ' mL';
+            }
+        }
+    }
+    
     // Update message
     const infoMessage = card.querySelector('.info-message');
     if (ctrl.message) {
@@ -5562,15 +5607,38 @@ function createControllerCard(ctrl) {
         </div>
         
         <div class="controller-info-row">
-            <span><strong>Mode:</strong> ${ctrl.controlMethod === 0 ? 'On/Off' : ctrl.controlMethod === 1 ? 'PID' : 'pH Dosing'}</span>
+            ${ctrl.controlMethod !== 2 ? `<span><strong>Mode:</strong> ${ctrl.controlMethod === 0 ? 'On/Off' : 'PID'}</span>` : ''}
             ${ctrl.controlMethod === 1 ? `
                 <span id="ctrl-gains-${ctrl.index}"><strong>Gains:</strong> P=${ctrl.kP.toFixed(2)}, I=${ctrl.kI.toFixed(2)}, D=${ctrl.kD.toFixed(2)}</span>
             ` : ctrl.controlMethod === 2 ? `
-                <span><strong>Deadband:</strong> ±${ctrl.deadband.toFixed(2)}${ctrl.unit}</span>
+                <span><strong>Deadband:</strong> <span id="ctrl-deadband-${ctrl.index}">±${ctrl.deadband.toFixed(2)}${ctrl.unit}</span></span>
+                <span><strong>Acid Dose Vol:</strong> <span id="ctrl-acid-dose-vol-${ctrl.index}">${(ctrl.acidVolumePerDose_mL || 0).toFixed(2)} mL</span></span>
+                <span><strong>Base Dose Vol:</strong> <span id="ctrl-base-dose-vol-${ctrl.index}">${(ctrl.alkalineVolumePerDose_mL || 0).toFixed(2)} mL</span></span>
             ` : `
-                <span><strong>Hysteresis:</strong> ${ctrl.hysteresis.toFixed(2)}${ctrl.unit}</span>
+                <span><strong>Hysteresis:</strong> <span id="ctrl-hysteresis-${ctrl.index}">${ctrl.hysteresis.toFixed(2)}${ctrl.unit}</span></span>
             `}
         </div>
+        
+        ${ctrl.controlMethod === 2 ? `
+        <div class="ph-volume-display" id="ph-volume-${ctrl.index}">
+            <div class="ph-volume-row">
+                <span class="ph-volume-label">Acid Dosed:</span>
+                <span class="ph-volume-value">${(ctrl.acidVolumeTotal_mL || 0).toFixed(2)} mL</span>
+                <button class="output-btn output-btn-sm output-btn-secondary" 
+                        onclick="resetpHVolume(${ctrl.index}, 'acid')">
+                    Reset
+                </button>
+            </div>
+            <div class="ph-volume-row">
+                <span class="ph-volume-label">Base Dosed:</span>
+                <span class="ph-volume-value">${(ctrl.alkalineVolumeTotal_mL || 0).toFixed(2)} mL</span>
+                <button class="output-btn output-btn-sm output-btn-secondary" 
+                        onclick="resetpHVolume(${ctrl.index}, 'alkaline')">
+                    Reset
+                </button>
+            </div>
+        </div>
+        ` : ''}
         
         ${ctrl.message ? `<div class="info-message">${ctrl.message}</div>` : ''}
         
@@ -5651,6 +5719,12 @@ function closeAddControllerModal() {
     if (modal) {
         modal.style.display = 'none';
         modal.classList.remove('active');
+        
+        // Clear the expanded fields to prevent ID conflicts
+        const expandedSection = document.getElementById('controllerExpandedFields');
+        if (expandedSection) {
+            expandedSection.remove();
+        }
     }
 }
 
@@ -5817,33 +5891,33 @@ async function renderpHAddForm(expandedDiv, sensors, outputs, indexNum) {
         <hr style="margin: 20px 0; border: none; border-top: 1px solid #dee2e6;">
         
         <div class="form-group">
-            <label for="ctrlName">Name:</label>
-            <input type="text" id="ctrlName" value="pH Controller ${indexNum}" maxlength="39">
+            <label for="addCtrlName">Name:</label>
+            <input type="text" id="addCtrlName" value="pH Controller ${indexNum}" maxlength="39">
         </div>
         
         <div class="form-group">
             <label>
-                <input type="checkbox" id="ctrlShowDashboard">
+                <input type="checkbox" id="addCtrlShowDashboard">
                 Show on Dashboard
             </label>
         </div>
         
         <div class="form-group">
-            <label for="ctrlpHSensor">pH Sensor:</label>
-            <select id="ctrlpHSensor">
+            <label for="addCtrlpHSensor">pH Sensor:</label>
+            <select id="addCtrlpHSensor">
                 <option value="">-- Select pH Sensor --</option>
                 ${phSensors.map(s => `<option value="${s.index}">${s.name}</option>`).join('')}
             </select>
         </div>
         
         <div class="form-group">
-            <label for="ctrlSetpoint">Setpoint (pH):</label>
-            <input type="number" id="ctrlSetpoint" value="7.0" step="0.1" min="0" max="14">
+            <label for="addCtrlSetpoint">Setpoint (pH):</label>
+            <input type="number" id="addCtrlSetpoint" value="7.0" step="0.1" min="0" max="14">
         </div>
         
         <div class="form-group">
-            <label for="ctrlDeadband">Deadband (pH):</label>
-            <input type="number" id="ctrlDeadband" value="0.2" step="0.05" min="0.05">
+            <label for="addCtrlDeadband">Deadband (pH):</label>
+            <input type="number" id="addCtrlDeadband" value="0.2" step="0.05" min="0.05">
         </div>
         
         <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
@@ -6083,14 +6157,15 @@ async function createTempController(index) {
 }
 
 async function createpHController(index) {
+    console.log(`[DEBUG] Creating pH controller - getting config data`);
     // Gather config data from the expanded form
     const configData = {
         isActive: true,
-        name: document.getElementById('ctrlName').value,
-        showOnDashboard: document.getElementById('ctrlShowDashboard').checked,
-        pvSourceIndex: parseInt(document.getElementById('ctrlpHSensor').value),
-        setpoint: parseFloat(document.getElementById('ctrlSetpoint').value),
-        deadband: parseFloat(document.getElementById('ctrlDeadband').value),
+        name: document.getElementById('addCtrlName').value,
+        showOnDashboard: document.getElementById('addCtrlShowDashboard').checked,
+        pvSourceIndex: parseInt(document.getElementById('addCtrlpHSensor').value),
+        setpoint: parseFloat(document.getElementById('addCtrlSetpoint').value),
+        deadband: parseFloat(document.getElementById('addCtrlDeadband').value),
         acidDosing: {
             enabled: document.getElementById('ctrlAcidEnabled').checked,
             outputType: parseInt(document.getElementById('ctrlAcidOutputType').value),
@@ -6108,6 +6183,8 @@ async function createpHController(index) {
             dosingInterval_ms: parseInt(document.getElementById('ctrlAlkalineDoseInterval').value)
         }
     };
+    console.log(`[DEBUG] Creating pH controller - config data:`, configData);
+    console.log(`[DEBUG] Creating pH controller - validating`);
     
     // Validation
     if (!configData.name) {
@@ -6134,6 +6211,7 @@ async function createpHController(index) {
         showToast('warning', 'Validation Error', 'Please select an alkaline dosing output');
         return;
     }
+    console.log(`[DEBUG] Creating pH controller - validation passed`);
     
     try {
         console.log(`[CONTROLLERS] Creating pH controller at index ${index}`, configData);
@@ -6469,6 +6547,11 @@ async function renderpHConfigForm(config) {
                 <label for="phAcidDoseInterval">Dose Interval (ms):</label>
                 <input type="number" id="phAcidDoseInterval" value="${config.acidDosing?.dosingInterval_ms || 60000}" min="1000" max="3600000" step="1000">
             </div>
+            
+            <div class="form-group">
+                <label for="phAcidVolumePerDose">Volume Per Dose (mL):</label>
+                <input type="number" id="phAcidVolumePerDose" value="${config.acidDosing?.volumePerDose_mL || 0.5}" min="0.1" max="100" step="0.1">
+            </div>
         </div>
         
         <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
@@ -6514,6 +6597,11 @@ async function renderpHConfigForm(config) {
             <div class="form-group">
                 <label for="phAlkalineDoseInterval">Dose Interval (ms):</label>
                 <input type="number" id="phAlkalineDoseInterval" value="${config.alkalineDosing?.dosingInterval_ms || 60000}" min="1000" max="3600000" step="1000">
+            </div>
+            
+            <div class="form-group">
+                <label for="phAlkalineVolumePerDose">Volume Per Dose (mL):</label>
+                <input type="number" id="phAlkalineVolumePerDose" value="${config.alkalineDosing?.volumePerDose_mL || 0.5}" min="0.1" max="100" step="0.1">
             </div>
         </div>
     `;
@@ -6634,8 +6722,8 @@ async function saveControllerConfig() {
         }
         
         showToast('success', 'Success', 'Controller configuration saved');
-        closeControllerConfigModal();
-        await loadControllers();
+        await loadControllers();  // Refresh data FIRST
+        closeControllerConfigModal();  // Then close modal
         
     } catch (error) {
         console.error('[CONTROLLERS] Error saving:', error);
@@ -6657,7 +6745,8 @@ async function savepHControllerConfig() {
             outputIndex: parseInt(document.getElementById('phAcidOutput').value),
             motorPower: parseInt(document.getElementById('phAcidMotorPower').value),
             dosingTime_ms: parseInt(document.getElementById('phAcidDoseTime').value),
-            dosingInterval_ms: parseInt(document.getElementById('phAcidDoseInterval').value)
+            dosingInterval_ms: parseInt(document.getElementById('phAcidDoseInterval').value),
+            volumePerDose_mL: parseFloat(document.getElementById('phAcidVolumePerDose').value)
         },
         alkalineDosing: {
             enabled: document.getElementById('phAlkalineEnabled').checked,
@@ -6665,7 +6754,8 @@ async function savepHControllerConfig() {
             outputIndex: parseInt(document.getElementById('phAlkalineOutput').value),
             motorPower: parseInt(document.getElementById('phAlkalineMotorPower').value),
             dosingTime_ms: parseInt(document.getElementById('phAlkalineDoseTime').value),
-            dosingInterval_ms: parseInt(document.getElementById('phAlkalineDoseInterval').value)
+            dosingInterval_ms: parseInt(document.getElementById('phAlkalineDoseInterval').value),
+            volumePerDose_mL: parseFloat(document.getElementById('phAlkalineVolumePerDose').value)
         }
     };
     
@@ -6708,8 +6798,8 @@ async function savepHControllerConfig() {
         }
         
         showToast('success', 'Success', 'pH Controller configuration saved');
-        closeControllerConfigModal();
-        await loadControllers();
+        await loadControllers();  // Refresh data FIRST
+        closeControllerConfigModal();  // Then close modal
         
     } catch (error) {
         console.error('[pH CTRL] Error saving:', error);
@@ -6847,6 +6937,27 @@ async function dosepHAlkaline(index) {
     } catch (error) {
         console.error('[pH CTRL] Error dosing alkaline:', error);
         showToast('error', 'Error', 'Failed to dose alkaline');
+    }
+}
+
+async function resetpHVolume(index, type) {
+    const endpoint = type === 'acid' ? 'reset-acid-volume' : 'reset-alkaline-volume';
+    const label = type === 'acid' ? 'Acid' : 'Alkaline';
+    
+    try {
+        const response = await fetch(`/api/phcontroller/${index}/${endpoint}`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) throw new Error(`Failed to reset ${type} volume`);
+        
+        console.log(`[pH CTRL] ${label} volume reset for controller ${index}`);
+        showToast('success', 'Volume Reset', `${label} cumulative volume reset to 0.0 mL`);
+        await loadControllers();
+        
+    } catch (error) {
+        console.error(`[pH CTRL] Error resetting ${type} volume:`, error);
+        showToast('error', 'Error', `Failed to reset ${type} volume`);
     }
 }
 

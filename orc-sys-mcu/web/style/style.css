@@ -2585,6 +2585,45 @@ input:checked + .slider:before { transform: translateX(26px); }
     flex-wrap: wrap;
 }
 
+/* pH Controller Volume Display */
+.ph-volume-display {
+    margin: 15px 0;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border-left: 4px solid #6c757d;
+}
+
+.ph-volume-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+}
+
+.ph-volume-row:not(:last-child) {
+    border-bottom: 1px solid #e9ecef;
+}
+
+.ph-volume-label {
+    font-weight: 500;
+    color: #495057;
+    min-width: 100px;
+}
+
+.ph-volume-value {
+    flex: 1;
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.output-btn-sm {
+    padding: 4px 12px;
+    font-size: 0.85em;
+    min-width: 70px;
+}
+
 /* Responsive controllers */
 @media (max-width: 768px) {
     .controllers-list {

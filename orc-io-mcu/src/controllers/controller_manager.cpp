@@ -396,6 +396,8 @@ bool ControllerManager::createpHController(const IPC_ConfigpHController_t* confi
     control->acidMotorPower = config->acidMotorPower;
     control->acidDosingTime_ms = config->acidDosingTime_ms;
     control->acidDosingInterval_ms = config->acidDosingInterval_ms;
+    control->acidVolumePerDose_mL = config->acidVolumePerDose_mL;
+    control->acidCumulativeVolume_mL = 0.0f;  // Initialize to zero
     control->lastAcidDoseTime = 0;
     
     // Alkaline dosing configuration
@@ -405,6 +407,8 @@ bool ControllerManager::createpHController(const IPC_ConfigpHController_t* confi
     control->alkalineMotorPower = config->alkalineMotorPower;
     control->alkalineDosingTime_ms = config->alkalineDosingTime_ms;
     control->alkalineDosingInterval_ms = config->alkalineDosingInterval_ms;
+    control->alkalineVolumePerDose_mL = config->alkalineVolumePerDose_mL;
+    control->alkalineCumulativeVolume_mL = 0.0f;  // Initialize to zero
     control->lastAlkalineDoseTime = 0;
     
     // Create controller instance
@@ -541,6 +545,24 @@ bool ControllerManager::dosepHAlkaline() {
     }
     
     return phController.controllerInstance->doseAlkaline();
+}
+
+bool ControllerManager::resetpHAcidVolume() {
+    if (!phController.active || phController.controllerInstance == nullptr) {
+        return false;
+    }
+    
+    phController.controllerInstance->resetAcidVolume();
+    return true;
+}
+
+bool ControllerManager::resetpHAlkalineVolume() {
+    if (!phController.active || phController.controllerInstance == nullptr) {
+        return false;
+    }
+    
+    phController.controllerInstance->resetAlkalineVolume();
+    return true;
 }
 
 // ============================================================================

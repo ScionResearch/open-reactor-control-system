@@ -55,6 +55,16 @@ public:
     bool doseAlkaline();
     
     /**
+     * @brief Reset acid cumulative volume to zero
+     */
+    void resetAcidVolume();
+    
+    /**
+     * @brief Reset alkaline cumulative volume to zero
+     */
+    void resetAlkalineVolume();
+    
+    /**
      * @brief Get current pH reading
      * @return float Current pH
      */

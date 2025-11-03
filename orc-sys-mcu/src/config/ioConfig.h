@@ -199,6 +199,7 @@ struct pHDosingConfig {
     uint8_t motorPower;              // Power level if motor (0-100%), ignored for digital
     uint16_t dosingTime_ms;          // How long to activate output (milliseconds)
     uint32_t dosingInterval_ms;      // Minimum time between doses (milliseconds)
+    float volumePerDose_mL;          // Volume dispensed per dose (mL) - for user monitoring
 };
 
 /**

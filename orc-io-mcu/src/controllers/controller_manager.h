@@ -212,6 +212,20 @@ public:
      */
     static bool dosepHAlkaline();
     
+    /**
+     * @brief Reset acid cumulative volume to zero
+     * 
+     * @return true if successful
+     */
+    static bool resetpHAcidVolume();
+    
+    /**
+     * @brief Reset alkaline cumulative volume to zero
+     * 
+     * @return true if successful
+     */
+    static bool resetpHAlkalineVolume();
+    
     // ========================================================================
     // Controller Query
     // ========================================================================

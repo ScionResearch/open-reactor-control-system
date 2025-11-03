@@ -13,6 +13,8 @@ pHController::pHController(pHControl_t* control)
         _control->currentpH = 0.0f;
         _control->lastAcidDoseTime = 0;
         _control->lastAlkalineDoseTime = 0;
+        _control->acidCumulativeVolume_mL = 0.0f;
+        _control->alkalineCumulativeVolume_mL = 0.0f;
         snprintf(_control->message, sizeof(_control->message), "pH Controller initialized");
         _control->newMessage = true;
     }
@@ -222,11 +224,19 @@ bool pHController::_activateOutput(uint8_t type, uint8_t index, uint8_t power, u
         // Update control state
         _control->currentOutput = _dosingAcid ? 1.0f : 2.0f;
         
-        // Update last dose time
+        // Update last dose time and accumulate volume
         if (_dosingAcid) {
             _control->lastAcidDoseTime = millis();
+            _control->acidCumulativeVolume_mL += _control->acidVolumePerDose_mL;
+            Serial.printf("[pH CTRL] Acid dose: +%.2f mL (total: %.2f mL)\n", 
+                         _control->acidVolumePerDose_mL, 
+                         _control->acidCumulativeVolume_mL);
         } else {
             _control->lastAlkalineDoseTime = millis();
+            _control->alkalineCumulativeVolume_mL += _control->alkalineVolumePerDose_mL;
+            Serial.printf("[pH CTRL] Alkaline dose: +%.2f mL (total: %.2f mL)\n", 
+                         _control->alkalineVolumePerDose_mL, 
+                         _control->alkalineCumulativeVolume_mL);
         }
         
         snprintf(_control->message, sizeof(_control->message), 
@@ -278,5 +288,19 @@ void pHController::_updateDosingTimeout() {
         
         snprintf(_control->message, sizeof(_control->message), "Dose complete");
         _control->newMessage = true;
+    }
+}
+
+void pHController::resetAcidVolume() {
+    if (_control) {
+        _control->acidCumulativeVolume_mL = 0.0f;
+        Serial.println("[pH CTRL] Acid cumulative volume reset to 0.0 mL");
+    }
+}
+
+void pHController::resetAlkalineVolume() {
+    if (_control) {
+        _control->alkalineCumulativeVolume_mL = 0.0f;
+        Serial.println("[pH CTRL] Alkaline cumulative volume reset to 0.0 mL");
     }
 }

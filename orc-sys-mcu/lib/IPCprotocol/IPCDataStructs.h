@@ -864,6 +864,7 @@ typedef struct __attribute__((packed)) {
     uint8_t acidMotorPower;      // Motor power (0-100%), ignored if digital
     uint16_t acidDosingTime_ms;  // Dose duration (milliseconds)
     uint32_t acidDosingInterval_ms;  // Minimum time between doses (milliseconds)
+    float acidVolumePerDose_mL;  // Volume per dose in mL (user configured)
     
     // Alkaline dosing configuration
     bool alkalineEnabled;        // Enable alkaline dosing
@@ -872,12 +873,13 @@ typedef struct __attribute__((packed)) {
     uint8_t alkalineMotorPower;  // Motor power (0-100%), ignored if digital
     uint16_t alkalineDosingTime_ms;  // Dose duration (milliseconds)
     uint32_t alkalineDosingInterval_ms;  // Minimum time between doses (milliseconds)
+    float alkalineVolumePerDose_mL;  // Volume per dose in mL (user configured)
     
     uint8_t _padding[2];         // Alignment padding (must match IO MCU struct)
 } IPC_ConfigpHController_t;
 
-// Verify struct size matches IO MCU (should be 75 bytes with padding)
-static_assert(sizeof(IPC_ConfigpHController_t) == 75, "IPC_ConfigpHController_t size mismatch");
+// Verify struct size matches IO MCU (should be 83 bytes with padding: 75 + 2*float)
+static_assert(sizeof(IPC_ConfigpHController_t) == 83, "IPC_ConfigpHController_t size mismatch");
 
 /**
  * @brief pH Controller runtime control
@@ -902,6 +904,8 @@ enum pHControllerCommand : uint8_t {
     PH_CMD_DISABLE          = 0x02,  // Disable controller
     PH_CMD_DOSE_ACID        = 0x03,  // Manual acid dose
     PH_CMD_DOSE_ALKALINE    = 0x04,  // Manual alkaline dose
+    PH_CMD_RESET_ACID_VOLUME = 0x05, // Reset acid cumulative volume
+    PH_CMD_RESET_BASE_VOLUME = 0x06  // Reset alkaline cumulative volume
 };
 
 /**
