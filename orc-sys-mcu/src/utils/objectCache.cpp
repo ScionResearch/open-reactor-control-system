@@ -141,6 +141,31 @@ bool ObjectCache::exists(uint8_t index) {
     return _cache[index].valid;
 }
 
+void ObjectCache::invalidate(uint8_t index) {
+    if (index >= MAX_CACHED_OBJECTS) {
+        return;
+    }
+    
+    _cache[index].valid = false;
+    _cache[index].lastUpdate = 0;
+    // Keep other fields intact for potential debugging
+}
+
+void ObjectCache::invalidateRange(uint8_t startIndex, uint8_t count) {
+    if (startIndex >= MAX_CACHED_OBJECTS || count == 0) {
+        return;
+    }
+    
+    // Clamp count to valid range
+    if (startIndex + count > MAX_CACHED_OBJECTS) {
+        count = MAX_CACHED_OBJECTS - startIndex;
+    }
+    
+    for (uint8_t i = 0; i < count; i++) {
+        invalidate(startIndex + i);
+    }
+}
+
 void ObjectCache::clear() {
     for (int i = 0; i < MAX_CACHED_OBJECTS; i++) {
         memset(&_cache[i], 0, sizeof(CachedObject));

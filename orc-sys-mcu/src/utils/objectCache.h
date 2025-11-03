@@ -75,6 +75,19 @@ public:
     bool exists(uint8_t index);
     
     /**
+     * @brief Invalidate a single cached object
+     * @param index Object index to invalidate
+     */
+    void invalidate(uint8_t index);
+    
+    /**
+     * @brief Invalidate a range of cached objects
+     * @param startIndex First object index to invalidate
+     * @param count Number of objects to invalidate
+     */
+    void invalidateRange(uint8_t startIndex, uint8_t count);
+    
+    /**
      * @brief Clear all cached data
      */
     void clear();

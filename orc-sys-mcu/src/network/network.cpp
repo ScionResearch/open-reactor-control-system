@@ -1730,6 +1730,11 @@ void handleDeleteDevice() {
   // Free the dynamic index and mark slot as inactive
   freeDynamicIndex(dynamicIndex);
   
+  // Invalidate sensor cache entries for this device
+  // Devices can have up to 4 sensor objects (e.g., pH probe has pH + temp)
+  // Invalidate the maximum possible range to ensure all sensors are cleared
+  objectCache.invalidateRange(dynamicIndex, 4);
+  
   // Send delete command to IO MCU
   bool sent = sendDeviceDeleteCommand(dynamicIndex);
   if (!sent) {
@@ -1739,7 +1744,7 @@ void handleDeleteDevice() {
   // Save configuration
   saveIOConfig();
   
-  log(LOG_INFO, true, "Device deleted: %s (index %d)\n", deviceName.c_str(), dynamicIndex);
+  log(LOG_INFO, true, "Device deleted: %s (index %d), cache invalidated\n", deviceName.c_str(), dynamicIndex);
   
   // Send success response
   server.send(200, "application/json", "{\"success\":true,\"message\":\"Device deleted successfully\"}");
@@ -2854,6 +2859,10 @@ void handleSaveTempControllerConfig(uint8_t index) {
   }
   
   int ctrlIdx = index - 40;
+  
+  // DEBUG: Log received setpoint to track down the 7.0 bug
+  float receivedSetpoint = doc["setpoint"] | -999.0f;
+  log(LOG_INFO, false, "[TEMP CTRL %d] Save config: received setpoint=%.2f\n", index, receivedSetpoint);
   
   // Check for output conflicts
   uint8_t newOutputIndex = doc["outputIndex"] | 0;
