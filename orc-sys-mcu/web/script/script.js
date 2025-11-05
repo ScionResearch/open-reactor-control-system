@@ -3289,7 +3289,7 @@ function renderDigitalOutputs(outputs) {
                 const display = document.getElementById(`slider-display-${output.index}`);
                 
                 const pendingValue = pendingCommands.get(output.index);
-                const actualValue = output.value || 0;
+                const actualValue = output.value.toFixed(1) || 0;
                 
                 if (!isActive && slider) {
                     // Only update slider if no pending command or actual value matches pending
@@ -5299,11 +5299,11 @@ window.initControllersTab = initControllersTab;
 // CONTROLLERS TAB
 // ============================================================================
 
-// Controller type definitions (matching ioConfig indices)
 const CONTROLLER_TYPES = {
     TEMPERATURE: { value: 0, name: 'Temperature Controller', indices: [40, 41, 42] },
     PH: { value: 1, name: 'pH Controller', indices: [43] },
-    DO: { value: 2, name: 'Dissolved Oxygen Controller', indices: [44] }
+    FLOW: { value: 2, name: 'Flow Controller', indices: [44, 45, 46, 47] },
+    DO: { value: 3, name: 'Dissolved Oxygen Controller', indices: [48] }
 };
 
 // State management
@@ -5432,29 +5432,40 @@ function updateControllerCard(ctrl) {
         dashIcon.title = ctrl.showOnDashboard ? 'Shown on Dashboard' : 'Hidden from Dashboard';
     }
     
-    // Update process value
+    // Update controller values (indices differ based on whether PV exists)
     const processValueDisplays = card.querySelectorAll('.controller-value-display');
-    if (processValueDisplays[0]) {
-        processValueDisplays[0].textContent = ctrl.processValue !== null ? ctrl.processValue.toFixed(1) + ctrl.unit : '--' + ctrl.unit;
-    }
     
-    // Update setpoint display
-    if (processValueDisplays[1]) {
-        processValueDisplays[1].textContent = ctrl.setpoint.toFixed(1) + ctrl.unit;
-    }
-    
-    // Update output display
-    if (processValueDisplays[2]) {
-        const outputText = ctrl.output !== null 
-            ? (ctrl.controlMethod === 0 
-                ? (ctrl.output > 0 ? 'ON' : 'OFF')
-                : ctrl.controlMethod === 1
-                ? ctrl.output.toFixed(0) + '%'
-                : (ctrl.output === 0 ? 'OFF' 
-                   : ctrl.output === 1 ? 'DOSING ACID' 
-                   : 'DOSING ALKALINE'))
-            : '--';
-        processValueDisplays[2].textContent = outputText;
+    if (ctrl.controlMethod === 3) {
+        // Flow controllers: no PV, so indices are [0]=Setpoint, [1]=Output
+        if (processValueDisplays[0]) {
+            processValueDisplays[0].textContent = ctrl.processValue !== null ? ctrl.processValue.toFixed(1) + ctrl.unit : '--' + ctrl.unit;
+        }
+        if (processValueDisplays[1]) {
+            const outputText = ctrl.output === 1 ? 'DOSING' : 'OFF';
+            processValueDisplays[1].textContent = outputText;
+        }
+    } else {
+        // Other controllers: PV exists, so indices are [0]=PV, [1]=Setpoint, [2]=Output
+        if (processValueDisplays[0]) {
+            processValueDisplays[0].textContent = ctrl.processValue !== null ? ctrl.processValue.toFixed(1) + ctrl.unit : '--' + ctrl.unit;
+        }
+        if (processValueDisplays[1]) {
+            processValueDisplays[1].textContent = ctrl.setpoint.toFixed(1) + ctrl.unit;
+        }
+        if (processValueDisplays[2]) {
+            const outputText = ctrl.output !== null 
+                ? (ctrl.controlMethod === 0 
+                    ? (ctrl.output > 0 ? 'ON' : 'OFF')
+                    : ctrl.controlMethod === 1
+                    ? ctrl.output.toFixed(0) + '%'
+                    : ctrl.controlMethod === 2
+                    ? (ctrl.output === 0 ? 'OFF' 
+                       : ctrl.output === 1 ? 'DOSING ACID' 
+                       : 'DOSING ALKALINE')
+                    : '--')
+                : '--';
+            processValueDisplays[2].textContent = outputText;
+        }
     }
     
     // Update setpoint input (only if not focused)
@@ -5537,19 +5548,29 @@ function updateControllerCard(ctrl) {
         }
     }
     
-    // Update message
-    const infoMessage = card.querySelector('.info-message');
-    if (ctrl.message) {
-        if (infoMessage) {
-            infoMessage.textContent = ctrl.message;
-        } else {
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'info-message';
-            msgDiv.textContent = ctrl.message;
-            card.querySelector('.controller-info-row').insertAdjacentElement('afterend', msgDiv);
+    // Update flow controller info if in flow mode
+    if (ctrl.controlMethod === 3) {
+        const doseIntervalSpan = card.querySelector(`#ctrl-dose-interval-${ctrl.index}`);
+        if (doseIntervalSpan && ctrl.dosingInterval_ms !== undefined) {
+            doseIntervalSpan.textContent = (ctrl.dosingInterval_ms / 1000).toFixed(1) + ' s';
         }
-    } else if (infoMessage) {
-        infoMessage.remove();
+        
+        const cumulativeVolSpan = card.querySelector(`#flow-cumulative-vol-${ctrl.index}`);
+        if (cumulativeVolSpan && ctrl.cumulativeVolume_mL !== undefined) {
+            cumulativeVolSpan.textContent = ctrl.cumulativeVolume_mL.toFixed(2) + ' mL';
+        }
+    }
+    
+    // Update message (always present, just toggle visibility to prevent height changes)
+    const infoMessage = card.querySelector(`#ctrl-message-${ctrl.index}`);
+    if (infoMessage) {
+        if (ctrl.message) {
+            infoMessage.textContent = ctrl.message;
+            infoMessage.style.visibility = 'visible';
+        } else {
+            infoMessage.innerHTML = '&nbsp;';  // Non-breaking space to maintain height
+            infoMessage.style.visibility = 'hidden';
+        }
     }
 }
 
@@ -5582,10 +5603,12 @@ function createControllerCard(ctrl) {
         </div>
         
         <div class="controller-values">
+            ${ctrl.controlMethod !== 3 ? `
             <div class="controller-value-item">
                 <div class="controller-value-label">Process Value</div>
                 <div class="controller-value-display">${ctrl.processValue !== null ? ctrl.processValue.toFixed(1) : '--'}${ctrl.unit}</div>
             </div>
+            ` : ''}
             <div class="controller-value-item">
                 <div class="controller-value-label">Setpoint</div>
                 <div class="controller-value-display">${ctrl.setpoint.toFixed(1)}${ctrl.unit}</div>
@@ -5598,22 +5621,30 @@ function createControllerCard(ctrl) {
                             ? (ctrl.output > 0 ? 'ON' : 'OFF')          // On/Off mode: show state
                             : ctrl.controlMethod === 1
                             ? ctrl.output.toFixed(0) + '%'              // PID mode: show percentage
-                            : (ctrl.output === 0 ? 'OFF' 
+                            : ctrl.controlMethod === 2
+                            ? (ctrl.output === 0 ? 'OFF' 
                                : ctrl.output === 1 ? 'DOSING ACID' 
-                               : 'DOSING ALKALINE'))                    // pH mode: show dosing state
+                               : 'DOSING ALKALINE')                     // pH mode: show dosing state
+                            : ctrl.controlMethod === 3
+                            ? (ctrl.output === 1 ? 'DOSING' : 'OFF')    // Flow mode: show dosing state
+                            : '--')
                         : '--'
                 }</div>
             </div>
         </div>
         
         <div class="controller-info-row">
-            ${ctrl.controlMethod !== 2 ? `<span><strong>Mode:</strong> ${ctrl.controlMethod === 0 ? 'On/Off' : 'PID'}</span>` : ''}
+            ${ctrl.controlMethod !== 2 && ctrl.controlMethod !== 3 ? `<span><strong>Mode:</strong> ${ctrl.controlMethod === 0 ? 'On/Off' : 'PID'}</span>` : ''}
             ${ctrl.controlMethod === 1 ? `
                 <span id="ctrl-gains-${ctrl.index}"><strong>Gains:</strong> P=${ctrl.kP.toFixed(2)}, I=${ctrl.kI.toFixed(2)}, D=${ctrl.kD.toFixed(2)}</span>
             ` : ctrl.controlMethod === 2 ? `
                 <span><strong>Deadband:</strong> <span id="ctrl-deadband-${ctrl.index}">±${ctrl.deadband.toFixed(2)}${ctrl.unit}</span></span>
                 <span><strong>Acid Dose Vol:</strong> <span id="ctrl-acid-dose-vol-${ctrl.index}">${(ctrl.acidVolumePerDose_mL || 0).toFixed(2)} mL</span></span>
                 <span><strong>Base Dose Vol:</strong> <span id="ctrl-base-dose-vol-${ctrl.index}">${(ctrl.alkalineVolumePerDose_mL || 0).toFixed(2)} mL</span></span>
+            ` : ctrl.controlMethod === 3 ? `
+                <span><strong>Dosing Interval:</strong> <span id="ctrl-dose-interval-${ctrl.index}">${ctrl.dosingInterval_ms ? (ctrl.dosingInterval_ms / 1000).toFixed(1) + ' s' : '--'}</span></span>
+                <span><strong>Calib Vol:</strong> ${ctrl.calibrationVolume_mL ? ctrl.calibrationVolume_mL.toFixed(2) + ' mL' : '--'}</span>
+                <span><strong>Calib Time:</strong> ${ctrl.calibrationDoseTime_ms ? (ctrl.calibrationDoseTime_ms / 1000).toFixed(1) + ' s' : '--'}</span>
             ` : `
                 <span><strong>Hysteresis:</strong> <span id="ctrl-hysteresis-${ctrl.index}">${ctrl.hysteresis.toFixed(2)}${ctrl.unit}</span></span>
             `}
@@ -5634,6 +5665,17 @@ function createControllerCard(ctrl) {
                 <span class="ph-volume-value">${(ctrl.alkalineVolumeTotal_mL || 0).toFixed(2)} mL</span>
                 <button class="output-btn output-btn-sm output-btn-secondary" 
                         onclick="resetpHVolume(${ctrl.index}, 'alkaline')">
+                    Reset
+                </button>
+            </div>
+        </div>
+        ` : ctrl.controlMethod === 3 ? `
+        <div class="ph-volume-display" id="flow-volume-${ctrl.index}">
+            <div class="ph-volume-row">
+                <span class="ph-volume-label">Total Volume:</span>
+                <span class="ph-volume-value" id="flow-cumulative-vol-${ctrl.index}">${(ctrl.cumulativeVolume_mL || 0).toFixed(2)} mL</span>
+                <button class="output-btn output-btn-sm output-btn-secondary" 
+                        onclick="resetFlowVolume(${ctrl.index})">
                     Reset
                 </button>
             </div>
@@ -5687,7 +5729,16 @@ function createControllerCard(ctrl) {
                         Dose Alkaline
                     </button>
                 ` : ''}
+            ` : ctrl.controlMethod === 3 ? `
+                <button class="output-btn output-btn-warning" 
+                        onclick="manualFlowDose(${ctrl.index})">
+                    Manual Dose
+                </button>
             ` : ''}
+        </div>
+        
+        <div class="info-message" id="ctrl-message-${ctrl.index}" style="visibility: ${ctrl.message ? 'visible' : 'hidden'}; min-height: 1.2em;">
+            ${ctrl.message || '&nbsp;'}
         </div>
     `;
     
@@ -5772,6 +5823,12 @@ async function updateSensorOptions() {
     if (selectedControllerType.value === 1) {
         // pH Controller
         await renderpHAddForm(expandedDiv, sensors, outputs, availableIndices[0]);
+    } else if (selectedControllerType.value === 2) {
+        // Flow Controller
+        await renderFlowAddForm(expandedDiv, sensors, outputs, availableIndices[0]);
+    } else if (selectedControllerType.value === 3) {
+        // Dissolved Oxygen Controller
+        await renderDOAddForm(expandedDiv, sensors, outputs, availableIndices[0]);
     } else {
         // Temperature Controller
         expandedDiv.innerHTML = `
@@ -6024,6 +6081,303 @@ async function renderpHAddForm(expandedDiv, sensors, outputs, indexNum) {
     }, 0);
 }
 
+async function renderFlowAddForm(expandedDiv, sensors, outputs, indexNum) {
+    // Get DC motors for flow control
+    let dcMotors = [];
+    try {
+        const outputsResponse = await fetch('/api/outputs');
+        if (outputsResponse.ok) {
+            const outputsData = await outputsResponse.json();
+            if (outputsData.dcMotors) {
+                dcMotors = outputsData.dcMotors.map(m => ({ index: m.index, name: m.name }));
+            }
+        }
+    } catch (error) {
+        console.error('[FLOW ADD] Error loading DC motors:', error);
+    }
+    
+    expandedDiv.innerHTML = `
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #dee2e6;">
+        
+        <div class="form-group">
+            <label for="addFlowCtrlName">Name:</label>
+            <input type="text" id="addFlowCtrlName" value="Flow Controller ${indexNum}" maxlength="39">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="addFlowCtrlShowDashboard">
+                Show on Dashboard
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="addFlowCtrlFlowRate">Target Flow Rate (mL/min):</label>
+            <input type="number" id="addFlowCtrlFlowRate" value="10.0" step="0.1" min="0.1">
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Output Configuration</h4>
+        
+        <div class="form-group">
+            <label for="addFlowCtrlOutputType">Output Type:</label>
+            <select id="addFlowCtrlOutputType" onchange="updateFlowAddOutputOptions()">
+                <option value="0">Digital Output</option>
+                <option value="1">DC Motor</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="addFlowCtrlOutput">Output:</label>
+            <select id="addFlowCtrlOutput">
+                <option value="">-- Select Output --</option>
+            </select>
+        </div>
+        
+        <div class="form-group" id="flowAddMotorPowerGroup" style="display: none;">
+            <label for="addFlowCtrlMotorPower">Motor Power (%):</label>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="number" id="addFlowCtrlMotorPower" value="50" min="1" max="100" style="flex: 1;">
+                <span>%</span>
+            </div>
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Calibration Data</h4>
+        
+        <div class="form-group">
+            <label for="addFlowCtrlCalibVolume">Calibration Volume (mL):</label>
+            <input type="number" id="addFlowCtrlCalibVolume" value="10.0" step="0.1" min="0.1">
+        </div>
+        
+        <div class="form-group">
+            <label for="addFlowCtrlCalibTime">Calibration Dose Time (ms):</label>
+            <input type="number" id="addFlowCtrlCalibTime" value="5000" min="100" max="60000" step="100">
+        </div>
+        
+        <div class="form-group" id="flowAddCalibPowerGroup" style="display: none;">
+            <label for="addFlowCtrlCalibPower">Calibration Motor Power (%):</label>
+            <input type="number" id="addFlowCtrlCalibPower" value="50" min="1" max="100">
+            <small style="color: #7f8c8d;">Motor power used during calibration (applies to both calibration and dosing)</small>
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Safety Limits</h4>
+        
+        <div class="form-group">
+            <label for="addFlowCtrlMinInterval">Min Dosing Interval (ms):</label>
+            <input type="number" id="addFlowCtrlMinInterval" value="1000" min="100" max="60000" step="100">
+        </div>
+        
+        <div class="form-group">
+            <label for="addFlowCtrlMaxTime">Max Dosing Time (ms):</label>
+            <input type="number" id="addFlowCtrlMaxTime" value="10000" min="100" max="60000" step="100">    
+        </div>
+    `;
+    
+    // Store references for output options update
+    window.flowAddOutputs = outputs;
+    window.flowAddMotors = dcMotors;
+    
+    // Initialize output dropdown
+    setTimeout(() => {
+        updateFlowAddOutputOptions();
+    }, 0);
+}
+
+async function renderDOAddForm(expandedDiv, sensors, outputs, indexNum) {
+    // Get DO sensors from device sensors
+    let doSensors = [];
+    try {
+        const inputsResponse = await fetch('/api/inputs');
+        if (inputsResponse.ok) {
+            const inputsData = await inputsResponse.json();
+            if (inputsData.devices) {
+                doSensors = inputsData.devices
+                    .filter(ds => ds.t && ds.t == 4)  // Type 4 for DO sensors
+                    .map(ds => ({ index: ds.i, name: `[${ds.i}] ${ds.n || 'DO Sensor'} (${ds.v.toFixed(2)}${ds.u})` }));
+            }
+        }
+    } catch (error) {
+        console.error('[DO ADD] Error loading DO sensors:', error);
+    }
+    
+    // Get DC motors for dosing options  
+    let dcMotors = [];
+    try {
+        const outputsResponse = await fetch('/api/outputs');
+        if (outputsResponse.ok) {
+            const outputsData = await outputsResponse.json();
+            if (outputsData.dcMotors) {
+                dcMotors = outputsData.dcMotors.map(m => ({ index: m.index, name: m.name }));
+            }
+        }
+    } catch (error) {
+        console.error('[DO ADD] Error loading DC motors:', error);
+    }
+    
+    expandedDiv.innerHTML = `
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #dee2e6;">
+        
+        <div class="form-group">
+            <label for="addDOCtrlName">Name:</label>
+            <input type="text" id="addDOCtrlName" value="DO Controller ${indexNum}" maxlength="39">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="addDOCtrlShowDashboard">
+                Show on Dashboard
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="addDOCtrlSensor">DO Sensor:</label>
+            <select id="addDOCtrlSensor">
+                <option value="">-- Select DO Sensor --</option>
+                ${doSensors.map(s => `<option value="${s.index}">${s.name}</option>`).join('')}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="addDOCtrlSetpoint">Setpoint (mg/L or %):</label>
+            <input type="number" id="addDOCtrlSetpoint" value="8.0" step="0.1" min="0">
+        </div>
+        
+        <div class="form-group">
+            <label for="addDOCtrlDeadband">Deadband:</label>
+            <input type="number" id="addDOCtrlDeadband" value="0.5" step="0.1" min="0.1">
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Gas Dosing (Increase DO)</h4>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="addDOCtrlGasEnabled" checked onchange="toggleDOAddFields()">
+                Enable Gas Dosing
+            </label>
+        </div>
+        
+        <div id="doGasAddFields">
+            <div class="form-group">
+                <label for="addDOCtrlGasOutputType">Output Type:</label>
+                <select id="addDOCtrlGasOutputType" onchange="updateDOAddOutputOptions('gas')">
+                    <option value="0">Digital Output</option>
+                    <option value="1">DC Motor</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="addDOCtrlGasOutput">Output:</label>
+                <select id="addDOCtrlGasOutput">
+                    <option value="">-- Select Output --</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="doGasAddMotorPowerGroup" style="display: none;">
+                <label for="addDOCtrlGasMotorPower">Motor Power (%):</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="addDOCtrlGasMotorPower" value="50" min="1" max="100" style="flex: 1;">
+                    <span>%</span>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="addDOCtrlGasDoseTime">Dose Time (ms):</label>
+                <input type="number" id="addDOCtrlGasDoseTime" value="5000" min="100" max="60000" step="100">
+            </div>
+            
+            <div class="form-group">
+                <label for="addDOCtrlGasDoseInterval">Dose Interval (ms):</label>
+                <input type="number" id="addDOCtrlGasDoseInterval" value="60000" min="1000" max="3600000" step="1000">
+            </div>
+        </div>
+        
+        <p style="color: #7f8c8d; font-size: 0.9em; margin-top: 10px;">
+            <strong>Note:</strong> DO Controller is for display/monitoring. Full control logic coming soon.
+        </p>
+    `;
+    
+    // Store references
+    window.doAddOutputs = outputs;
+    window.doAddMotors = dcMotors;
+    
+    // Initialize output dropdowns
+    setTimeout(() => {
+        updateDOAddOutputOptions('gas');
+    }, 0);
+}
+
+function updateFlowAddOutputOptions() {
+    const outputTypeSelect = document.getElementById('addFlowCtrlOutputType');
+    const outputSelect = document.getElementById('addFlowCtrlOutput');
+    const motorPowerGroup = document.getElementById('flowAddMotorPowerGroup');
+    const calibPowerGroup = document.getElementById('flowAddCalibPowerGroup');
+    
+    if (!outputTypeSelect || !outputSelect) return;
+    
+    const outputType = parseInt(outputTypeSelect.value);
+    const outputs = window.flowAddOutputs || [];
+    const motors = window.flowAddMotors || [];
+    
+    // Clear current options
+    outputSelect.innerHTML = '<option value="">-- Select Output --</option>';
+    
+    if (outputType === 0) {
+        // Digital outputs (21-25)
+        outputs.forEach(o => {
+            if (o.index >= 21 && o.index <= 25) {
+                outputSelect.innerHTML += `<option value="${o.index}">${o.name}</option>`;
+            }
+        });
+        if (calibPowerGroup) calibPowerGroup.style.display = 'none';
+    } else {
+        // DC motors (27-30)
+        motors.forEach(m => {
+            outputSelect.innerHTML += `<option value="${m.index}">${m.name}</option>`;
+        });
+        if (calibPowerGroup) calibPowerGroup.style.display = 'block';
+    }
+}
+
+function toggleDOAddFields() {
+    const gasEnabled = document.getElementById('addDOCtrlGasEnabled')?.checked || false;
+    const gasFields = document.getElementById('doGasAddFields');
+    if (gasFields) gasFields.style.display = gasEnabled ? 'block' : 'none';
+}
+
+function updateDOAddOutputOptions(type) {
+    const outputTypeSelect = document.getElementById(`addDOCtrl${type.charAt(0).toUpperCase() + type.slice(1)}OutputType`);
+    const outputSelect = document.getElementById(`addDOCtrl${type.charAt(0).toUpperCase() + type.slice(1)}Output`);
+    const motorPowerGroup = document.getElementById(`do${type.charAt(0).toUpperCase() + type.slice(1)}AddMotorPowerGroup`);
+    
+    if (!outputTypeSelect || !outputSelect) return;
+    
+    const outputType = parseInt(outputTypeSelect.value);
+    const outputs = window.doAddOutputs || [];
+    const motors = window.doAddMotors || [];
+    
+    // Clear current options
+    outputSelect.innerHTML = '<option value="">-- Select Output --</option>';
+    
+    if (outputType === 0) {
+        // Digital outputs (21-25)
+        outputs.forEach(o => {
+            if (o.index >= 21 && o.index <= 25) {
+                outputSelect.innerHTML += `<option value="${o.index}">${o.name}</option>`;
+            }
+        });
+        if (motorPowerGroup) motorPowerGroup.style.display = 'none';
+    } else {
+        // DC motors (27-30)
+        motors.forEach(m => {
+            outputSelect.innerHTML += `<option value="${m.index}">${m.name}</option>`;
+        });
+        if (motorPowerGroup) motorPowerGroup.style.display = 'block';
+    }
+}
+
 function toggleAddDosingFields() {
     const acidEnabled = document.getElementById('ctrlAcidEnabled')?.checked || false;
     const alkalineEnabled = document.getElementById('ctrlAlkalineEnabled')?.checked || false;
@@ -6089,6 +6443,12 @@ async function createController() {
     if (selectedControllerType.value === 1) {
         // pH Controller
         await createpHController(index);
+    } else if (selectedControllerType.value === 2) {
+        // Flow Controller
+        await createFlowController(index);
+    } else if (selectedControllerType.value === 3) {
+        // Dissolved Oxygen Controller
+        await createDOController(index);
     } else {
         // Temperature Controller
         await createTempController(index);
@@ -6237,6 +6597,111 @@ async function createpHController(index) {
     }
 }
 
+async function createFlowController(index) {
+    // Gather config data from the expanded form
+    const outputType = parseInt(document.getElementById('addFlowCtrlOutputType').value);
+    const calibMotorPower = outputType === 1 ? parseInt(document.getElementById('addFlowCtrlCalibPower').value) : 50;
+    
+    const configData = {
+        isActive: true,
+        name: document.getElementById('addFlowCtrlName').value,
+        showOnDashboard: document.getElementById('addFlowCtrlShowDashboard').checked,
+        flowRate_mL_min: parseFloat(document.getElementById('addFlowCtrlFlowRate').value),
+        outputType: outputType,
+        outputIndex: parseInt(document.getElementById('addFlowCtrlOutput').value),
+        motorPower: calibMotorPower,  // Use calibration power for runtime dosing too
+        calibrationVolume_mL: parseFloat(document.getElementById('addFlowCtrlCalibVolume').value),
+        calibrationDoseTime_ms: parseInt(document.getElementById('addFlowCtrlCalibTime').value),
+        calibrationMotorPower: calibMotorPower,
+        minDosingInterval_ms: parseInt(document.getElementById('addFlowCtrlMinInterval').value),
+        maxDosingTime_ms: parseInt(document.getElementById('addFlowCtrlMaxTime').value)
+    };
+    
+    // Validation
+    if (!configData.name) {
+        showToast('warning', 'Validation Error', 'Please enter a name');
+        return;
+    }
+    
+    if (!configData.outputIndex || isNaN(configData.outputIndex)) {
+        showToast('warning', 'Validation Error', 'Please select an output');
+        return;
+    }
+    
+    if (configData.calibrationVolume_mL <= 0) {
+        showToast('warning', 'Validation Error', 'Calibration volume must be greater than 0');
+        return;
+    }
+    
+    if (configData.calibrationDoseTime_ms <= 0) {
+        showToast('warning', 'Validation Error', 'Calibration dose time must be greater than 0');
+        return;
+    }
+    
+    try {
+        console.log(`[CONTROLLERS] Creating flow controller at index ${index}`, configData);
+        
+        const response = await fetch(`/api/config/flowcontroller/${index}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to create flow controller');
+        }
+        
+        showToast('success', 'Success', 'Flow Controller created successfully');
+        closeAddControllerModal();
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[FLOW CTRL] Error creating:', error);
+        showToast('error', 'Error', error.message);
+    }
+}
+
+async function createDOController(index) {
+    // Note: DO Controller is not yet fully implemented in backend
+    // This is a placeholder for future implementation
+    
+    showToast('info', 'Coming Soon', 'Dissolved Oxygen Controller is not yet fully implemented. Configuration saved for display only.');
+    
+    // Gather basic config data
+    const configData = {
+        isActive: true,
+        name: document.getElementById('addDOCtrlName').value,
+        showOnDashboard: document.getElementById('addDOCtrlShowDashboard').checked,
+        pvSourceIndex: parseInt(document.getElementById('addDOCtrlSensor').value),
+        setpoint: parseFloat(document.getElementById('addDOCtrlSetpoint').value),
+        deadband: parseFloat(document.getElementById('addDOCtrlDeadband').value)
+    };
+    
+    // Validation
+    if (!configData.name) {
+        showToast('warning', 'Validation Error', 'Please enter a name');
+        return;
+    }
+    
+    if (!configData.pvSourceIndex || isNaN(configData.pvSourceIndex)) {
+        showToast('warning', 'Validation Error', 'Please select a DO sensor');
+        return;
+    }
+    
+    try {
+        console.log(`[CONTROLLERS] Creating DO controller (placeholder) at index ${index}`, configData);
+        
+        // TODO: Implement backend endpoint when DO controller is ready
+        // For now, just close the modal
+        closeAddControllerModal();
+        
+    } catch (error) {
+        console.error('[DO CTRL] Error creating:', error);
+        showToast('error', 'Error', error.message);
+    }
+}
+
 async function openControllerConfig(index) {
     currentConfigIndex = index;
     console.log(`[CONTROLLERS] Opening config for controller ${index}`);
@@ -6246,6 +6711,10 @@ async function openControllerConfig(index) {
         let endpoint;
         if (index === 43) {
             endpoint = `/api/config/phcontroller/${index}`;
+        } else if (index >= 44 && index <= 47) {
+            endpoint = `/api/config/flowcontroller/${index}`;
+        } else if (index === 48) {
+            endpoint = `/api/config/docontroller/${index}`;
         } else if (index >= 40 && index <= 42) {
             endpoint = `/api/config/tempcontroller/${index}`;
         } else {
@@ -6260,6 +6729,10 @@ async function openControllerConfig(index) {
         // Render appropriate form based on controller type
         if (index === 43) {
             await renderpHConfigForm(config);
+        } else if (index >= 44 && index <= 47) {
+            await renderFlowConfigForm(config);
+        } else if (index === 48) {
+            await renderDOConfigForm(config);
         } else {
             await renderConfigForm(config);
         }
@@ -6673,6 +7146,12 @@ async function saveControllerConfig() {
     if (currentConfigIndex === 43) {
         await savepHControllerConfig();
         return;
+    } else if (currentConfigIndex >= 44 && currentConfigIndex <= 47) {
+        await saveFlowControllerConfig();
+        return;
+    } else if (currentConfigIndex === 48) {
+        await saveDOControllerConfig();
+        return;
     }
     
     const configData = {
@@ -6807,6 +7286,251 @@ async function savepHControllerConfig() {
     }
 }
 
+async function renderFlowConfigForm(config) {
+    const container = document.getElementById('controllerConfigContent');
+    if (!container) return;
+    
+    // Get available outputs and DC motors
+    let outputs = [];
+    let dcMotors = [];
+    try {
+        const outputsResponse = await fetch('/api/outputs');
+        if (outputsResponse.ok) {
+            const outputsData = await outputsResponse.json();
+            outputs = outputsData.digitalOutputs || [];
+            dcMotors = outputsData.dcMotors || [];
+        }
+    } catch (error) {
+        console.error('[FLOW CONFIG] Error loading outputs:', error);
+    }
+    
+    container.innerHTML = `
+        <h4>Flow Controller Configuration</h4>
+        
+        <div class="form-group">
+            <label for="flowCtrlName">Name:</label>
+            <input type="text" id="flowCtrlName" value="${config.name || ''}" maxlength="39">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="flowCtrlShowDashboard" ${config.showOnDashboard ? 'checked' : ''}>
+                Show on Dashboard
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="flowCtrlFlowRate">Target Flow Rate (mL/min):</label>
+            <input type="number" id="flowCtrlFlowRate" value="${config.flowRate_mL_min || 10.0}" step="0.1" min="0.1">
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Output Configuration</h4>
+        
+        <div class="form-group">
+            <label for="flowCtrlOutputType">Output Type:</label>
+            <select id="flowCtrlOutputType" onchange="updateFlowConfigOutputOptions()">
+                <option value="0" ${config.outputType === 0 ? 'selected' : ''}>Digital Output</option>
+                <option value="1" ${config.outputType === 1 ? 'selected' : ''}>DC Motor</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="flowCtrlOutput">Output:</label>
+            <select id="flowCtrlOutput">
+                <option value="">-- Select Output --</option>
+            </select>
+        </div>
+            
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Calibration Data</h4>
+            
+        <div class="form-group">
+            <label for="flowCtrlCalibVolume">Calibration Volume (mL):</label>
+            <input type="number" id="flowCtrlCalibVolume" value="${config.calibrationVolume_mL || 10.0}" step="0.1" min="0.1">
+        </div>
+        
+        <div class="form-group">
+            <label for="flowCtrlCalibTime">Calibration Dose Time (ms):</label>
+            <input type="number" id="flowCtrlCalibTime" value="${config.calibrationDoseTime_ms || 5000}" min="100" max="60000" step="100">
+        </div>
+        
+        <div class="form-group" id="flowConfigCalibPowerGroup" style="display: ${config.outputType === 1 ? 'block' : 'none'};">
+            <label for="flowCtrlCalibPower">Calibration Motor Power (%):</label>
+            <input type="number" id="flowCtrlCalibPower" value="${config.calibrationMotorPower || 50}" min="1" max="100">
+            <small style="color: #7f8c8d;">Motor power used during calibration (applies to both calibration and dosing)</small>
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Safety Limits</h4>
+        
+        <div class="form-group">
+            <label for="flowCtrlMinInterval">Min Dosing Interval (ms):</label>
+            <input type="number" id="flowCtrlMinInterval" value="${config.minDosingInterval_ms || 1000}" min="100" max="60000" step="100">
+        </div>
+        
+        <div class="form-group">
+            <label for="flowCtrlMaxTime">Max Dosing Time (ms):</label>
+            <input type="number" id="flowCtrlMaxTime" value="${config.maxDosingTime_ms || 10000}" min="100" max="60000" step="100">
+        </div>
+    `;
+    
+    // Store references for output options update
+    window.flowConfigOutputs = outputs;
+    window.flowConfigMotors = dcMotors;
+    window.flowConfigData = config;
+    
+    // Initialize output dropdown
+    setTimeout(() => {
+        updateFlowConfigOutputOptions();
+    }, 0);
+}
+
+function updateFlowConfigOutputOptions() {
+    const outputTypeSelect = document.getElementById('flowCtrlOutputType');
+    const outputSelect = document.getElementById('flowCtrlOutput');
+    const calibPowerGroup = document.getElementById('flowConfigCalibPowerGroup');
+    
+    if (!outputTypeSelect || !outputSelect) return;
+    
+    const outputType = parseInt(outputTypeSelect.value);
+    const outputs = window.flowConfigOutputs || [];
+    const motors = window.flowConfigMotors || [];
+    const config = window.flowConfigData || {};
+    
+    // Clear current options
+    outputSelect.innerHTML = '<option value="">-- Select Output --</option>';
+    
+    if (outputType === 0) {
+        // Digital outputs (21-25)
+        outputs.forEach(o => {
+            if (o.index >= 21 && o.index <= 25) {
+                const selected = o.index === config.outputIndex ? 'selected' : '';
+                outputSelect.innerHTML += `<option value="${o.index}" ${selected}>${o.name}</option>`;
+            }
+        });
+        if (calibPowerGroup) calibPowerGroup.style.display = 'none';
+    } else {
+        // DC motors (27-30)
+        motors.forEach(m => {
+            const selected = m.index === config.outputIndex ? 'selected' : '';
+            outputSelect.innerHTML += `<option value="${m.index}" ${selected}>${m.name}</option>`;
+        });
+        if (calibPowerGroup) calibPowerGroup.style.display = 'block';
+    }
+}
+
+async function saveFlowControllerConfig() {
+    const outputType = parseInt(document.getElementById('flowCtrlOutputType').value);
+    const calibMotorPower = outputType === 1 ? parseInt(document.getElementById('flowCtrlCalibPower').value) : 50;
+    
+    const configData = {
+        isActive: true,
+        name: document.getElementById('flowCtrlName').value,
+        showOnDashboard: document.getElementById('flowCtrlShowDashboard').checked,
+        flowRate_mL_min: parseFloat(document.getElementById('flowCtrlFlowRate').value),
+        outputType: outputType,
+        outputIndex: parseInt(document.getElementById('flowCtrlOutput').value),
+        motorPower: calibMotorPower,  // Use calibration power for runtime dosing too
+        calibrationVolume_mL: parseFloat(document.getElementById('flowCtrlCalibVolume').value),
+        calibrationDoseTime_ms: parseInt(document.getElementById('flowCtrlCalibTime').value),
+        calibrationMotorPower: calibMotorPower,
+        minDosingInterval_ms: parseInt(document.getElementById('flowCtrlMinInterval').value),
+        maxDosingTime_ms: parseInt(document.getElementById('flowCtrlMaxTime').value)
+    };
+    
+    // Validation
+    if (!configData.name) {
+        showToast('warning', 'Validation Error', 'Please enter a name');
+        return;
+    }
+    
+    if (!configData.outputIndex || isNaN(configData.outputIndex)) {
+        showToast('warning', 'Validation Error', 'Please select an output');
+        return;
+    }
+    
+    if (configData.calibrationVolume_mL <= 0) {
+        showToast('warning', 'Validation Error', 'Calibration volume must be greater than 0');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/config/flowcontroller/${currentConfigIndex}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to save configuration');
+        }
+        
+        showToast('success', 'Success', 'Flow Controller configuration saved');
+        await loadControllers();
+        closeControllerConfigModal();
+        
+    } catch (error) {
+        console.error('[FLOW CTRL] Error saving:', error);
+        showToast('error', 'Error', error.message);
+    }
+}
+
+async function renderDOConfigForm(config) {
+    const container = document.getElementById('controllerConfigContent');
+    if (!container) return;
+    
+    container.innerHTML = `
+        <h4>Dissolved Oxygen Controller Configuration</h4>
+        
+        <p style="color: #7f8c8d; font-size: 0.9em; margin-bottom: 20px;">
+            <strong>Note:</strong> DO Controller is not yet fully implemented. This configuration is for display/monitoring purposes only.
+        </p>
+        
+        <div class="form-group">
+            <label for="doCtrlName">Name:</label>
+            <input type="text" id="doCtrlName" value="${config.name || ''}" maxlength="39">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="doCtrlShowDashboard" ${config.showOnDashboard ? 'checked' : ''}>
+                Show on Dashboard
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="doCtrlSetpoint">Setpoint (mg/L or %):</label>
+            <input type="number" id="doCtrlSetpoint" value="${config.setpoint || 8.0}" step="0.1" min="0">
+        </div>
+        
+        <div class="form-group">
+            <label for="doCtrlDeadband">Deadband:</label>
+            <input type="number" id="doCtrlDeadband" value="${config.deadband || 0.5}" step="0.1" min="0.1">
+        </div>
+    `;
+}
+
+async function saveDOControllerConfig() {
+    const configData = {
+        isActive: true,
+        name: document.getElementById('doCtrlName').value,
+        showOnDashboard: document.getElementById('doCtrlShowDashboard').checked,
+        setpoint: parseFloat(document.getElementById('doCtrlSetpoint').value),
+        deadband: parseFloat(document.getElementById('doCtrlDeadband').value)
+    };
+    
+    // Validation
+    if (!configData.name) {
+        showToast('warning', 'Validation Error', 'Please enter a name');
+        return;
+    }
+    
+    showToast('info', 'Coming Soon', 'DO Controller configuration saved for display only. Full control logic is not yet implemented.');
+    closeControllerConfigModal();
+}
+
 async function deleteController() {
     if (currentConfigIndex === null) return;
     
@@ -6842,19 +7566,31 @@ async function updateControllerSetpoint(index) {
     const setpoint = parseFloat(input.value);
     
     // Determine endpoint based on controller type
-    const endpoint = (index === 43) ? `/api/phcontroller/${index}/setpoint` : `/api/controller/${index}/setpoint`;
+    let endpoint, body;
+    if (index === 43) {
+        endpoint = `/api/phcontroller/${index}/setpoint`;
+        body = JSON.stringify({ setpoint });
+    } else if (index >= 44 && index <= 47) {
+        // Flow controller - use flowrate endpoint
+        endpoint = `/api/flowcontroller/${index}/flowrate`;
+        body = JSON.stringify({ flowRate: setpoint });
+    } else {
+        // Temperature controller
+        endpoint = `/api/controller/${index}/setpoint`;
+        body = JSON.stringify({ setpoint });
+    }
     
     try {
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ setpoint })
+            body: body
         });
         
         if (!response.ok) throw new Error('Failed to update setpoint');
         
         console.log(`[CONTROLLERS] Updated setpoint for ${index} to ${setpoint}`);
-        showToast('success', 'Success', 'Setpoint updated');
+        showToast('success', 'Success', index >= 44 && index <= 47 ? 'Flow rate updated' : 'Setpoint updated');
         
     } catch (error) {
         console.error('[CONTROLLERS] Error updating setpoint:', error);
@@ -6864,7 +7600,14 @@ async function updateControllerSetpoint(index) {
 
 async function enableController(index) {
     // Determine endpoint based on controller type
-    const endpoint = (index === 43) ? `/api/phcontroller/${index}/enable` : `/api/controller/${index}/enable`;
+    let endpoint;
+    if (index === 43) {
+        endpoint = `/api/phcontroller/${index}/enable`;
+    } else if (index >= 44 && index <= 47) {
+        endpoint = `/api/flowcontroller/${index}/enable`;
+    } else {
+        endpoint = `/api/controller/${index}/enable`;
+    }
     
     try {
         const response = await fetch(endpoint, {
@@ -6885,7 +7628,14 @@ async function enableController(index) {
 
 async function disableController(index) {
     // Determine endpoint based on controller type
-    const endpoint = (index === 43) ? `/api/phcontroller/${index}/disable` : `/api/controller/${index}/disable`;
+    let endpoint;
+    if (index === 43) {
+        endpoint = `/api/phcontroller/${index}/disable`;
+    } else if (index >= 44 && index <= 47) {
+        endpoint = `/api/flowcontroller/${index}/disable`;
+    } else {
+        endpoint = `/api/controller/${index}/disable`;
+    }
     
     try {
         const response = await fetch(endpoint, {
@@ -6958,6 +7708,46 @@ async function resetpHVolume(index, type) {
     } catch (error) {
         console.error(`[pH CTRL] Error resetting ${type} volume:`, error);
         showToast('error', 'Error', `Failed to reset ${type} volume`);
+    }
+}
+
+// ============================================================================
+// FLOW CONTROLLER CONTROL FUNCTIONS
+// ============================================================================
+
+async function manualFlowDose(index) {
+    try {
+        const response = await fetch(`/api/flowcontroller/${index}/dose`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) throw new Error('Failed to trigger manual dose');
+        
+        console.log(`[FLOW CTRL] Manual dose for ${index}`);
+        showToast('info', 'Dosing', 'Manual dose started');
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[FLOW CTRL] Error triggering manual dose:', error);
+        showToast('error', 'Error', 'Failed to trigger manual dose');
+    }
+}
+
+async function resetFlowVolume(index) {
+    try {
+        const response = await fetch(`/api/flowcontroller/${index}/reset-volume`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) throw new Error('Failed to reset volume');
+        
+        console.log(`[FLOW CTRL] Volume reset for controller ${index}`);
+        showToast('success', 'Volume Reset', 'Cumulative volume reset to 0.0 mL');
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[FLOW CTRL] Error resetting volume:', error);
+        showToast('error', 'Error', 'Failed to reset volume');
     }
 }
 

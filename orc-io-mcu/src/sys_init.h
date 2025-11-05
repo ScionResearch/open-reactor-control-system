@@ -35,6 +35,8 @@
 #include "drivers/device_manager.h"
 
 #include "controllers/ctrl_temperature.h"
+#include "controllers/ctrl_ph.h"
+#include "controllers/ctrl_flow.h"
 #include "controllers/controller_manager.h"
 
 // Utility

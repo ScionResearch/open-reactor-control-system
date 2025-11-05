@@ -170,6 +170,32 @@ void setDefaultIOConfig() {
     ioConfig.phController.alkalineDosing.dosingInterval_ms = 60000;  // 60 seconds between doses
     
     // ========================================================================
+    // Flow Controllers (Indices 44-47: 3 feed + 1 waste)
+    // ========================================================================
+    const char* flowNames[] = {"Feed Pump 1", "Feed Pump 2", "Feed Pump 3", "Waste Pump"};
+    for (int i = 0; i < MAX_FLOW_CONTROLLERS; i++) {
+        ioConfig.flowControllers[i].isActive = false;
+        strlcpy(ioConfig.flowControllers[i].name, flowNames[i], sizeof(ioConfig.flowControllers[i].name));
+        ioConfig.flowControllers[i].enabled = false;
+        ioConfig.flowControllers[i].showOnDashboard = false;
+        ioConfig.flowControllers[i].flowRate_mL_min = 10.0f;    // Default 10 mL/min
+        
+        // Output configuration defaults
+        ioConfig.flowControllers[i].outputType = 1;             // DC motor (default)
+        ioConfig.flowControllers[i].outputIndex = 27 + i;       // DC motors 27-30
+        ioConfig.flowControllers[i].motorPower = 50;            // 50% power
+        
+        // Calibration defaults (user must calibrate!)
+        ioConfig.flowControllers[i].calibrationDoseTime_ms = 1000;     // 1 second
+        ioConfig.flowControllers[i].calibrationMotorPower = 50;        // 50% power
+        ioConfig.flowControllers[i].calibrationVolume_mL = 1.0f;       // 1 mL per dose (example)
+        
+        // Safety limits
+        ioConfig.flowControllers[i].minDosingInterval_ms = 1000;       // Minimum 1 second between doses
+        ioConfig.flowControllers[i].maxDosingTime_ms = 30000;          // Maximum 30 seconds per dose
+    }
+    
+    // ========================================================================
     // COM Ports (0-1: RS-232, 2-3: RS-485)
     // ========================================================================
     const char* portNames[] = {"RS-232 Port 1", "RS-232 Port 2", "RS-485 Port 1", "RS-485 Port 2"};
@@ -466,6 +492,34 @@ bool loadIOConfig() {
     }
     
     // ========================================================================
+    // Parse Flow Controllers (Indices 44-47)
+    // ========================================================================
+    JsonArray flowCtrlArray = doc["flow_controllers"];
+    if (flowCtrlArray) {
+        for (int i = 0; i < MAX_FLOW_CONTROLLERS && i < flowCtrlArray.size(); i++) {
+            JsonObject ctrl = flowCtrlArray[i];
+            ioConfig.flowControllers[i].isActive = ctrl["isActive"] | false;
+            strlcpy(ioConfig.flowControllers[i].name, ctrl["name"] | "", 
+                    sizeof(ioConfig.flowControllers[i].name));
+            ioConfig.flowControllers[i].enabled = ctrl["enabled"] | false;
+            ioConfig.flowControllers[i].showOnDashboard = ctrl["showOnDashboard"] | false;
+            
+            ioConfig.flowControllers[i].flowRate_mL_min = ctrl["flowRate_mL_min"] | 10.0f;
+            
+            ioConfig.flowControllers[i].outputType = ctrl["outputType"] | 1;
+            ioConfig.flowControllers[i].outputIndex = ctrl["outputIndex"] | (27 + i);
+            ioConfig.flowControllers[i].motorPower = ctrl["motorPower"] | 50;
+            
+            ioConfig.flowControllers[i].calibrationDoseTime_ms = ctrl["calibrationDoseTime_ms"] | 1000;
+            ioConfig.flowControllers[i].calibrationMotorPower = ctrl["calibrationMotorPower"] | 50;
+            ioConfig.flowControllers[i].calibrationVolume_mL = ctrl["calibrationVolume_mL"] | 1.0f;
+            
+            ioConfig.flowControllers[i].minDosingInterval_ms = ctrl["minDosingInterval_ms"] | 1000;
+            ioConfig.flowControllers[i].maxDosingTime_ms = ctrl["maxDosingTime_ms"] | 30000;
+        }
+    }
+    
+    // ========================================================================
     // Parse COM Ports
     // ========================================================================
     JsonArray comPortArray = doc["com_ports"];
@@ -714,6 +768,31 @@ void saveIOConfig() {
     alkaline["motorPower"] = ioConfig.phController.alkalineDosing.motorPower;
     alkaline["dosingTime_ms"] = ioConfig.phController.alkalineDosing.dosingTime_ms;
     alkaline["dosingInterval_ms"] = ioConfig.phController.alkalineDosing.dosingInterval_ms;
+    
+    // ========================================================================
+    // Serialize Flow Controllers
+    // ========================================================================
+    JsonArray flowCtrlArray = doc.createNestedArray("flow_controllers");
+    for (int i = 0; i < MAX_FLOW_CONTROLLERS; i++) {
+        JsonObject ctrl = flowCtrlArray.createNestedObject();
+        ctrl["isActive"] = ioConfig.flowControllers[i].isActive;
+        ctrl["name"] = ioConfig.flowControllers[i].name;
+        ctrl["enabled"] = ioConfig.flowControllers[i].enabled;
+        ctrl["showOnDashboard"] = ioConfig.flowControllers[i].showOnDashboard;
+        
+        ctrl["flowRate_mL_min"] = ioConfig.flowControllers[i].flowRate_mL_min;
+        
+        ctrl["outputType"] = ioConfig.flowControllers[i].outputType;
+        ctrl["outputIndex"] = ioConfig.flowControllers[i].outputIndex;
+        ctrl["motorPower"] = ioConfig.flowControllers[i].motorPower;
+        
+        ctrl["calibrationDoseTime_ms"] = ioConfig.flowControllers[i].calibrationDoseTime_ms;
+        ctrl["calibrationMotorPower"] = ioConfig.flowControllers[i].calibrationMotorPower;
+        ctrl["calibrationVolume_mL"] = ioConfig.flowControllers[i].calibrationVolume_mL;
+        
+        ctrl["minDosingInterval_ms"] = ioConfig.flowControllers[i].minDosingInterval_ms;
+        ctrl["maxDosingTime_ms"] = ioConfig.flowControllers[i].maxDosingTime_ms;
+    }
     
     // ========================================================================
     // Serialize COM Ports
@@ -1334,6 +1413,54 @@ void pushIOConfigToIOmcu() {
         }
         
         delay(10);
+    }
+    
+    // ========================================================================
+    // Push Flow Controller configurations (indices 44-47)
+    // ========================================================================
+    for (int i = 0; i < MAX_FLOW_CONTROLLERS; i++) {
+        if (ioConfig.flowControllers[i].isActive) {
+            IPC_ConfigFlowController_t cfg;
+            memset(&cfg, 0, sizeof(cfg));
+            
+            cfg.index = 44 + i;
+            cfg.isActive = true;
+            strncpy(cfg.name, ioConfig.flowControllers[i].name, sizeof(cfg.name) - 1);
+            cfg.enabled = ioConfig.flowControllers[i].enabled;
+            cfg.showOnDashboard = ioConfig.flowControllers[i].showOnDashboard;
+            cfg.flowRate_mL_min = ioConfig.flowControllers[i].flowRate_mL_min;
+            
+            cfg.outputType = ioConfig.flowControllers[i].outputType;
+            cfg.outputIndex = ioConfig.flowControllers[i].outputIndex;
+            cfg.motorPower = ioConfig.flowControllers[i].motorPower;
+            
+            cfg.calibrationDoseTime_ms = ioConfig.flowControllers[i].calibrationDoseTime_ms;
+            cfg.calibrationMotorPower = ioConfig.flowControllers[i].calibrationMotorPower;
+            cfg.calibrationVolume_mL = ioConfig.flowControllers[i].calibrationVolume_mL;
+            
+            cfg.minDosingInterval_ms = ioConfig.flowControllers[i].minDosingInterval_ms;
+            cfg.maxDosingTime_ms = ioConfig.flowControllers[i].maxDosingTime_ms;
+            
+            // Retry up to 10 times if queue is full
+            bool sent = false;
+            for (int retry = 0; retry < 10; retry++) {
+                if (ipc.sendPacket(IPC_MSG_CONFIG_FLOW_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg))) {
+                    sent = true;
+                    sentCount++;
+                    log(LOG_INFO, false, "  → FlowController[%d]: %s, flow=%.2f mL/min\n",
+                        cfg.index, cfg.name, cfg.flowRate_mL_min);
+                    break;
+                }
+                ipc.update();
+                delay(10);
+            }
+            
+            if (!sent) {
+                log(LOG_WARNING, false, "  ✗ Failed to send FlowController[%d] config after retries\n", cfg.index);
+            }
+            
+            delay(10);
+        }
     }
     
     log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports + devices + controllers)\n", sentCount);

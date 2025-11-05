@@ -1,5 +1,6 @@
 #include "controller_manager.h"
 #include "ctrl_ph.h"
+#include "ctrl_flow.h"
 #include "../sys_init.h"
 #include "../drivers/onboard/drv_output.h"
 
@@ -11,6 +12,7 @@ extern int numObjects;
 // Static member initialization
 ManagedController ControllerManager::controllers[MAX_TEMP_CONTROLLERS];
 ManagedpHController ControllerManager::phController;
+ManagedFlowController ControllerManager::flowControllers[MAX_FLOW_CONTROLLERS];
 bool ControllerManager::initialized = false;
 
 // ============================================================================
@@ -23,8 +25,10 @@ bool ControllerManager::initialized = false;
 
 // Store controller instances for each wrapper slot (0-2 maps to controllers 40-42)
 static TemperatureController* controllerInstances[MAX_TEMP_CONTROLLERS] = {nullptr};
+// Store flow controller instances for each wrapper slot (0-3 maps to controllers 44-47)
+static FlowController* flowControllerInstances[MAX_FLOW_CONTROLLERS] = {nullptr};
 
-// Generic task wrapper functions - one per slot
+// Temperature Controller task wrapper functions - one per slot
 static void controllerTaskWrapper_0() {
     if (controllerInstances[0] != nullptr) {
         controllerInstances[0]->update();
@@ -51,6 +55,39 @@ static TaskWrapperFunc taskWrappers[MAX_TEMP_CONTROLLERS] = {
     controllerTaskWrapper_2
 };
 
+// Flow Controller task wrapper functions - one per slot
+static void flowControllerTaskWrapper_0() {
+    if (flowControllerInstances[0] != nullptr) {
+        flowControllerInstances[0]->update();
+    }
+}
+
+static void flowControllerTaskWrapper_1() {
+    if (flowControllerInstances[1] != nullptr) {
+        flowControllerInstances[1]->update();
+    }
+}
+
+static void flowControllerTaskWrapper_2() {
+    if (flowControllerInstances[2] != nullptr) {
+        flowControllerInstances[2]->update();
+    }
+}
+
+static void flowControllerTaskWrapper_3() {
+    if (flowControllerInstances[3] != nullptr) {
+        flowControllerInstances[3]->update();
+    }
+}
+
+// Array of flow controller task wrapper function pointers (indexed by slot 0-3)
+static TaskWrapperFunc flowTaskWrappers[MAX_FLOW_CONTROLLERS] = {
+    flowControllerTaskWrapper_0,
+    flowControllerTaskWrapper_1,
+    flowControllerTaskWrapper_2,
+    flowControllerTaskWrapper_3
+};
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -60,7 +97,7 @@ bool ControllerManager::init() {
         return true;  // Already initialized
     }
     
-    // Initialize all controller slots
+    // Initialize temperature controller slots
     for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {
         controllers[i].index = 40 + i;
         controllers[i].controllerInstance = nullptr;
@@ -68,6 +105,16 @@ bool ControllerManager::init() {
         controllers[i].updateTask = nullptr;
         controllers[i].active = false;
         controllers[i].message[0] = '\0';
+    }
+    
+    // Initialize flow controller slots
+    for (int i = 0; i < MAX_FLOW_CONTROLLERS; i++) {
+        flowControllers[i].index = 44 + i;
+        flowControllers[i].controllerInstance = nullptr;
+        flowControllers[i].controlObject = nullptr;
+        flowControllers[i].updateTask = nullptr;
+        flowControllers[i].active = false;
+        flowControllers[i].message[0] = '\0';
     }
     
     Serial.println("[CTRL MGR] Controller Manager initialized");
@@ -563,6 +610,252 @@ bool ControllerManager::resetpHAlkalineVolume() {
     
     phController.controllerInstance->resetAlkalineVolume();
     return true;
+}
+
+// ============================================================================
+// FLOW CONTROLLER LIFECYCLE (Indices 44-47)
+// ============================================================================
+
+bool ControllerManager::createFlowController(uint8_t index, const IPC_ConfigFlowController_t* config) {
+    if (!initialized) {
+        Serial.println("[CTRL MGR] ERROR: Not initialized");
+        return false;
+    }
+    
+    // Validate index range (44-47)
+    if (index < 44 || index >= 44 + MAX_FLOW_CONTROLLERS) {
+        Serial.printf("[CTRL MGR] ERROR: Invalid flow controller index %d\n", index);
+        return false;
+    }
+    
+    int arrIdx = index - 44;
+    ManagedFlowController* ctrl = &flowControllers[arrIdx];
+    
+    // If controller already exists, delete it first
+    if (ctrl->active) {
+        Serial.printf("[CTRL MGR] Flow controller %d already exists, deleting first\n", index);
+        deleteFlowController(index);
+    }
+    
+    // Create FlowControl_t object
+    ctrl->controlObject = new FlowControl_t();
+    if (ctrl->controlObject == nullptr) {
+        Serial.println("[CTRL MGR] ERROR: Failed to allocate flow control object");
+        return false;
+    }
+    
+    // Initialize control object from config
+    ctrl->controlObject->index = config->index;
+    strncpy(ctrl->controlObject->name, config->name, sizeof(ctrl->controlObject->name) - 1);
+    ctrl->controlObject->enabled = config->enabled;
+    ctrl->controlObject->fault = false;
+    ctrl->controlObject->newMessage = false;
+    ctrl->controlObject->flowRate_mL_min = config->flowRate_mL_min;
+    ctrl->controlObject->outputType = config->outputType;
+    ctrl->controlObject->outputIndex = config->outputIndex;
+    ctrl->controlObject->motorPower = config->motorPower;
+    ctrl->controlObject->calibrationDoseTime_ms = config->calibrationDoseTime_ms;
+    ctrl->controlObject->calibrationMotorPower = config->calibrationMotorPower;
+    ctrl->controlObject->calibrationVolume_mL = config->calibrationVolume_mL;
+    ctrl->controlObject->minDosingInterval_ms = config->minDosingInterval_ms;
+    ctrl->controlObject->maxDosingTime_ms = config->maxDosingTime_ms;
+    ctrl->controlObject->cumulativeVolume_mL = 0.0f;
+    ctrl->controlObject->lastDoseTime = 0;
+    ctrl->controlObject->currentOutput = 0;
+    ctrl->controlObject->message[0] = '\0';
+    
+    // Create FlowController instance
+    ctrl->controllerInstance = new FlowController(ctrl->controlObject);
+    if (ctrl->controllerInstance == nullptr) {
+        Serial.println("[CTRL MGR] ERROR: Failed to create flow controller instance");
+        delete ctrl->controlObject;
+        ctrl->controlObject = nullptr;
+        return false;
+    }
+    
+    // Register in object index
+    if (index < MAX_NUM_OBJECTS) {
+        objIndex[index].type = OBJ_T_FLOW_CONTROL;
+        objIndex[index].obj = ctrl->controlObject;
+        objIndex[index].valid = true;
+        strncpy(objIndex[index].name, config->name, sizeof(objIndex[index].name) - 1);
+        Serial.printf("[CTRL MGR] Registered flow controller in objIndex[%d]\n", index);
+    }
+    
+    // Add scheduler task (100ms = 10Hz update rate)
+    flowControllerInstances[arrIdx] = ctrl->controllerInstance;
+    ScheduledTask* task = tasks.addTask(flowTaskWrappers[arrIdx], 100);
+    if (task == nullptr) {
+        Serial.printf("[CTRL MGR] ERROR: Failed to add task for flow controller %d\n", index);
+        delete ctrl->controllerInstance;
+        delete ctrl->controlObject;
+        ctrl->controllerInstance = nullptr;
+        ctrl->controlObject = nullptr;
+        flowControllerInstances[arrIdx] = nullptr;
+        if (index < MAX_NUM_OBJECTS) {
+            objIndex[index].valid = false;
+        }
+        return false;
+    }
+    
+    // Store in managed controller
+    ctrl->index = config->index;
+    ctrl->updateTask = task;
+    ctrl->active = true;
+    snprintf(ctrl->message, sizeof(ctrl->message), "Flow controller active");
+    
+    Serial.printf("[CTRL MGR] Created flow controller %d: %s\n", index, config->name);
+    return true;
+}
+
+bool ControllerManager::deleteFlowController(uint8_t index) {
+    if (index < 44 || index >= 44 + MAX_FLOW_CONTROLLERS) {
+        return false;
+    }
+    
+    int arrIdx = index - 44;
+    ManagedFlowController* ctrl = &flowControllers[arrIdx];
+    
+    if (!ctrl->active) {
+        return false;
+    }
+    
+    // Remove scheduler task
+    if (ctrl->updateTask != nullptr) {
+        tasks.removeTask(ctrl->updateTask);
+        ctrl->updateTask = nullptr;
+    }
+    
+    // Clear static array entry
+    flowControllerInstances[arrIdx] = nullptr;
+    
+    // Delete controller instance
+    if (ctrl->controllerInstance != nullptr) {
+        delete ctrl->controllerInstance;
+        ctrl->controllerInstance = nullptr;
+    }
+    
+    // Delete control object
+    if (ctrl->controlObject != nullptr) {
+        delete ctrl->controlObject;
+        ctrl->controlObject = nullptr;
+    }
+    
+    // Unregister from object index
+    if (index < MAX_NUM_OBJECTS) {
+        objIndex[index].valid = false;
+        objIndex[index].obj = nullptr;
+        objIndex[index].name[0] = '\0';
+    }
+    
+    ctrl->active = false;
+    ctrl->index = 0;
+    
+    Serial.printf("[CTRL MGR] Deleted flow controller %d\n", index);
+    return true;
+}
+
+bool ControllerManager::configureFlowController(uint8_t index, const IPC_ConfigFlowController_t* config) {
+    if (index < 44 || index >= 44 + MAX_FLOW_CONTROLLERS) {
+        return false;
+    }
+    
+    int arrIdx = index - 44;
+    ManagedFlowController* ctrl = &flowControllers[arrIdx];
+    
+    if (!ctrl->active || ctrl->controlObject == nullptr) {
+        return false;
+    }
+    
+    // Update control object configuration
+    strncpy(ctrl->controlObject->name, config->name, sizeof(ctrl->controlObject->name) - 1);
+    ctrl->controlObject->flowRate_mL_min = config->flowRate_mL_min;
+    ctrl->controlObject->outputType = config->outputType;
+    ctrl->controlObject->outputIndex = config->outputIndex;
+    ctrl->controlObject->motorPower = config->motorPower;
+    ctrl->controlObject->calibrationDoseTime_ms = config->calibrationDoseTime_ms;
+    ctrl->controlObject->calibrationMotorPower = config->calibrationMotorPower;
+    ctrl->controlObject->calibrationVolume_mL = config->calibrationVolume_mL;
+    ctrl->controlObject->minDosingInterval_ms = config->minDosingInterval_ms;
+    ctrl->controlObject->maxDosingTime_ms = config->maxDosingTime_ms;
+    
+    // Recalculate dosing parameters
+    if (ctrl->controllerInstance != nullptr) {
+        ctrl->controllerInstance->calculateDosingParameters();
+    }
+    
+    // Update object index name
+    if (index < MAX_NUM_OBJECTS) {
+        strncpy(objIndex[index].name, config->name, sizeof(objIndex[index].name) - 1);
+    }
+    
+    Serial.printf("[CTRL MGR] Updated flow controller %d config\n", index);
+    return true;
+}
+
+// ============================================================================
+// FLOW CONTROLLER CONTROL COMMANDS
+// ============================================================================
+
+bool ControllerManager::setFlowRate(uint8_t index, float flowRate_mL_min) {
+    ManagedFlowController* ctrl = findFlowController(index);
+    if (ctrl == nullptr || ctrl->controllerInstance == nullptr) {
+        return false;
+    }
+    
+    ctrl->controllerInstance->setFlowRate(flowRate_mL_min);
+    return true;
+}
+
+bool ControllerManager::enableFlowController(uint8_t index) {
+    ManagedFlowController* ctrl = findFlowController(index);
+    if (ctrl == nullptr || ctrl->controlObject == nullptr) {
+        return false;
+    }
+    
+    ctrl->controlObject->enabled = true;
+    Serial.printf("[CTRL MGR] Flow controller %d enabled\n", index);
+    return true;
+}
+
+bool ControllerManager::disableFlowController(uint8_t index) {
+    ManagedFlowController* ctrl = findFlowController(index);
+    if (ctrl == nullptr || ctrl->controlObject == nullptr) {
+        return false;
+    }
+    
+    ctrl->controlObject->enabled = false;
+    Serial.printf("[CTRL MGR] Flow controller %d disabled\n", index);
+    return true;
+}
+
+bool ControllerManager::manualFlowDose(uint8_t index) {
+    ManagedFlowController* ctrl = findFlowController(index);
+    if (ctrl == nullptr || ctrl->controllerInstance == nullptr) {
+        return false;
+    }
+    
+    return ctrl->controllerInstance->manualDose();
+}
+
+bool ControllerManager::resetFlowVolume(uint8_t index) {
+    ManagedFlowController* ctrl = findFlowController(index);
+    if (ctrl == nullptr || ctrl->controllerInstance == nullptr) {
+        return false;
+    }
+    
+    ctrl->controllerInstance->resetVolume();
+    return true;
+}
+
+ManagedFlowController* ControllerManager::findFlowController(uint8_t index) {
+    if (index < 44 || index >= 44 + MAX_FLOW_CONTROLLERS) {
+        return nullptr;
+    }
+    
+    int arrIdx = index - 44;
+    ManagedFlowController* ctrl = &flowControllers[arrIdx];
+    return ctrl->active ? ctrl : nullptr;
 }
 
 // ============================================================================

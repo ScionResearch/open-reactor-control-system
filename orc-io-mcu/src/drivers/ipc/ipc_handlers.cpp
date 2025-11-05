@@ -108,6 +108,10 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             ipc_handle_config_ph_controller(payload, len);
             break;
             
+        case IPC_MSG_CONFIG_FLOW_CONTROLLER:
+            ipc_handle_config_flow_controller(payload, len);
+            break;
+            
         case IPC_MSG_CONFIG_PRESSURE_CTRL:
             ipc_handle_config_pressure_ctrl(payload, len);
             break;
@@ -608,26 +612,40 @@ bool ipc_sendSensorData(uint16_t index) {
             data.value = ctrl->currentpH;  // Process value (pH)
             strncpy(data.unit, "pH", sizeof(data.unit) - 1);
             
-            // Flags
-            if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
-            if (ctrl->enabled) data.flags |= IPC_SENSOR_FLAG_RUNNING;  // Reuse running flag for enabled
+            // Add additional values: currentOutput, acidVolumeTotal, alkalineVolumeTotal
+            data.valueCount = 3;
+            data.additionalValues[0] = ctrl->currentOutput;  // 0=off, 1=dosing acid, 2=dosing alkaline
+            data.additionalValues[1] = ctrl->acidCumulativeVolume_mL;
+            data.additionalValues[2] = ctrl->alkalineCumulativeVolume_mL;
             
+            if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (ctrl->enabled) data.flags |= IPC_SENSOR_FLAG_RUNNING;  // Report enabled state
             if (ctrl->newMessage) {
                 data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
                 strncpy(data.message, ctrl->message, sizeof(data.message) - 1);
                 ctrl->newMessage = false;
             }
+            break;
+        }
+        
+        case OBJ_T_FLOW_CONTROL: {
+            FlowControl_t *ctrl = (FlowControl_t*)obj;
+            data.value = ctrl->flowRate_mL_min;  // Setpoint (flow rate)
+            strncpy(data.unit, "mL/min", sizeof(data.unit) - 1);
             
-            // Add setpoint, output state, and cumulative volumes as additional values
-            data.valueCount = 4;
-            data.additionalValues[0] = ctrl->setpoint;                    // Target pH
-            data.additionalValues[1] = ctrl->currentOutput;               // 0=off, 1=acid, 2=alkaline
-            data.additionalValues[2] = ctrl->acidCumulativeVolume_mL;     // Acid dosed (mL)
-            data.additionalValues[3] = ctrl->alkalineCumulativeVolume_mL; // Alkaline dosed (mL)
-            strncpy(data.additionalUnits[0], "pH", sizeof(data.additionalUnits[0]) - 1);
-            strncpy(data.additionalUnits[1], "", sizeof(data.additionalUnits[1]) - 1);
-            strncpy(data.additionalUnits[2], "mL", sizeof(data.additionalUnits[2]) - 1);
-            strncpy(data.additionalUnits[3], "mL", sizeof(data.additionalUnits[3]) - 1);
+            // Add additional values: currentOutput, calculatedInterval, cumulativeVolume
+            data.valueCount = 3;
+            data.additionalValues[0] = ctrl->currentOutput;  // 0=off, 1=dosing
+            data.additionalValues[1] = (float)ctrl->calculatedInterval_ms;  // Interval in ms
+            data.additionalValues[2] = ctrl->cumulativeVolume_mL;  // Total volume pumped
+            
+            if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (ctrl->enabled) data.flags |= IPC_SENSOR_FLAG_RUNNING;  // Report enabled state
+            if (ctrl->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, ctrl->message, sizeof(data.message) - 1);
+                ctrl->newMessage = false;
+            }
             break;
         }
         
@@ -818,6 +836,10 @@ void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
             
         case OBJ_T_PH_CONTROL:
             ipc_handle_ph_controller_control(payload, len);
+            break;
+            
+        case OBJ_T_FLOW_CONTROL:
+            ipc_handle_flow_controller_control(payload, len);
             break;
             
         default:
@@ -2294,6 +2316,200 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
             } else {
                 strcpy(message, "Failed to reset alkaline volume");
                 errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        default:
+            strcpy(message, "Invalid command");
+            errorCode = CTRL_ERR_INVALID_CMD;
+            break;
+    }
+    
+    // Send acknowledgment
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+}
+
+/**
+ * @brief Handle flow controller configuration message
+ * 
+ * Creates, updates, or deletes flow controller instances (indices 44-47).
+ * Uses ControllerManager to manage lifecycle and registration.
+ */
+void ipc_handle_config_flow_controller(const uint8_t *payload, uint16_t len) {
+    Serial.printf("[IPC] Flow controller config: received %d bytes, expected %d bytes\n", 
+                  len, sizeof(IPC_ConfigFlowController_t));
+    
+    if (len != sizeof(IPC_ConfigFlowController_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid flow controller config message size");
+        return;
+    }
+    
+    const IPC_ConfigFlowController_t *cfg = (const IPC_ConfigFlowController_t*)payload;
+    
+    // Validate controller index (44-47)
+    if (cfg->index < 44 || cfg->index >= 44 + MAX_FLOW_CONTROLLERS) {
+        char errMsg[100];
+        snprintf(errMsg, sizeof(errMsg), "Invalid flow controller index %d (must be 44-47)", cfg->index);
+        ipc_sendError(IPC_ERR_INDEX_INVALID, errMsg);
+        return;
+    }
+    
+    bool success;
+    
+    if (!cfg->isActive) {
+        // Delete controller
+        success = ControllerManager::deleteFlowController(cfg->index);
+        if (success) {
+            Serial.printf("[IPC] ✓ Flow Controller[%d] deleted\n", cfg->index);
+        } else {
+            ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to delete flow controller");
+        }
+    } else {
+        // Create or update controller - validate configuration first
+        
+        // Validate output configuration
+        if (cfg->outputType == 0 && (cfg->outputIndex < 21 || cfg->outputIndex > 25)) {
+            ipc_sendError(IPC_ERR_INDEX_INVALID, "Digital output index must be 21-25");
+            return;
+        }
+        if (cfg->outputType == 1 && (cfg->outputIndex < 27 || cfg->outputIndex > 30)) {
+            ipc_sendError(IPC_ERR_INDEX_INVALID, "DC motor index must be 27-30");
+            return;
+        }
+        
+        // Validate calibration data
+        if (cfg->calibrationVolume_mL <= 0.0f) {
+            ipc_sendError(IPC_ERR_PARAM_INVALID, "Calibration volume must be > 0");
+            return;
+        }
+        if (cfg->calibrationDoseTime_ms == 0) {
+            ipc_sendError(IPC_ERR_PARAM_INVALID, "Calibration dose time must be > 0");
+            return;
+        }
+        
+        // Validate safety limits
+        if (cfg->minDosingInterval_ms == 0) {
+            ipc_sendError(IPC_ERR_PARAM_INVALID, "Minimum dosing interval must be > 0");
+            return;
+        }
+        if (cfg->maxDosingTime_ms == 0) {
+            ipc_sendError(IPC_ERR_PARAM_INVALID, "Maximum dosing time must be > 0");
+            return;
+        }
+        
+        // Validation passed - create or update controller
+        success = ControllerManager::createFlowController(cfg->index, cfg);
+        if (success) {
+            Serial.printf("[IPC] ✓ FlowController[%d]: %s, flow=%.2f mL/min\n",
+                         cfg->index, cfg->name, cfg->flowRate_mL_min);
+        } else {
+            ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to create/update flow controller");
+        }
+    }
+}
+
+/**
+ * @brief Handle flow controller runtime control message
+ * 
+ * Processes runtime commands for flow controllers: flow rate, enable, disable, manual dose
+ */
+void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_FlowControllerControl_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid flow controller control message size");
+        return;
+    }
+    
+    const IPC_FlowControllerControl_t *cmd = (const IPC_FlowControllerControl_t*)payload;
+    
+    // Validate index (44-47)
+    if (cmd->index < 44 || cmd->index >= 44 + MAX_FLOW_CONTROLLERS) {
+        char errMsg[100];
+        snprintf(errMsg, sizeof(errMsg), "Invalid flow controller index %d (must be 44-47)", cmd->index);
+        ipc_sendError(IPC_ERR_INDEX_INVALID, errMsg);
+        return;
+    }
+    
+    // Validate object type
+    if (cmd->objectType != OBJ_T_FLOW_CONTROL) {
+        ipc_sendError(IPC_ERR_TYPE_MISMATCH, "Object type mismatch");
+        return;
+    }
+    
+    bool success = false;
+    char message[128] = "";
+    uint8_t errorCode = CTRL_ERR_NONE;
+    
+    switch (cmd->command) {
+        case FLOW_CMD_SET_FLOW_RATE:
+            if (cmd->flowRate_mL_min >= 0.0f) {
+                success = ControllerManager::setFlowRate(cmd->index, cmd->flowRate_mL_min);
+                if (success) {
+                    snprintf(message, sizeof(message), "Flow rate updated to %.2f mL/min", cmd->flowRate_mL_min);
+                    Serial.printf("[FLOW CTRL %d] Flow rate set to %.2f mL/min\n", 
+                                 cmd->index, cmd->flowRate_mL_min);
+                } else {
+                    strcpy(message, "Failed to update flow rate");
+                    errorCode = IPC_ERR_DEVICE_FAIL;
+                }
+            } else {
+                strcpy(message, "Flow rate must be >= 0");
+                errorCode = CTRL_ERR_OUT_OF_RANGE;
+            }
+            break;
+            
+        case FLOW_CMD_ENABLE:
+            success = ControllerManager::enableFlowController(cmd->index);
+            if (success) {
+                strcpy(message, "Flow controller enabled");
+            } else {
+                strcpy(message, "Failed to enable controller");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case FLOW_CMD_DISABLE:
+            success = ControllerManager::disableFlowController(cmd->index);
+            if (success) {
+                strcpy(message, "Flow controller disabled");
+            } else {
+                strcpy(message, "Failed to disable controller");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case FLOW_CMD_MANUAL_DOSE:
+            success = ControllerManager::manualFlowDose(cmd->index);
+            if (success) {
+                strcpy(message, "Manual dose started");
+            } else {
+                strcpy(message, "Failed to start manual dose");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case FLOW_CMD_RESET_VOLUME:
+            success = ControllerManager::resetFlowVolume(cmd->index);
+            if (success) {
+                strcpy(message, "Cumulative volume reset to 0.0 mL");
+            } else {
+                strcpy(message, "Failed to reset volume");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case FLOW_CMD_RECALIBRATE:
+            // For recalibrate, we just trigger parameter recalculation
+            // The calibration values should already be updated via config message
+            {
+                ManagedFlowController* ctrl = ControllerManager::findFlowController(cmd->index);
+                if (ctrl != nullptr && ctrl->controllerInstance != nullptr) {
+                    ctrl->controllerInstance->calculateDosingParameters();
+                    success = true;
+                    strcpy(message, "Recalibration applied");
+                } else {
+                    strcpy(message, "Controller not found");
+                    errorCode = IPC_ERR_DEVICE_FAIL;
+                }
             }
             break;
             

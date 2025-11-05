@@ -440,10 +440,11 @@ The object index provides a unified addressing scheme for all sensors, actuators
 #### **Controller Objects (40-49)** **WIP**
 - **40-42:** Temperature Control (3 loops) - PID controllers
 - **43:** pH Control - Dosing control
-- **44:** Dissolved Oxygen Control - Gas mixing + stirrer
-- **45-49:** Reserved for future use
+- **44-47:** Feed/waste Control - pumps
+- **48:** Dissolved Oxygen Control - Gas mixing + stirrer
+- **49:** Reserved
 
-**Device Control Objects (50-69):** ✅ **NEW** Peripheral device control
+**Device Control Objects (50-69):** Peripheral device control
 - Control interface for dynamic devices (setpoints, commands, status)
 - Each device gets one control object (MFC setpoint, pump speed, etc.)
 - Linked to sensor objects via `startSensorIndex` field

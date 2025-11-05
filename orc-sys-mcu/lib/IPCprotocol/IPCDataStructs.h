@@ -92,7 +92,8 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_CONFIG_COMPORT        = 0x6A,  // Configure COM port (serial)
     IPC_MSG_CONFIG_TEMP_CONTROLLER = 0x6C,  // Configure temperature controller
     IPC_MSG_CONFIG_PH_CONTROLLER  = 0x6D,  // Configure pH controller
-    IPC_MSG_CONFIG_PRESSURE_CTRL  = 0x6E,  // Configure pressure controller
+    IPC_MSG_CONFIG_FLOW_CONTROLLER = 0x6E,  // Configure flow controller (feed/waste pumps)
+    IPC_MSG_CONFIG_PRESSURE_CTRL  = 0x6F,  // Configure pressure controller
 };
 
 // ============================================================================
@@ -138,21 +139,23 @@ enum IPC_ObjectType : uint8_t {
     // Motion drivers
     OBJ_T_STEPPER_MOTOR             = 14,
     OBJ_T_BDC_MOTOR                 = 15,
-    // Control objects
+    // Control objects (must match IO MCU objects.h enum order!)
     OBJ_T_TEMPERATURE_CONTROL       = 16,
     OBJ_T_PH_CONTROL                = 17,
-    OBJ_T_DISSOLVED_OXYGEN_CONTROL  = 18,
-    OBJ_T_OPTICAL_DENSITY_CONTROL   = 19,
-    OBJ_T_GAS_FLOW_CONTROL          = 20,
-    OBJ_T_STIRRER_CONTROL           = 21,
-    OBJ_T_PUMP_CONTROL              = 22,
-    OBJ_T_FEED_CONTROL              = 23,
-    OBJ_T_WASTE_CONTROL             = 24,
+    OBJ_T_FLOW_CONTROL              = 18,   // Flow controller (generic, indices 44-47)
+    OBJ_T_DISSOLVED_OXYGEN_CONTROL  = 19,
+    OBJ_T_OPTICAL_DENSITY_CONTROL   = 20,
+    OBJ_T_GAS_FLOW_CONTROL          = 21,
+    OBJ_T_STIRRER_CONTROL           = 22,
+    OBJ_T_PUMP_CONTROL              = 23,
+    // Device control objects (for peripheral devices)
+    OBJ_T_DEVICE_CONTROL            = 24,
     // Communication ports
     OBJ_T_SERIAL_RS232_PORT         = 25,
     OBJ_T_SERIAL_RS485_PORT         = 26,
-    // Device control objects (for peripheral devices)
-    OBJ_T_DEVICE_CONTROL            = 27,
+    // Legacy/deprecated (keep for backwards compatibility)
+    OBJ_T_FEED_CONTROL              = 27,   // Deprecated - use OBJ_T_FLOW_CONTROL
+    OBJ_T_WASTE_CONTROL             = 28,   // Deprecated - use OBJ_T_FLOW_CONTROL
     // External devices (high numbers to avoid conflicts)
     OBJ_T_HAMILTON_PH_PROBE         = 50,
     OBJ_T_HAMILTON_DO_PROBE         = 51,
@@ -907,6 +910,69 @@ enum pHControllerCommand : uint8_t {
     PH_CMD_RESET_ACID_VOLUME = 0x05, // Reset acid cumulative volume
     PH_CMD_RESET_BASE_VOLUME = 0x06  // Reset alkaline cumulative volume
 };
+
+/**
+ * @brief Flow Controller configuration
+ * Message type: IPC_MSG_CONFIG_FLOW_CONTROLLER
+ * Sent from SYS MCU to IO MCU to configure flow controllers (indices 44-47)
+ * 
+ * Flow controllers provide timed dosing based on flow rate setpoint and calibration.
+ * No sensor feedback - open loop control only.
+ * Indices: 44-46 = Feed Pumps 1-3, 47 = Waste Pump
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t index;                        // Controller index (44-47: 3 feed + 1 waste)
+    bool isActive;                        // true=create/update, false=delete
+    char name[40];                        // Controller name (e.g., "Feed Pump 1")
+    bool enabled;                         // Enable/disable controller (runtime state)
+    bool showOnDashboard;                 // Dashboard visibility
+    float flowRate_mL_min;                // Target flow rate in mL/min (THE SETPOINT)
+    
+    // Output configuration
+    uint8_t outputType;                   // 0=Digital output, 1=DC motor
+    uint8_t outputIndex;                  // Digital output (21-25) or DC motor (27-30)
+    uint8_t motorPower;                   // Motor power (0-100%), ignored if digital output
+    
+    // Calibration data (user-provided)
+    uint16_t calibrationDoseTime_ms;      // Dose time used during calibration
+    uint8_t calibrationMotorPower;        // Motor power during calibration (0-100%)
+    float calibrationVolume_mL;           // Volume delivered at calibration settings
+    
+    // Safety limits
+    uint32_t minDosingInterval_ms;        // Minimum time between doses (safety)
+    uint16_t maxDosingTime_ms;            // Maximum dose time per cycle (safety)
+    
+    uint8_t _padding[3];                  // Alignment
+} IPC_ConfigFlowController_t;
+
+// Verify struct size
+static_assert(sizeof(IPC_ConfigFlowController_t) == 67, "IPC_ConfigFlowController_t size mismatch");
+
+/**
+ * @brief Flow Controller runtime control commands
+ */
+enum FlowControllerCommand : uint8_t {
+    FLOW_CMD_SET_FLOW_RATE = 0x00,   // Set target flow rate (mL/min)
+    FLOW_CMD_ENABLE = 0x01,          // Enable controller (automatic dosing)
+    FLOW_CMD_DISABLE = 0x02,         // Disable controller
+    FLOW_CMD_MANUAL_DOSE = 0x03,     // Manual dose (one cycle)
+    FLOW_CMD_RESET_VOLUME = 0x04,    // Reset cumulative volume counter
+    FLOW_CMD_RECALIBRATE = 0x05      // Apply new calibration without full config
+};
+
+/**
+ * @brief Flow Controller runtime control
+ * Message type: IPC_MSG_CONTROL_WRITE (with OBJ_T_FLOW_CONTROL)
+ * 
+ * Runtime commands for flow controllers: flow rate, enable, disable, manual dose
+ */
+typedef struct __attribute__((packed)) {
+    uint16_t index;              // Controller index (44-47)
+    uint8_t objectType;          // OBJ_T_FLOW_CONTROL
+    uint8_t command;             // FlowControllerCommand
+    float flowRate_mL_min;       // For SET_FLOW_RATE command
+    uint8_t reserved[8];         // Reserved for future use
+} IPC_FlowControllerControl_t;
 
 /**
  * @brief Pressure controller calibration configuration

@@ -3,15 +3,6 @@
 
 // Most of this is debug code!!!! Very much a work in progress
 
-// Peripheral device instances (class-based drivers)
-//HamiltonPHProbe* phProbe = nullptr;
-//AlicatMFC* alicatMFC = nullptr;
-
-void schedulerHeatbeat(void) {
-  //static uint32_t loopCount = 0;
-  //Serial.printf("Scheduler alive - loop %d\n", loopCount++);
-}
-
 void printStuff(void) {  
   // Print CPU usage summary
   //Serial.println("\n=== CPU Usage Report ===");
@@ -114,16 +105,6 @@ void printStuff(void) {
   //Serial.println("\n========================");
 }
 
-
-void testTaskFunction(void) {
-  /*if (!alicatMFC) return;  // Safety check
-  static float setpoint = 0.0;
-  setpoint += 0.1;
-  if (setpoint > 1.2) setpoint = 0.0;
-  //Serial.printf("Sending a new setpoint to Alicat MFC: %0.4f\n", setpoint);
-  alicatMFC->writeSetpoint(setpoint);*/
-}
-
 void setupCSpins(void) {
   pinMode(PIN_ADC_CS, OUTPUT);
   pinMode(PIN_DAC_CS, OUTPUT);
@@ -144,15 +125,6 @@ void setupRtdInterface(void) {
   } else {
     Serial.println("RTD driver initialised.");
   }
-  /*setRtdSensorType(&rtd_interface[0], PT100);
-  setRtdWires(&rtd_interface[0], MAX31865_4WIRE);
-  Serial.println("Changed sensor 1 to PT100, 4 wire.");
-  setRtdSensorType(&rtd_interface[1], PT1000);
-  setRtdWires(&rtd_interface[1], MAX31865_3WIRE);
-  Serial.println("Changed sensor 2 to PT1000, 3 wire.");
-  setRtdSensorType(&rtd_interface[2], PT100);
-  setRtdWires(&rtd_interface[2], MAX31865_2WIRE);
-  Serial.println("Changed sensor 3 to PT100, 2 wire.");*/
 }
 
 void setup() {
@@ -164,9 +136,6 @@ void setup() {
     delay(1);
   }
   Serial.println("Starting IO MCU (ATSAME51N20A)...");
-  Serial.println("Reading calibration data");
-  if (!calibrate_init()) Serial.println("EEPROM was not initialised, defaults loaded");
-  else Serial.println("Calibration data read from EEPROM");
 
   Serial.println("Initialising ADC interface");
   ADC_init();
@@ -184,22 +153,6 @@ void setup() {
   } else {
     Serial.println("DAC driver initialised.");
   }
-
-  // ADC setup testing
-  Serial.println("Changing ADC inputs 1 & 2 to V");
-  strcpy(adcInput[0].unit, "V");
-  strcpy(adcInput[1].unit, "V");
-
-  Serial.println("Changing ADC inputs 3 & 4 to mA");
-  strcpy(adcInput[2].unit, "mA");
-  strcpy(adcInput[3].unit, "mA");
-
-  Serial.println("Changing ADC inputs 5 & 6 to µV");
-  strcpy(adcInput[4].unit, "µV");
-  strcpy(adcInput[5].unit, "µV");
-
-  Serial.println("Changing ADC inputs 7 to xx");    // Invalid, should default to mV
-  strcpy(adcInput[6].unit, "xx");
 
   // TMC5130 stepper setup testing
   Serial.println("Initialising TMC5130 stepper driver");
@@ -253,18 +206,6 @@ void setup() {
 
   Serial.println("Starting Modbus interface");
   modbus_init();
-  
-  // Configure Modbus Port 3 for pH probe (19200 baud, 8N2)
-  /*modbusPort[2].baudRate = 19200;
-  modbusPort[2].stopBits = 2;
-  modbusPort[2].parity = 0;
-  modbusDriver[2].configChanged = true;*/
-
-  // Configure Modbus Port 4 for Alicat MFC (19200 baud, 8N1)
-  /*modbusPort[3].baudRate = 19200;
-  modbusPort[3].stopBits = 1;
-  modbusPort[3].parity = 0;
-  modbusDriver[3].configChanged = true;*/
 
   Serial.println("Starting IPC interface");
   if (!ipc_init()) {
@@ -277,44 +218,15 @@ void setup() {
   if (!DeviceManager::init()) {
     Serial.println("Failed to initialise Device Manager.");
   } else {
-    Serial.println("Device Manager initialised (dynamic devices: 60-79)");
+    Serial.println("Device Manager initialised");
   }
 
   Serial.println("Initialising Controller Manager");
   if (!ControllerManager::init()) {
     Serial.println("Failed to initialise Controller Manager.");
   } else {
-    Serial.println("Controller Manager initialised (temperature controllers: 40-42)");
+    Serial.println("Controller Manager initialised");
   }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // ALL FIXED ONBOARD OBJECTS ENROLLED - SET INDEX BOUNDARY
-  // ═══════════════════════════════════════════════════════════════════════
-  numObjects = 41;  // Fixed objects complete (0-40)
-  Serial.println("\n=== Object Index Status ===");
-  Serial.printf("Fixed objects enrolled: 0-40 (%d objects)\n", numObjects);
-  Serial.println("Index map:");
-  Serial.println("  0-7   : Analog Inputs (ADC)");
-  Serial.println("  8-9   : Analog Outputs (DAC)");
-  Serial.println("  10-12 : RTD Temperature Sensors");
-  Serial.println("  13-20 : Digital GPIO");
-  Serial.println("  21-25 : Digital Outputs (4 + heater)");
-  Serial.println("  26    : Stepper Motor");
-  Serial.println("  27-30 : DC Motors");
-  Serial.println("  31-32 : Power Sensors (V/A/W)");
-  Serial.println("  33-36 : Modbus Ports");
-  Serial.println("  37-40 : Reserved for future use");
-  Serial.println("  40-42 : Temperature Controllers (dynamic, ControllerManager)");
-  Serial.println("Dynamic device slots: 60-79 (20 slots via DeviceManager)");
-  Serial.println("===========================\n");
-
-  // Initialise Hamilton pH probe interface (class-based)
-  /*Serial.println("Initialising Hamilton pH probe interface");
-  phProbe = new HamiltonPHProbe(&modbusDriver[2], 3);  // Port 2 (RS485), Slave ID 3*/
-
-  // Initialise Alicat MFC interface (class-based)
-  /*Serial.println("Initialising Alicat MFC interface");
-  alicatMFC = new AlicatMFC(&modbusDriver[3], 1);  // Port 3 (RS485), Slave ID 1*/
 
   Serial.println("Adding tasks to scheduler");
   analog_input_task = tasks.addTask(ADC_update, 10, true, false);
@@ -327,20 +239,8 @@ void setup() {
   motor_task = tasks.addTask([]() { motor_update(); }, 10, true, false);
   pwrSensor_task = tasks.addTask([]() { pwrSensor_update(); }, 1000, true, false);
   
-  // Add peripheral device tasks using lambda functions
-  /*if (phProbe) {
-    phProbe_task = tasks.addTask([]() { phProbe->update(); }, 2000, true, false);
-  }
-  if (alicatMFC) {
-    mfc_task = tasks.addTask([]() { alicatMFC->update(); }, 2000, true, false);
-  }*/
-  
   // Debug/monitoring tasks
   printStuff_task = tasks.addTask(printStuff, 1000, true, false);
-  SchedulerAlive_task = tasks.addTask(schedulerHeatbeat, 1000, true, false);
-  TEST_TASK = tasks.addTask(testTaskFunction, 5000, true, false);
-
-  //heartbeatMillis = millis();
 
   Serial.println("Setup done");
 }

@@ -36,13 +36,12 @@ enum ObjectType {
     // Controller objects (40-49)
     OBJ_T_TEMPERATURE_CONTROL,      // PID temperature control loops
     OBJ_T_PH_CONTROL,               // pH dosing control
+    OBJ_T_FLOW_CONTROL,             // Flow control (feed/waste pumps) - indices 44-47
     OBJ_T_DISSOLVED_OXYGEN_CONTROL, // DO control (gas mixing + stirrer)
     OBJ_T_OPTICAL_DENSITY_CONTROL,  // OD/biomass control
     OBJ_T_GAS_FLOW_CONTROL,         // MFC control loops
     OBJ_T_STIRRER_CONTROL,          // Stirrer speed control
     OBJ_T_PUMP_CONTROL,             // Peristaltic pump control
-    OBJ_T_FEED_CONTROL,             // Nutrient feed sequencer
-    OBJ_T_WASTE_CONTROL,            // Waste removal sequencer
     // Device control objects (50-69)
     OBJ_T_DEVICE_CONTROL,           // Control/status for peripheral devices
     // Comm ports (33-36)
@@ -356,21 +355,45 @@ struct stirrerControl_t {
     float kd;
 };
 
+struct FlowControl_t {
+    // Identity
+    uint8_t index;               // Controller index (44-47)
+    char name[40];               // Controller name
+    bool enabled;                // Enable/disable controller
+    bool fault;                  // Fault condition
+    bool newMessage;             // Message available flag
+    char message[100];           // Status/error message buffer
+    
+    // Setpoint (flow rate in mL/min)
+    float flowRate_mL_min;       // Target flow rate - THE SETPOINT
+    
+    // Output configuration
+    uint8_t outputType;          // 0=Digital output, 1=DC motor
+    uint8_t outputIndex;         // Digital output (21-25) or DC motor (27-30)
+    uint8_t motorPower;          // Motor power level (0-100%), ignored if digital
+    
+    // Calibration data (user-provided)
+    uint16_t calibrationDoseTime_ms;      // Dose time used during calibration
+    uint8_t calibrationMotorPower;        // Motor power used during calibration (0-100%)
+    float calibrationVolume_mL;           // Volume delivered at calibration settings
+    
+    // Calculated runtime values (computed from calibration + flow rate)
+    uint32_t calculatedInterval_ms;       // Time between doses (calculated)
+    uint16_t calculatedDoseTime_ms;       // Dose duration (usually = calibrationDoseTime_ms)
+    
+    // Runtime tracking
+    uint32_t lastDoseTime;                // millis() of last dose start
+    float cumulativeVolume_mL;            // Total volume pumped (RAM only)
+    uint8_t currentOutput;                // Current state: 0=off, 1=dosing
+    
+    // Safety limits
+    uint32_t minDosingInterval_ms;        // Minimum allowed interval (safety)
+    uint16_t maxDosingTime_ms;            // Maximum dose time per cycle (safety)
+};
+
 struct pumpControl_t {
     float percent;
     bool enabled;
-};
-
-struct feedControl_t {
-    bool enabled;
-    float interval;
-    float duty;
-};
-
-struct wasteControl_t {
-    bool enabled;
-    float interval;
-    float duty;
 };
 
 // Communication port objects

@@ -7,12 +7,16 @@
 class ScheduledTask;
 class TaskScheduler;
 class pHController;
+class FlowController;
 
 // IPC structures
 struct IPC_ConfigpHController_t;
+struct IPC_ConfigFlowController_t;
 
 // Maximum number of temperature controllers (matches ioConfig.h)
 #define MAX_TEMP_CONTROLLERS 3
+// Maximum number of flow controllers (3 feed + 1 waste = 4)
+#define MAX_FLOW_CONTROLLERS 4
 
 /**
  * @brief Managed Controller Entry
@@ -37,6 +41,20 @@ struct ManagedpHController {
     uint8_t index;                          // Controller object index (always 43)
     pHController* controllerInstance;       // Pointer to pH controller class instance
     pHControl_t* controlObject;             // Pointer to control structure in objIndex
+    ScheduledTask* updateTask;              // Scheduler task for periodic update()
+    bool active;                            // Controller is active and updating
+    char message[100];                      // Status/error message
+};
+
+/**
+ * @brief Managed Flow Controller Entry
+ * 
+ * Tracks all information needed for flow controllers (indices 44-47)
+ */
+struct ManagedFlowController {
+    uint8_t index;                          // Controller object index (44-47)
+    FlowController* controllerInstance;     // Pointer to flow controller class instance
+    FlowControl_t* controlObject;           // Pointer to control structure in objIndex
     ScheduledTask* updateTask;              // Scheduler task for periodic update()
     bool active;                            // Controller is active and updating
     char message[100];                      // Status/error message
@@ -227,6 +245,89 @@ public:
     static bool resetpHAlkalineVolume();
     
     // ========================================================================
+    // Flow Controller Lifecycle (Indices 44-47)
+    // ========================================================================
+    
+    /**
+     * @brief Create a new flow controller instance
+     * 
+     * @param index Controller index (44-47)
+     * @param config Controller configuration from IPC
+     * @return true if controller created successfully
+     */
+    static bool createFlowController(uint8_t index, const IPC_ConfigFlowController_t* config);
+    
+    /**
+     * @brief Delete a flow controller instance
+     * 
+     * @param index Controller index (44-47)
+     * @return true if controller deleted successfully
+     */
+    static bool deleteFlowController(uint8_t index);
+    
+    /**
+     * @brief Update flow controller configuration
+     * 
+     * @param index Controller index (44-47)
+     * @param config New controller configuration
+     * @return true if configuration updated successfully
+     */
+    static bool configureFlowController(uint8_t index, const IPC_ConfigFlowController_t* config);
+    
+    // ========================================================================
+    // Flow Controller Control Commands
+    // ========================================================================
+    
+    /**
+     * @brief Set flow controller flow rate setpoint
+     * 
+     * @param index Controller index (44-47)
+     * @param flowRate_mL_min New target flow rate in mL/min
+     * @return true if flow rate updated successfully
+     */
+    static bool setFlowRate(uint8_t index, float flowRate_mL_min);
+    
+    /**
+     * @brief Enable flow controller
+     * 
+     * @param index Controller index (44-47)
+     * @return true if controller enabled successfully
+     */
+    static bool enableFlowController(uint8_t index);
+    
+    /**
+     * @brief Disable flow controller
+     * 
+     * @param index Controller index (44-47)
+     * @return true if controller disabled successfully
+     */
+    static bool disableFlowController(uint8_t index);
+    
+    /**
+     * @brief Manual dose (one cycle)
+     * 
+     * @param index Controller index (44-47)
+     * @return true if dose started successfully
+     */
+    static bool manualFlowDose(uint8_t index);
+    
+    /**
+     * @brief Reset cumulative volume to zero
+     * 
+     * @param index Controller index (44-47)
+     * @return true if successful
+     */
+    static bool resetFlowVolume(uint8_t index);
+    
+    /**
+     * @brief Find a managed flow controller by its index
+     * 
+     * @param index Controller index (44-47)
+     * @return Pointer to ManagedFlowController or nullptr if not found
+     */
+    static ManagedFlowController* findFlowController(uint8_t index);
+    
+    // ========================================================================
     // Controller Query
     // ========================================================================
     
@@ -264,6 +365,7 @@ public:
 private:
     static ManagedController controllers[MAX_TEMP_CONTROLLERS];  // Controller array (3 slots)
     static ManagedpHController phController;  // Single pH controller (index 43)
+    static ManagedFlowController flowControllers[MAX_FLOW_CONTROLLERS];  // Flow controller array (4 slots)
     static bool initialized;
     
     // ========================================================================

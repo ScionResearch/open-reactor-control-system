@@ -66,7 +66,8 @@ void pollSensors(void) {
   // Modbus Ports: (37-40)
   // Temperature Controllers: (40-42)
   // pH Controller: (43)
-  objectCache.requestBulkUpdate(0, 44);
+  // Flow Controllers: (44-47)
+  objectCache.requestBulkUpdate(0, 48);
   
   // Request device control objects (indices 50-69)
   // These provide control status for peripheral devices (setpoint, actual, connected, fault)

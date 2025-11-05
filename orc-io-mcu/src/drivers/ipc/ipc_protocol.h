@@ -89,7 +89,8 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_CONFIG_COMPORT        = 0x6A,  // Configure COM port (serial)
     IPC_MSG_CONFIG_TEMP_CONTROLLER = 0x6C,  // Configure temperature controller
     IPC_MSG_CONFIG_PH_CONTROLLER  = 0x6D,  // Configure pH controller
-    IPC_MSG_CONFIG_PRESSURE_CTRL  = 0x6E,  // Configure pressure controller
+    IPC_MSG_CONFIG_FLOW_CONTROLLER = 0x6E,  // Configure flow controller (feed/waste pumps)
+    IPC_MSG_CONFIG_PRESSURE_CTRL  = 0x6F,  // Configure pressure controller
 };
 
 // ============================================================================
@@ -740,6 +741,65 @@ struct IPC_pHControllerControl_t {
     uint8_t objectType;              // OBJ_T_PH_CONTROL
     uint8_t command;                 // pHControllerCommand
     float setpoint;                  // For SET_SETPOINT command
+    uint8_t reserved[8];             // Reserved for future use
+} __attribute__((packed));
+
+/**
+ * @brief Flow Controller configuration
+ * Message type: IPC_MSG_CONFIG_FLOW_CONTROLLER
+ * Sent from SYS MCU to IO MCU to configure flow controllers (indices 44-47)
+ * 
+ * Flow controllers provide timed dosing based on flow rate setpoint and calibration.
+ * No sensor feedback - open loop control only.
+ */
+struct IPC_ConfigFlowController_t {
+    uint8_t index;                        // Controller index (44-47: 3 feed + 1 waste)
+    bool isActive;                        // true=create/update, false=delete
+    char name[40];                        // Controller name (e.g., "Feed Pump 1")
+    bool enabled;                         // Enable/disable controller (runtime state)
+    bool showOnDashboard;                 // Dashboard visibility
+    float flowRate_mL_min;                // Target flow rate in mL/min (THE SETPOINT)
+    
+    // Output configuration
+    uint8_t outputType;                   // 0=Digital output, 1=DC motor
+    uint8_t outputIndex;                  // Digital output (21-25) or DC motor (27-30)
+    uint8_t motorPower;                   // Motor power (0-100%), ignored if digital output
+    
+    // Calibration data (user-provided)
+    uint16_t calibrationDoseTime_ms;      // Dose time used during calibration
+    uint8_t calibrationMotorPower;        // Motor power during calibration (0-100%)
+    float calibrationVolume_mL;           // Volume delivered at calibration settings
+    
+    // Safety limits
+    uint32_t minDosingInterval_ms;        // Minimum time between doses (safety)
+    uint16_t maxDosingTime_ms;            // Maximum dose time per cycle (safety)
+    
+    uint8_t _padding[3];                  // Alignment
+} __attribute__((packed));
+
+/**
+ * @brief Flow Controller runtime control commands
+ */
+enum FlowControllerCommand : uint8_t {
+    FLOW_CMD_SET_FLOW_RATE = 0,      // Set target flow rate (mL/min)
+    FLOW_CMD_ENABLE = 1,             // Enable controller (automatic dosing)
+    FLOW_CMD_DISABLE = 2,            // Disable controller
+    FLOW_CMD_MANUAL_DOSE = 3,        // Manual dose (one cycle)
+    FLOW_CMD_RESET_VOLUME = 4,       // Reset cumulative volume counter
+    FLOW_CMD_RECALIBRATE = 5         // Apply new calibration without full config
+};
+
+/**
+ * @brief Flow Controller runtime control
+ * Message type: IPC_MSG_CONTROL_WRITE (with OBJ_T_FLOW_CONTROL)
+ * 
+ * Runtime commands for flow controllers: flow rate, enable, disable, manual dose
+ */
+struct IPC_FlowControllerControl_t {
+    uint16_t index;                  // Controller index (44-47)
+    uint8_t objectType;              // OBJ_T_FLOW_CONTROL
+    uint8_t command;                 // FlowControllerCommand
+    float flowRate_mL_min;           // For SET_FLOW_RATE command
     uint8_t reserved[8];             // Reserved for future use
 } __attribute__((packed));
 

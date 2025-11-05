@@ -224,6 +224,37 @@ struct pHControllerConfig {
 };
 
 /**
+ * @brief Configuration for Flow Controllers (indices 44-47)
+ * 3 Feed pumps + 1 Waste pump
+ * Open-loop flow control using timed dosing cycles
+ */
+#define MAX_FLOW_CONTROLLERS 4
+
+struct FlowControllerConfig {
+    bool isActive;                          // Controller slot in use
+    char name[40];                          // User-defined name (e.g., "Feed Pump 1", "Waste Pump")
+    bool enabled;                           // Enable/disable controller (runtime only, not saved)
+    bool showOnDashboard;                   // Dashboard visibility
+    
+    // Flow Control Configuration
+    float flowRate_mL_min;                  // Target flow rate in mL/min (THE SETPOINT)
+    
+    // Output Configuration
+    uint8_t outputType;                     // 0=Digital output, 1=DC motor
+    uint8_t outputIndex;                    // Digital output (21-25) or DC motor (27-30)
+    uint8_t motorPower;                     // Motor power level (0-100%), ignored if digital
+    
+    // Flow Calibration (user-provided)
+    uint16_t calibrationDoseTime_ms;        // Dose time used during calibration
+    uint8_t calibrationMotorPower;          // Motor power during calibration (0-100%)
+    float calibrationVolume_mL;             // Volume delivered at calibration settings
+    
+    // Safety Limits
+    uint32_t minDosingInterval_ms;          // Minimum time between doses (safety)
+    uint16_t maxDosingTime_ms;              // Maximum dose time per cycle (safety)
+};
+
+/**
  * @brief Configuration for COM ports (serial communication)
  * Ports: 0-1 = RS-232, 2-3 = RS-485
  */
@@ -326,6 +357,7 @@ struct IOConfig {
     EnergySensorConfig energySensors[MAX_ENERGY_SENSORS];  // Indices 31-32
     TemperatureControllerConfig tempControllers[MAX_TEMP_CONTROLLERS];  // Indices 40-42
     pHControllerConfig phController;  // Index 43 (single controller)
+    FlowControllerConfig flowControllers[MAX_FLOW_CONTROLLERS];  // Indices 44-47 (3 feed + 1 waste)
     ComPortConfig comPorts[MAX_COM_PORTS];  // RS-232 (0-1) and RS-485 (2-3)
     
     // Dynamic peripheral devices (sensor indices 70-99, control indices 50-69)

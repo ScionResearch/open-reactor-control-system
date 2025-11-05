@@ -2808,6 +2808,54 @@ void handleGetControllers() {
     }
   }
   
+  // Flow Controllers (indices 44-47)
+  for (int i = 0; i < MAX_FLOW_CONTROLLERS; i++) {
+    if (!ioConfig.flowControllers[i].isActive) continue;
+    
+    uint8_t index = 44 + i;
+    JsonObject ctrl = controllers.createNestedObject();
+    
+    ctrl["index"] = index;
+    ctrl["name"] = ioConfig.flowControllers[i].name;
+    ctrl["showOnDashboard"] = ioConfig.flowControllers[i].showOnDashboard;
+    ctrl["unit"] = "mL/min";  // Flow rate unit
+    ctrl["setpoint"] = ioConfig.flowControllers[i].flowRate_mL_min;  // Flow rate setpoint
+    ctrl["controlMethod"] = 3;  // Use 3 for flow controller type
+    
+    // Flow configuration info
+    ctrl["outputType"] = ioConfig.flowControllers[i].outputType;
+    ctrl["outputIndex"] = ioConfig.flowControllers[i].outputIndex;
+    ctrl["motorPower"] = ioConfig.flowControllers[i].motorPower;
+    ctrl["calibrationVolume_mL"] = ioConfig.flowControllers[i].calibrationVolume_mL;
+    ctrl["calibrationDoseTime_ms"] = ioConfig.flowControllers[i].calibrationDoseTime_ms;
+    
+    // Get runtime values from object cache for controller status
+    ObjectCache::CachedObject* obj = objectCache.getObject(index);
+    bool enabled = false;
+    
+    if (obj && obj->valid && obj->lastUpdate > 0) {
+      // Controller object exists - check if enabled
+      enabled = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+      ctrl["enabled"] = enabled;
+      ctrl["fault"] = (obj->flags & IPC_SENSOR_FLAG_FAULT) ? true : false;
+      ctrl["message"] = obj->message;
+      
+      // Always report values regardless of enabled state
+      ctrl["processValue"] = obj->value;  // Current flow rate (mL/min)
+      // additionalValues: [0]=currentOutput (0=off, 1=dosing), [1]=calculatedInterval_ms, [2]=cumulativeVolume_mL
+      ctrl["output"] = obj->valueCount > 0 ? obj->additionalValues[0] : 0.0f;  // Dosing state
+      ctrl["dosingInterval_ms"] = obj->valueCount > 1 ? obj->additionalValues[1] : 0.0f;
+      ctrl["cumulativeVolume_mL"] = obj->valueCount > 2 ? obj->additionalValues[2] : 0.0f;
+    } else {
+      // Controller doesn't exist yet or no data
+      ctrl["enabled"] = false;
+      ctrl["processValue"] = 0.0f;
+      ctrl["output"] = 0.0f;
+      ctrl["dosingInterval_ms"] = 0.0f;
+      ctrl["cumulativeVolume_mL"] = 0.0f;
+    }
+  }
+  
   String response;
   serializeJson(doc, response);
   server.send(200, "application/json", response);
@@ -3458,6 +3506,274 @@ void handleDeletepHController() {
 }
 
 // ============================================================================
+// Flow Controller Configuration and Control (Indices 44-47)
+// ============================================================================
+
+void handleGetFlowControllerConfig(uint8_t index) {
+  // Validate index (44-47)
+  if (index < 44 || index >= 44 + MAX_FLOW_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid flow controller index\"}");
+    return;
+  }
+  
+  int arrIdx = index - 44;
+  StaticJsonDocument<1024> doc;
+  
+  doc["index"] = index;
+  doc["isActive"] = ioConfig.flowControllers[arrIdx].isActive;
+  doc["name"] = ioConfig.flowControllers[arrIdx].name;
+  doc["enabled"] = ioConfig.flowControllers[arrIdx].enabled;
+  doc["showOnDashboard"] = ioConfig.flowControllers[arrIdx].showOnDashboard;
+  
+  doc["flowRate_mL_min"] = ioConfig.flowControllers[arrIdx].flowRate_mL_min;
+  
+  doc["outputType"] = ioConfig.flowControllers[arrIdx].outputType;
+  doc["outputIndex"] = ioConfig.flowControllers[arrIdx].outputIndex;
+  doc["motorPower"] = ioConfig.flowControllers[arrIdx].motorPower;
+  
+  doc["calibrationDoseTime_ms"] = ioConfig.flowControllers[arrIdx].calibrationDoseTime_ms;
+  doc["calibrationMotorPower"] = ioConfig.flowControllers[arrIdx].calibrationMotorPower;
+  doc["calibrationVolume_mL"] = ioConfig.flowControllers[arrIdx].calibrationVolume_mL;
+  
+  doc["minDosingInterval_ms"] = ioConfig.flowControllers[arrIdx].minDosingInterval_ms;
+  doc["maxDosingTime_ms"] = ioConfig.flowControllers[arrIdx].maxDosingTime_ms;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveFlowControllerConfig(uint8_t index) {
+  // Validate index (44-47)
+  if (index < 44 || index >= 44 + MAX_FLOW_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid flow controller index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<1024> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  int arrIdx = index - 44;
+  
+  // Validate calibration data
+  float calibVol = doc["calibrationVolume_mL"] | 1.0f;
+  if (calibVol <= 0.0f) {
+    server.send(400, "application/json", "{\"error\":\"Calibration volume must be > 0\"}");
+    return;
+  }
+  
+  // Update configuration
+  ioConfig.flowControllers[arrIdx].isActive = doc["isActive"] | true;
+  strlcpy(ioConfig.flowControllers[arrIdx].name, doc["name"] | "", sizeof(ioConfig.flowControllers[arrIdx].name));
+  // DO NOT save enabled state - runtime only
+  ioConfig.flowControllers[arrIdx].enabled = false;
+  
+  if (doc.containsKey("showOnDashboard")) {
+    ioConfig.flowControllers[arrIdx].showOnDashboard = doc["showOnDashboard"];
+  }
+  
+  ioConfig.flowControllers[arrIdx].flowRate_mL_min = doc["flowRate_mL_min"] | 10.0f;
+  
+  ioConfig.flowControllers[arrIdx].outputType = doc["outputType"] | 1;
+  ioConfig.flowControllers[arrIdx].outputIndex = doc["outputIndex"] | (27 + arrIdx);
+  ioConfig.flowControllers[arrIdx].motorPower = doc["motorPower"] | 50;
+  
+  ioConfig.flowControllers[arrIdx].calibrationDoseTime_ms = doc["calibrationDoseTime_ms"] | 1000;
+  ioConfig.flowControllers[arrIdx].calibrationMotorPower = doc["calibrationMotorPower"] | 50;
+  ioConfig.flowControllers[arrIdx].calibrationVolume_mL = calibVol;
+  
+  ioConfig.flowControllers[arrIdx].minDosingInterval_ms = doc["minDosingInterval_ms"] | 1000;
+  ioConfig.flowControllers[arrIdx].maxDosingTime_ms = doc["maxDosingTime_ms"] | 30000;
+  
+  // Save configuration
+  saveIOConfig();
+  
+  // Send IPC config packet to IO MCU
+  IPC_ConfigFlowController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  
+  cfg.index = index;
+  cfg.isActive = ioConfig.flowControllers[arrIdx].isActive;
+  strncpy(cfg.name, ioConfig.flowControllers[arrIdx].name, sizeof(cfg.name) - 1);
+  cfg.enabled = ioConfig.flowControllers[arrIdx].enabled;
+  cfg.flowRate_mL_min = ioConfig.flowControllers[arrIdx].flowRate_mL_min;
+  
+  cfg.outputType = ioConfig.flowControllers[arrIdx].outputType;
+  cfg.outputIndex = ioConfig.flowControllers[arrIdx].outputIndex;
+  cfg.motorPower = ioConfig.flowControllers[arrIdx].motorPower;
+  
+  cfg.calibrationDoseTime_ms = ioConfig.flowControllers[arrIdx].calibrationDoseTime_ms;
+  cfg.calibrationMotorPower = ioConfig.flowControllers[arrIdx].calibrationMotorPower;
+  cfg.calibrationVolume_mL = ioConfig.flowControllers[arrIdx].calibrationVolume_mL;
+  
+  cfg.minDosingInterval_ms = ioConfig.flowControllers[arrIdx].minDosingInterval_ms;
+  cfg.maxDosingTime_ms = ioConfig.flowControllers[arrIdx].maxDosingTime_ms;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_FLOW_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Saved and sent flow controller %d configuration to IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved and applied\"}");
+  } else {
+    log(LOG_WARNING, false, "Saved flow controller %d config but failed to send to IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved but IO MCU update failed\"}");
+  }
+}
+
+void handleSetFlowRate(uint8_t index) {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  if (!doc.containsKey("flowRate")) {
+    server.send(400, "application/json", "{\"error\":\"Missing flowRate parameter\"}");
+    return;
+  }
+  
+  float flowRate = doc["flowRate"];
+  
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_SET_FLOW_RATE;
+  cmd.flowRate_mL_min = flowRate;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Flow controller %d flow rate set to %.2f mL/min\n", index, flowRate);
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleEnableFlowController(uint8_t index) {
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_ENABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Flow controller %d enabled\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Flow controller enabled\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send flow controller %d enable command\n", index);
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleDisableFlowController(uint8_t index) {
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_DISABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Flow controller %d disabled\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Flow controller disabled\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send flow controller %d disable command\n", index);
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleManualFlowDose(uint8_t index) {
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_MANUAL_DOSE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Manual dose command sent to flow controller %d\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Manual dose started\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send manual dose command to flow controller %d\n", index);
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleResetFlowVolume(uint8_t index) {
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_RESET_VOLUME;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Flow controller %d cumulative volume reset\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Volume reset to 0.0 mL\"}");
+  } else {
+    log(LOG_WARNING, false, "Failed to send volume reset command to flow controller %d\n", index);
+    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+  }
+}
+
+void handleDeleteFlowController(uint8_t index) {
+  // Validate index (44-47)
+  if (index < 44 || index >= 44 + MAX_FLOW_CONTROLLERS) {
+    server.send(400, "application/json", "{\"error\":\"Invalid flow controller index\"}");
+    return;
+  }
+  
+  int arrIdx = index - 44;
+  
+  // Disable and mark inactive
+  ioConfig.flowControllers[arrIdx].isActive = false;
+  ioConfig.flowControllers[arrIdx].enabled = false;
+  memset(ioConfig.flowControllers[arrIdx].name, 0, sizeof(ioConfig.flowControllers[arrIdx].name));
+  
+  saveIOConfig();
+  
+  // Send IPC delete command to IO MCU
+  IPC_ConfigFlowController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.index = index;
+  cfg.isActive = false;  // This signals deletion
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_FLOW_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Flow controller %d deleted and removed from IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Flow controller deleted\"}");
+  } else {
+    log(LOG_WARNING, false, "Flow controller %d deleted from config but failed to remove from IO MCU\n", index);
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Flow controller deleted but IO MCU update failed\"}");
+  }
+}
+
+// ============================================================================
 // Device Control (Peripheral Devices like MFC, pH controllers)
 // ============================================================================
 
@@ -3798,6 +4114,41 @@ void setupWebServer()
   server.on("/api/phcontroller/43/reset-acid-volume", HTTP_POST, handleResetpHAcidVolume);
   server.on("/api/phcontroller/43/reset-alkaline-volume", HTTP_POST, handleResetpHAlkalineVolume);
   
+  // Flow controller config endpoints (indices 44-47)
+  server.on("/api/config/flowcontroller/44", HTTP_GET, []() { handleGetFlowControllerConfig(44); });
+  server.on("/api/config/flowcontroller/44", HTTP_POST, []() { handleSaveFlowControllerConfig(44); });
+  server.on("/api/config/flowcontroller/45", HTTP_GET, []() { handleGetFlowControllerConfig(45); });
+  server.on("/api/config/flowcontroller/45", HTTP_POST, []() { handleSaveFlowControllerConfig(45); });
+  server.on("/api/config/flowcontroller/46", HTTP_GET, []() { handleGetFlowControllerConfig(46); });
+  server.on("/api/config/flowcontroller/46", HTTP_POST, []() { handleSaveFlowControllerConfig(46); });
+  server.on("/api/config/flowcontroller/47", HTTP_GET, []() { handleGetFlowControllerConfig(47); });
+  server.on("/api/config/flowcontroller/47", HTTP_POST, []() { handleSaveFlowControllerConfig(47); });
+  
+  // Flow controller control endpoints (runtime actions)
+  server.on("/api/flowcontroller/44/flowrate", HTTP_POST, []() { handleSetFlowRate(44); });
+  server.on("/api/flowcontroller/44/enable", HTTP_POST, []() { handleEnableFlowController(44); });
+  server.on("/api/flowcontroller/44/disable", HTTP_POST, []() { handleDisableFlowController(44); });
+  server.on("/api/flowcontroller/44/dose", HTTP_POST, []() { handleManualFlowDose(44); });
+  server.on("/api/flowcontroller/44/reset-volume", HTTP_POST, []() { handleResetFlowVolume(44); });
+  
+  server.on("/api/flowcontroller/45/flowrate", HTTP_POST, []() { handleSetFlowRate(45); });
+  server.on("/api/flowcontroller/45/enable", HTTP_POST, []() { handleEnableFlowController(45); });
+  server.on("/api/flowcontroller/45/disable", HTTP_POST, []() { handleDisableFlowController(45); });
+  server.on("/api/flowcontroller/45/dose", HTTP_POST, []() { handleManualFlowDose(45); });
+  server.on("/api/flowcontroller/45/reset-volume", HTTP_POST, []() { handleResetFlowVolume(45); });
+  
+  server.on("/api/flowcontroller/46/flowrate", HTTP_POST, []() { handleSetFlowRate(46); });
+  server.on("/api/flowcontroller/46/enable", HTTP_POST, []() { handleEnableFlowController(46); });
+  server.on("/api/flowcontroller/46/disable", HTTP_POST, []() { handleDisableFlowController(46); });
+  server.on("/api/flowcontroller/46/dose", HTTP_POST, []() { handleManualFlowDose(46); });
+  server.on("/api/flowcontroller/46/reset-volume", HTTP_POST, []() { handleResetFlowVolume(46); });
+  
+  server.on("/api/flowcontroller/47/flowrate", HTTP_POST, []() { handleSetFlowRate(47); });
+  server.on("/api/flowcontroller/47/enable", HTTP_POST, []() { handleEnableFlowController(47); });
+  server.on("/api/flowcontroller/47/disable", HTTP_POST, []() { handleDisableFlowController(47); });
+  server.on("/api/flowcontroller/47/dose", HTTP_POST, []() { handleManualFlowDose(47); });
+  server.on("/api/flowcontroller/47/reset-volume", HTTP_POST, []() { handleResetFlowVolume(47); });
+  
   // Note: RESTful controller endpoints are handled dynamically in onNotFound():
   //   - GET    /api/controller/{40-43}     - Get controller config (REST)
   //   - PUT    /api/controller/{40-43}     - Save controller config (REST)
@@ -3905,8 +4256,12 @@ void setupWebServer()
       
       Serial.printf("[WEB] Controller API route detected: index=%d, indexStr='%s'\n", index, indexStr.c_str());
       
-      // Validate controller range: temp controllers (40-42) or pH controller (43)
-      if (((index >= 40 && index < 40 + MAX_TEMP_CONTROLLERS) || index == 43) && indexStr.length() > 0) {
+      // Validate controller range: temp controllers (40-42), pH controller (43), or flow controllers (44-47)
+      bool validRange = (index >= 40 && index < 40 + MAX_TEMP_CONTROLLERS) ||  // 40-42
+                        index == 43 ||                                           // pH controller
+                        (index >= 44 && index < 44 + MAX_FLOW_CONTROLLERS);     // 44-47
+      
+      if (validRange && indexStr.length() > 0) {
         // Valid controller route - dispatch to appropriate handler
         HTTPMethod method = server.method();
         Serial.printf("[WEB] Dispatching to controller handler (method: %d)\n", method);
@@ -3921,6 +4276,21 @@ void setupWebServer()
             return;
           } else if (method == HTTP_DELETE) {
             handleDeletepHController();
+            return;
+          } else {
+            server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
+            return;
+          }
+        } else if (index >= 44 && index < 44 + MAX_FLOW_CONTROLLERS) {
+          // Flow Controllers (44-47)
+          if (method == HTTP_GET) {
+            handleGetFlowControllerConfig(index);
+            return;
+          } else if (method == HTTP_PUT) {
+            handleSaveFlowControllerConfig(index);
+            return;
+          } else if (method == HTTP_DELETE) {
+            handleDeleteFlowController(index);
             return;
           } else {
             server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
