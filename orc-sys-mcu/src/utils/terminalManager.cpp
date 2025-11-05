@@ -25,6 +25,10 @@ void manageTerminal(void)
     serialLocked = false;
     if (bytesRead > 0 ) {
       serialString[bytesRead] = '\0'; // Add null terminator
+      // Strip trailing \r if present (Windows line endings)
+      if (bytesRead > 0 && serialString[bytesRead - 1] == '\r') {
+        serialString[bytesRead - 1] = '\0';
+      }
       log(LOG_INFO, true,"Received:  %s\n", serialString);
       if (strcmp(serialString, "reboot") == 0) {
         log(LOG_INFO, true, "Rebooting now...\n");

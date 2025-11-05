@@ -50,8 +50,14 @@ bool ipcReady = false;  // Only start polling after handshake and config push co
  */
 void pollSensors(void) {
   // Wait for IPC handshake and configuration to complete
+  // Rate-limit the warning so it doesn't spam the serial console when IPC is down.
   if (!ipcReady) {
-    log(LOG_WARNING, false, "IPC not ready for polling (handshake incomplete)\n");
+    static unsigned long lastHandshakeWarn = 0;
+    unsigned long now = millis();
+    if (now - lastHandshakeWarn >= SENSOR_POLL_INTERVAL) {
+      log(LOG_WARNING, false, "IPC not ready for polling (handshake incomplete)\n");
+      lastHandshakeWarn = now;
+    }
     return;
   }
   
