@@ -30,8 +30,9 @@ struct IPC_Driver_t {
     
     // State machine
     IPC_State state;
-    uint32_t lastActivity;
-    uint32_t lastKeepalive;
+    uint32_t lastActivity;       // Updated on any TX or RX (for diagnostics)
+    uint32_t lastRxTime;        // Updated only on successful RX packet (for timeout detection)
+    uint32_t lastKeepalive;     // Updated when PING/HELLO sent (for scheduling)
     bool connected;
     
     // RX buffer and packet parsing
@@ -210,6 +211,7 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len);
 void ipc_handle_ping(const uint8_t *payload, uint16_t len);
 void ipc_handle_pong(const uint8_t *payload, uint16_t len);
 void ipc_handle_hello(const uint8_t *payload, uint16_t len);
+void ipc_handle_hello_ack(const uint8_t *payload, uint16_t len);
 void ipc_handle_index_sync_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_sensor_read_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len);

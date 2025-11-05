@@ -28,6 +28,10 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             ipc_handle_hello(payload, len);
             break;
             
+        case IPC_MSG_HELLO_ACK:
+            ipc_handle_hello_ack(payload, len);
+            break;
+            
         case IPC_MSG_INDEX_SYNC_REQ:
             ipc_handle_index_sync_req(payload, len);
             break;
@@ -174,6 +178,36 @@ void ipc_handle_hello(const uint8_t *payload, uint16_t len) {
                  numObjects, MAX_NUM_OBJECTS);
     
     ipcDriver.connected = true;
+}
+
+/**
+ * @brief Handle HELLO_ACK messages from RP2040
+ * Completes symmetric handshake when IO MCU initiates with HELLO
+ */
+void ipc_handle_hello_ack(const uint8_t *payload, uint16_t len) {
+    if (len < sizeof(IPC_HelloAck_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "HELLO_ACK: Invalid payload size");
+        return;
+    }
+    
+    IPC_HelloAck_t *ack = (IPC_HelloAck_t*)payload;
+    
+    // Check protocol version compatibility
+    if (ack->protocolVersion != IPC_PROTOCOL_VERSION) {
+        Serial.printf("[IPC] ERROR: Protocol version mismatch! Expected 0x%08lX, got 0x%08lX\n",
+                     IPC_PROTOCOL_VERSION, ack->protocolVersion);
+        ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "Protocol version mismatch");
+        return;
+    }
+    
+    #if IPC_DEBUG_ENABLED
+    Serial.printf("[IPC] ✓ Handshake complete (ACK)! RP2040 firmware v%08lX (%u/%u objects)\n",
+                 ack->firmwareVersion, ack->currentObjectCount, ack->maxObjectCount);
+    #endif
+    
+    // Mark connection as established (symmetric handshake completion)
+    ipcDriver.connected = true;
+    ipcDriver.lastActivity = millis();
 }
 
 // ============================================================================

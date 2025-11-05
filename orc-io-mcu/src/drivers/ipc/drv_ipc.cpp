@@ -42,10 +42,16 @@ bool ipc_init(void) {
     ipcDriver.state = IPC_STATE_IDLE;
     ipcDriver.connected = false;
     ipcDriver.lastActivity = millis();
+    ipcDriver.lastRxTime = millis();
     ipcDriver.lastKeepalive = millis();
     
     strcpy(ipcDriver.message, "IPC initialized");
     ipcDriver.newMessage = true;
+    
+    // Send initial HELLO to initiate handshake
+    delay(100);  // Brief delay to ensure UART is ready
+    ipc_sendHello();
+    Serial.println("[IPC] Sent initial HELLO to initiate handshake");
     
     return true;
 }
@@ -323,6 +329,7 @@ void ipc_processReceivedPacket(void) {
     // Update statistics
     ipcDriver.rxPacketCount++;
     ipcDriver.lastActivity = millis();
+    ipcDriver.lastRxTime = millis();  // RX-only activity for timeout detection
     
     // Process message
     ipc_handleMessage(msgType, ipcDriver.rxPayload, payloadLen);
@@ -360,14 +367,20 @@ void ipc_update(void) {
         ipc_processTxQueue();
     }
     
-    // Send keepalive ping if needed
-    if ((now - ipcDriver.lastKeepalive) > IPC_KEEPALIVE_MS) {
+    // If not connected, periodically retry handshake
+    if (!ipcDriver.connected && (now - ipcDriver.lastKeepalive) > IPC_KEEPALIVE_MS) {
+        ipc_sendHello();
+        ipcDriver.lastKeepalive = now;
+    }
+    // If connected, send keepalive ping if needed
+    else if (ipcDriver.connected && (now - ipcDriver.lastKeepalive) > IPC_KEEPALIVE_MS) {
         ipc_sendPing();
         ipcDriver.lastKeepalive = now;
     }
     
-    // Check connection timeout
-    if ((now - ipcDriver.lastActivity) > (IPC_KEEPALIVE_MS * 3)) {
+    // Check connection timeout (based on RX activity only, not TX)
+    // If no RX packets received within 3 keepalive intervals, consider connection lost
+    if ((now - ipcDriver.lastRxTime) > (IPC_KEEPALIVE_MS * 3)) {
         ipcDriver.connected = false;
     }
 }

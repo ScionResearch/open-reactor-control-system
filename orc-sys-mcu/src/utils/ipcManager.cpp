@@ -39,6 +39,7 @@ void init_ipcManager(void) {
 unsigned long lastSensorPollTime = 0;
 const unsigned long SENSOR_POLL_INTERVAL = 1000; // Poll every 1 second
 bool ipcReady = false;  // Only start polling after handshake and config push complete
+bool ipcHandshakeComplete = false;  // Latch to ensure config push happens only once
 
 /**
  * @brief Continuously poll all IO MCU objects to keep cache fresh
@@ -87,6 +88,18 @@ void pollSensors(void) {
 }
 
 void manageIPC(void) {
+  // Retry handshake if not ready
+  static unsigned long lastHandshakeAttempt = 0;
+  const unsigned long HANDSHAKE_RETRY_INTERVAL = 2000; // Retry every 2 seconds
+  
+  if (!ipcReady) {
+    unsigned long now = millis();
+    if (now - lastHandshakeAttempt >= HANDSHAKE_RETRY_INTERVAL) {
+      ipc.sendHello(IPC_PROTOCOL_VERSION, 0x00010001, "RP2040-ORC-SYS");
+      lastHandshakeAttempt = now;
+    }
+  }
+  
   // Check for incoming messages
   ipc.update();
   
@@ -156,6 +169,13 @@ void handleHello(uint8_t messageType, const uint8_t *payload, uint16_t length) {
   
   const IPC_Hello_t *hello = (const IPC_Hello_t *)payload;
   
+  // Check protocol version compatibility
+  if (hello->protocolVersion != IPC_PROTOCOL_VERSION) {
+    log(LOG_ERROR, true, "IPC: Protocol version mismatch! Expected 0x%08X, got 0x%08X\n",
+        IPC_PROTOCOL_VERSION, hello->protocolVersion);
+    return;
+  }
+  
   log(LOG_INFO, true, "IPC: Received HELLO from %s (protocol v%08X, firmware v%08X)\n",
       hello->deviceName, hello->protocolVersion, hello->firmwareVersion);
   
@@ -168,10 +188,16 @@ void handleHello(uint8_t messageType, const uint8_t *payload, uint16_t length) {
   
   ipc.sendPacket(IPC_MSG_HELLO_ACK, (uint8_t*)&ack, sizeof(ack));
   
-  log(LOG_INFO, false, "IPC: Sent HELLO_ACK to SAME51\n");
+  log(LOG_INFO, true, "IPC: ✓ Handshake complete! Sent HELLO_ACK to %s\n", hello->deviceName);
   
-  // Request index sync
-  ipc.sendIndexSyncRequest();
+  // Push IO configuration and enable polling (once per handshake)
+  if (!ipcHandshakeComplete) {
+    ipcHandshakeComplete = true;
+    pushIOConfigToIOmcu();
+    ipcReady = true;
+    log(LOG_INFO, false, "IPC: Sensor polling enabled\n");
+    ipc.sendIndexSyncRequest();
+  }
 }
 
 /**
@@ -195,12 +221,13 @@ void handleHelloAck(uint8_t messageType, const uint8_t *payload, uint16_t length
   log(LOG_INFO, true, "IPC: ✓ Handshake complete! SAME51 firmware v%08X (%u/%u objects)\n",
       ack->firmwareVersion, ack->currentObjectCount, ack->maxObjectCount);
   
-  // Push IO configuration to IO MCU now that IPC is established
-  pushIOConfigToIOmcu();
-  
-  // Enable sensor polling now that IPC is ready
-  ipcReady = true;
-  log(LOG_INFO, false, "IPC: Sensor polling enabled\n");
+  // Push IO configuration and enable polling (once per handshake)
+  if (!ipcHandshakeComplete) {
+    ipcHandshakeComplete = true;
+    pushIOConfigToIOmcu();
+    ipcReady = true;
+    log(LOG_INFO, false, "IPC: Sensor polling enabled\n");
+  }
 }
 
 /**
