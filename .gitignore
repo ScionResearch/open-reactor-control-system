@@ -20,3 +20,5 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+usb-reset.sh
