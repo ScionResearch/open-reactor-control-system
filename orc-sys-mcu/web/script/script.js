@@ -5399,6 +5399,11 @@ function renderControllers() {
             console.log('[CONTROLLERS] Creating card for controller', ctrl.index);
             const card = createControllerCard(ctrl);
             container.appendChild(card);
+            
+            // Populate DO profile dropdown if this is a DO controller
+            if (ctrl.controlMethod === 4) {
+                populateDOProfileSelect(ctrl.index, ctrl.activeProfileIndex);
+            }
         });
         console.log('[CONTROLLERS] Full render complete, container children:', container.children.length);
     } else {
@@ -5462,6 +5467,8 @@ function updateControllerCard(ctrl) {
                     ? (ctrl.output === 0 ? 'OFF' 
                        : ctrl.output === 1 ? 'DOSING ACID' 
                        : 'DOSING ALKALINE')
+                    : ctrl.controlMethod === 4
+                    ? ctrl.output.toFixed(2) + ' mg/L'          // DO mode: show error value
                     : '--')
                 : '--';
             processValueDisplays[2].textContent = outputText;
@@ -5561,6 +5568,28 @@ function updateControllerCard(ctrl) {
         }
     }
     
+    // Update DO controller info if in DO mode
+    if (ctrl.controlMethod === 4) {
+        // Populate profile select dropdown
+        populateDOProfileSelect(ctrl.index, ctrl.activeProfileIndex);
+        
+        const profileNameSpan = card.querySelector(`#ctrl-profile-name-${ctrl.index}`);
+        if (profileNameSpan) {
+            profileNameSpan.textContent = ctrl.activeProfileName || 'None';
+        }
+        
+        const stirrerOutputSpan = card.querySelector(`#ctrl-stirrer-output-${ctrl.index}`);
+        if (stirrerOutputSpan) {
+            const stirrerUnit = ctrl.stirrerUnit || '%';  // Default to % if not specified
+            stirrerOutputSpan.textContent = ctrl.stirrerEnabled ? `${(ctrl.stirrerOutput || 0).toFixed(1)} ${stirrerUnit}` : 'Disabled';
+        }
+        
+        const mfcOutputSpan = card.querySelector(`#ctrl-mfc-output-${ctrl.index}`);
+        if (mfcOutputSpan) {
+            mfcOutputSpan.textContent = ctrl.mfcEnabled ? (ctrl.mfcOutput || 0).toFixed(1) + ' mL/min' : 'Disabled';
+        }
+    }
+    
     // Update message (always present, just toggle visibility to prevent height changes)
     const infoMessage = card.querySelector(`#ctrl-message-${ctrl.index}`);
     if (infoMessage) {
@@ -5614,7 +5643,7 @@ function createControllerCard(ctrl) {
                 <div class="controller-value-display">${ctrl.setpoint.toFixed(1)}${ctrl.unit}</div>
             </div>
             <div class="controller-value-item">
-                <div class="controller-value-label">Output</div>
+                <div class="controller-value-label">${ctrl.controlMethod === 4 ? 'Delta' : 'Output'}</div>
                 <div class="controller-value-display">${
                     ctrl.output !== null 
                         ? (ctrl.controlMethod === 0 
@@ -5627,6 +5656,8 @@ function createControllerCard(ctrl) {
                                : 'DOSING ALKALINE')                     // pH mode: show dosing state
                             : ctrl.controlMethod === 3
                             ? (ctrl.output === 1 ? 'DOSING' : 'OFF')    // Flow mode: show dosing state
+                            : ctrl.controlMethod === 4
+                            ? ctrl.output.toFixed(2) + ' mg/L'          // DO mode: show error value
                             : '--')
                         : '--'
                 }</div>
@@ -5634,7 +5665,7 @@ function createControllerCard(ctrl) {
         </div>
         
         <div class="controller-info-row">
-            ${ctrl.controlMethod !== 2 && ctrl.controlMethod !== 3 ? `<span><strong>Mode:</strong> ${ctrl.controlMethod === 0 ? 'On/Off' : 'PID'}</span>` : ''}
+            ${ctrl.controlMethod !== 2 && ctrl.controlMethod !== 3 && ctrl.controlMethod !== 4 ? `<span><strong>Mode:</strong> ${ctrl.controlMethod === 0 ? 'On/Off' : 'PID'}</span>` : ''}
             ${ctrl.controlMethod === 1 ? `
                 <span id="ctrl-gains-${ctrl.index}"><strong>Gains:</strong> P=${ctrl.kP.toFixed(2)}, I=${ctrl.kI.toFixed(2)}, D=${ctrl.kD.toFixed(2)}</span>
             ` : ctrl.controlMethod === 2 ? `
@@ -5645,6 +5676,10 @@ function createControllerCard(ctrl) {
                 <span><strong>Dosing Interval:</strong> <span id="ctrl-dose-interval-${ctrl.index}">${ctrl.dosingInterval_ms ? (ctrl.dosingInterval_ms / 1000).toFixed(1) + ' s' : '--'}</span></span>
                 <span><strong>Calib Vol:</strong> ${ctrl.calibrationVolume_mL ? ctrl.calibrationVolume_mL.toFixed(2) + ' mL' : '--'}</span>
                 <span><strong>Calib Time:</strong> ${ctrl.calibrationDoseTime_ms ? (ctrl.calibrationDoseTime_ms / 1000).toFixed(1) + ' s' : '--'}</span>
+            ` : ctrl.controlMethod === 4 ? `
+                <span><strong>Profile:</strong> <span id="ctrl-profile-name-${ctrl.index}">${ctrl.activeProfileName || 'None'}</span></span>
+                <span><strong>Stirrer:</strong> <span id="ctrl-stirrer-output-${ctrl.index}">${ctrl.stirrerEnabled ? `${(ctrl.stirrerOutput || 0).toFixed(1)} ${ctrl.stirrerUnit || '%'}` : 'Disabled'}</span></span>
+                <span><strong>MFC:</strong> <span id="ctrl-mfc-output-${ctrl.index}">${ctrl.mfcEnabled ? (ctrl.mfcOutput || 0).toFixed(1) + ' mL/min' : 'Disabled'}</span></span>
             ` : `
                 <span><strong>Hysteresis:</strong> <span id="ctrl-hysteresis-${ctrl.index}">${ctrl.hysteresis.toFixed(2)}${ctrl.unit}</span></span>
             `}
@@ -5734,6 +5769,20 @@ function createControllerCard(ctrl) {
                         onclick="manualFlowDose(${ctrl.index})">
                     Manual Dose
                 </button>
+            ` : ctrl.controlMethod === 4 ? `
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <label style="margin: 0; font-weight: 500;">Profile:</label>
+                        <select id="do-profile-select-${ctrl.index}" 
+                                style="padding: 8px; border-radius: 4px; border: 1px solid #ddd;"
+                                onchange="switchDOProfile(${ctrl.index}, this.value)">
+                        </select>
+                    </div>
+                    <button class="output-btn output-btn-success mdi mdi-plus-box"
+                            onclick="openDOProfileModal()"> Add</button>
+                    <button class="output-btn output-btn-info mdi mdi-square-edit-outline"
+                            onclick="openDOProfileModal(document.getElementById('do-profile-select-${ctrl.index}').value)"> Edit</button>
+                </div>
             ` : ''}
         </div>
         
@@ -5836,7 +5885,7 @@ async function updateSensorOptions() {
             
             <div class="form-group">
                 <label for="ctrlName">Name:</label>
-                <input type="text" id="ctrlName" value="${selectedControllerType.name} ${availableIndices[0]}" maxlength="39">
+                <input type="text" id="ctrlName" value="Temperature Controller ${availableIndices[0]-39}" maxlength="39">
             </div>
             
             <div class="form-group">
@@ -5949,7 +5998,7 @@ async function renderpHAddForm(expandedDiv, sensors, outputs, indexNum) {
         
         <div class="form-group">
             <label for="addCtrlName">Name:</label>
-            <input type="text" id="addCtrlName" value="pH Controller ${indexNum}" maxlength="39">
+            <input type="text" id="addCtrlName" value="pH Controller" maxlength="39">
         </div>
         
         <div class="form-group">
@@ -6101,7 +6150,7 @@ async function renderFlowAddForm(expandedDiv, sensors, outputs, indexNum) {
         
         <div class="form-group">
             <label for="addFlowCtrlName">Name:</label>
-            <input type="text" id="addFlowCtrlName" value="Flow Controller ${indexNum}" maxlength="39">
+            <input type="text" id="addFlowCtrlName" value="Flow Controller ${indexNum-43}" maxlength="39">
         </div>
         
         <div class="form-group">
@@ -6186,7 +6235,7 @@ async function renderFlowAddForm(expandedDiv, sensors, outputs, indexNum) {
 }
 
 async function renderDOAddForm(expandedDiv, sensors, outputs, indexNum) {
-    // Get DO sensors from device sensors
+    // Get DO sensors from device sensors (indices 70-99, type 4)
     let doSensors = [];
     try {
         const inputsResponse = await fetch('/api/inputs');
@@ -6194,16 +6243,39 @@ async function renderDOAddForm(expandedDiv, sensors, outputs, indexNum) {
             const inputsData = await inputsResponse.json();
             if (inputsData.devices) {
                 doSensors = inputsData.devices
-                    .filter(ds => ds.t && ds.t == 4)  // Type 4 for DO sensors
-                    .map(ds => ({ index: ds.i, name: `[${ds.i}] ${ds.n || 'DO Sensor'} (${ds.v.toFixed(2)}${ds.u})` }));
+                    .filter(ds => ds.t && ds.t == 4 && ds.i >= 70 && ds.i <= 99)
+                    .map(ds => ({ index: ds.i, name: `[${ds.i}] ${ds.n || 'DO Sensor'} (${ds.v?.toFixed(2) || '--'}${ds.u || ''})` }));
             }
         }
     } catch (error) {
         console.error('[DO ADD] Error loading DO sensors:', error);
     }
     
-    // Get DC motors for dosing options  
+    // Get MFC devices from device sensors (indices 70-99, type = flow sensor or custom MFC type)
+    let mfcDevices = [];
+    try {
+        const inputsResponse = await fetch('/api/inputs');
+        if (inputsResponse.ok) {
+            const inputsData = await inputsResponse.json();
+            if (inputsData.devices) {
+                // MFC devices are in the 70-99 range, typically type 6 (flow sensor) or similar
+                // Filter for devices that look like MFCs (contain "MFC" in name or are flow sensors)
+                // Use control index (c) for device commands, not sensor index (i)
+                mfcDevices = inputsData.devices
+                    .filter(ds => {
+                        const nameLower = (ds.n || '').toLowerCase();
+                        return (nameLower.includes('mfc') || nameLower.includes('mass flow') || ds.t === 6) && ds.c;
+                    })
+                    .map(ds => ({ index: ds.c, name: `[Ctrl ${ds.c}] ${ds.n || 'MFC'}` }));
+            }
+        }
+    } catch (error) {
+        console.error('[DO ADD] Error loading MFC devices:', error);
+    }
+    
+    // Get DC motors and stepper for stirring
     let dcMotors = [];
+    let stepperMotor = null;
     try {
         const outputsResponse = await fetch('/api/outputs');
         if (outputsResponse.ok) {
@@ -6211,9 +6283,24 @@ async function renderDOAddForm(expandedDiv, sensors, outputs, indexNum) {
             if (outputsData.dcMotors) {
                 dcMotors = outputsData.dcMotors.map(m => ({ index: m.index, name: m.name }));
             }
+            // API returns "stepperMotor" not "stepper"
+            if (outputsData.stepperMotor) {
+                stepperMotor = { index: 26, name: outputsData.stepperMotor.name || 'Stepper Motor' };
+            }
         }
     } catch (error) {
-        console.error('[DO ADD] Error loading DC motors:', error);
+        console.error('[DO ADD] Error loading motors:', error);
+    }
+    
+    // Load DO profiles
+    let profiles = [];
+    try {
+        console.log('[DO ADD] Loading profiles...');
+        await loadDOProfiles();
+        profiles = doProfiles.filter(p => p.isActive && p.numPoints >= 2);
+        console.log('[DO ADD] Loaded', profiles.length, 'profiles');
+    } catch (error) {
+        console.error('[DO ADD] Error loading profiles:', error);
     }
     
     expandedDiv.innerHTML = `
@@ -6221,7 +6308,7 @@ async function renderDOAddForm(expandedDiv, sensors, outputs, indexNum) {
         
         <div class="form-group">
             <label for="addDOCtrlName">Name:</label>
-            <input type="text" id="addDOCtrlName" value="DO Controller ${indexNum}" maxlength="39">
+            <input type="text" id="addDOCtrlName" value="DO Controller" maxlength="39">
         </div>
         
         <div class="form-group">
@@ -6237,6 +6324,7 @@ async function renderDOAddForm(expandedDiv, sensors, outputs, indexNum) {
                 <option value="">-- Select DO Sensor --</option>
                 ${doSensors.map(s => `<option value="${s.index}">${s.name}</option>`).join('')}
             </select>
+            ${doSensors.length === 0 ? '<small style="color: #e74c3c;">No DO sensors found. Configure a DO sensor device first.</small>' : ''}
         </div>
         
         <div class="form-group">
@@ -6245,67 +6333,79 @@ async function renderDOAddForm(expandedDiv, sensors, outputs, indexNum) {
         </div>
         
         <div class="form-group">
-            <label for="addDOCtrlDeadband">Deadband:</label>
-            <input type="number" id="addDOCtrlDeadband" value="0.5" step="0.1" min="0.1">
+            <label for="addDOCtrlProfile">Control Profile:</label>
+            <select id="addDOCtrlProfile" style="min-width: 250px;">
+                <option value="">-- Select Profile --</option>
+                ${profiles.map((p, idx) => `<option value="${idx}">${p.name} (${p.numPoints} points)</option>`).join('')}
+            </select>
+            <div style="margin-top: 5px;">
+                <button type="button" class="btn-primary" style="padding: 8px 16px; font-size: 0.9em; margin: 0 10px;" onclick="openDOProfileModal();">
+                    New
+                </button>
+            </div>
+            ${profiles.length === 0 ? '<small style="color: #295855ff;">No profiles configured, create a profile first.</small>' : ''}
         </div>
         
         <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
-        <h4 style="margin-bottom: 15px;">Gas Dosing (Increase DO)</h4>
+        <h4 style="margin-bottom: 15px;">Stirring Control</h4>
         
         <div class="form-group">
             <label>
-                <input type="checkbox" id="addDOCtrlGasEnabled" checked onchange="toggleDOAddFields()">
-                Enable Gas Dosing
+                <input type="checkbox" id="addDOCtrlStirrerEnabled" onchange="toggleDOStirrerFields()">
+                Enable Stirring
             </label>
         </div>
         
-        <div id="doGasAddFields">
+        <div id="doStirrerAddFields" style="display: none;">
             <div class="form-group">
-                <label for="addDOCtrlGasOutputType">Output Type:</label>
-                <select id="addDOCtrlGasOutputType" onchange="updateDOAddOutputOptions('gas')">
-                    <option value="0">Digital Output</option>
-                    <option value="1">DC Motor</option>
+                <label for="addDOCtrlStirrerType">Stirrer Type:</label>
+                <select id="addDOCtrlStirrerType" onchange="updateDOStirrerOptions()">
+                    <option value="0">DC Motor</option>
+                    <option value="1">Stepper Motor</option>
                 </select>
             </div>
             
             <div class="form-group">
-                <label for="addDOCtrlGasOutput">Output:</label>
-                <select id="addDOCtrlGasOutput">
-                    <option value="">-- Select Output --</option>
+                <label for="addDOCtrlStirrerIndex">Stirrer Motor:</label>
+                <select id="addDOCtrlStirrerIndex">
+                    <option value="">-- Select Motor --</option>
                 </select>
-            </div>
-            
-            <div class="form-group" id="doGasAddMotorPowerGroup" style="display: none;">
-                <label for="addDOCtrlGasMotorPower">Motor Power (%):</label>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <input type="number" id="addDOCtrlGasMotorPower" value="50" min="1" max="100" style="flex: 1;">
-                    <span>%</span>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label for="addDOCtrlGasDoseTime">Dose Time (ms):</label>
-                <input type="number" id="addDOCtrlGasDoseTime" value="5000" min="100" max="60000" step="100">
-            </div>
-            
-            <div class="form-group">
-                <label for="addDOCtrlGasDoseInterval">Dose Interval (ms):</label>
-                <input type="number" id="addDOCtrlGasDoseInterval" value="60000" min="1000" max="3600000" step="1000">
             </div>
         </div>
         
-        <p style="color: #7f8c8d; font-size: 0.9em; margin-top: 10px;">
-            <strong>Note:</strong> DO Controller is for display/monitoring. Full control logic coming soon.
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Gas Flow Control (MFC)</h4>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="addDOCtrlMFCEnabled" onchange="toggleDOMFCFields()">
+                Enable MFC Gas Flow
+            </label>
+        </div>
+        
+        <div id="doMFCAddFields" style="display: none;">
+            <div class="form-group">
+                <label for="addDOCtrlMFCIndex">Mass Flow Controller:</label>
+                <select id="addDOCtrlMFCIndex">
+                    <option value="">-- Select MFC --</option>
+                    ${mfcDevices.map(m => `<option value="${m.index}">${m.name}</option>`).join('')}
+                </select>
+                ${mfcDevices.length === 0 ? '<small style="color: #e74c3c;">No MFC devices found. Configure an MFC device (Alicat, etc.) first.</small>' : ''}
+            </div>
+        </div>
+        
+        <p style="color: #7f8c8d; font-size: 0.9em; margin-top: 15px;">
+            <strong>Note:</strong> At least one output (stirrer or MFC) must be enabled. Profile defines how outputs respond to DO error.
         </p>
     `;
     
     // Store references
-    window.doAddOutputs = outputs;
     window.doAddMotors = dcMotors;
+    window.doAddStepper = stepperMotor;
     
-    // Initialize output dropdowns
+    // Initialize dropdowns
     setTimeout(() => {
-        updateDOAddOutputOptions('gas');
+        updateDOStirrerOptions();
     }, 0);
 }
 
@@ -6341,40 +6441,41 @@ function updateFlowAddOutputOptions() {
     }
 }
 
-function toggleDOAddFields() {
-    const gasEnabled = document.getElementById('addDOCtrlGasEnabled')?.checked || false;
-    const gasFields = document.getElementById('doGasAddFields');
-    if (gasFields) gasFields.style.display = gasEnabled ? 'block' : 'none';
+function toggleDOStirrerFields() {
+    const enabled = document.getElementById('addDOCtrlStirrerEnabled')?.checked || false;
+    const fields = document.getElementById('doStirrerAddFields');
+    if (fields) fields.style.display = enabled ? 'block' : 'none';
 }
 
-function updateDOAddOutputOptions(type) {
-    const outputTypeSelect = document.getElementById(`addDOCtrl${type.charAt(0).toUpperCase() + type.slice(1)}OutputType`);
-    const outputSelect = document.getElementById(`addDOCtrl${type.charAt(0).toUpperCase() + type.slice(1)}Output`);
-    const motorPowerGroup = document.getElementById(`do${type.charAt(0).toUpperCase() + type.slice(1)}AddMotorPowerGroup`);
+function toggleDOMFCFields() {
+    const enabled = document.getElementById('addDOCtrlMFCEnabled')?.checked || false;
+    const fields = document.getElementById('doMFCAddFields');
+    if (fields) fields.style.display = enabled ? 'block' : 'none';
+}
+
+function updateDOStirrerOptions() {
+    const typeSelect = document.getElementById('addDOCtrlStirrerType');
+    const motorSelect = document.getElementById('addDOCtrlStirrerIndex');
     
-    if (!outputTypeSelect || !outputSelect) return;
+    if (!typeSelect || !motorSelect) return;
     
-    const outputType = parseInt(outputTypeSelect.value);
-    const outputs = window.doAddOutputs || [];
+    const stirrerType = parseInt(typeSelect.value);
     const motors = window.doAddMotors || [];
+    const stepper = window.doAddStepper;
     
     // Clear current options
-    outputSelect.innerHTML = '<option value="">-- Select Output --</option>';
+    motorSelect.innerHTML = '<option value="">-- Select Motor --</option>';
     
-    if (outputType === 0) {
-        // Digital outputs (21-25)
-        outputs.forEach(o => {
-            if (o.index >= 21 && o.index <= 25) {
-                outputSelect.innerHTML += `<option value="${o.index}">${o.name}</option>`;
-            }
-        });
-        if (motorPowerGroup) motorPowerGroup.style.display = 'none';
-    } else {
-        // DC motors (27-30)
+    if (stirrerType === 0) {
+        // DC Motors (27-30)
         motors.forEach(m => {
-            outputSelect.innerHTML += `<option value="${m.index}">${m.name}</option>`;
+            motorSelect.innerHTML += `<option value="${m.index}">${m.name}</option>`;
         });
-        if (motorPowerGroup) motorPowerGroup.style.display = 'block';
+    } else {
+        // Stepper Motor (26)
+        if (stepper) {
+            motorSelect.innerHTML += `<option value="${stepper.index}">${stepper.name}</option>`;
+        }
     }
 }
 
@@ -6663,38 +6764,89 @@ async function createFlowController(index) {
 }
 
 async function createDOController(index) {
-    // Note: DO Controller is not yet fully implemented in backend
-    // This is a placeholder for future implementation
+    // Load profiles first
+    await loadDOProfiles();
     
-    showToast('info', 'Coming Soon', 'Dissolved Oxygen Controller is not yet fully implemented. Configuration saved for display only.');
-    
-    // Gather basic config data
-    const configData = {
-        isActive: true,
-        name: document.getElementById('addDOCtrlName').value,
-        showOnDashboard: document.getElementById('addDOCtrlShowDashboard').checked,
-        pvSourceIndex: parseInt(document.getElementById('addDOCtrlSensor').value),
-        setpoint: parseFloat(document.getElementById('addDOCtrlSetpoint').value),
-        deadband: parseFloat(document.getElementById('addDOCtrlDeadband').value)
-    };
+    // Read form values
+    const sensorValue = document.getElementById('addDOCtrlSensor')?.value;
+    const profileValue = document.getElementById('addDOCtrlProfile')?.value;
+    const stirrerEnabled = document.getElementById('addDOCtrlStirrerEnabled')?.checked || false;
+    const mfcEnabled = document.getElementById('addDOCtrlMFCEnabled')?.checked || false;
+    const stirrerIndexValue = document.getElementById('addDOCtrlStirrerIndex')?.value;
+    const mfcIndexValue = document.getElementById('addDOCtrlMFCIndex')?.value;
     
     // Validation
-    if (!configData.name) {
+    const name = document.getElementById('addDOCtrlName').value.trim();
+    if (!name) {
         showToast('warning', 'Validation Error', 'Please enter a name');
         return;
     }
     
-    if (!configData.pvSourceIndex || isNaN(configData.pvSourceIndex)) {
+    if (!sensorValue) {
         showToast('warning', 'Validation Error', 'Please select a DO sensor');
         return;
     }
     
+    if (!profileValue) {
+        showToast('warning', 'Validation Error', 'Please select a control profile');
+        return;
+    }
+    
+    if (!stirrerEnabled && !mfcEnabled) {
+        showToast('warning', 'Validation Error', 'At least one output (stirrer or MFC) must be enabled');
+        return;
+    }
+    
+    if (stirrerEnabled && !stirrerIndexValue) {
+        showToast('warning', 'Validation Error', 'Please select a stirrer motor');
+        return;
+    }
+    
+    if (mfcEnabled && !mfcIndexValue) {
+        showToast('warning', 'Validation Error', 'Please select an MFC device');
+        return;
+    }
+    
+    // Check if selected profile exists and is active
+    const profileIndex = parseInt(profileValue);
+    const selectedProfile = doProfiles[profileIndex];
+    if (!selectedProfile || !selectedProfile.isActive || selectedProfile.numPoints < 2) {
+        showToast('warning', 'Validation Error', 'Please select a valid profile with at least 2 points. Create a profile first if needed.');
+        return;
+    }
+    
+    // Gather config data
+    const configData = {
+        isActive: true,
+        name: name,
+        showOnDashboard: document.getElementById('addDOCtrlShowDashboard')?.checked || false,
+        pvSourceIndex: parseInt(sensorValue),
+        setpoint_mg_L: parseFloat(document.getElementById('addDOCtrlSetpoint')?.value || 8.0),
+        activeProfileIndex: profileIndex,
+        stirrerEnabled: stirrerEnabled,
+        stirrerType: stirrerEnabled ? parseInt(document.getElementById('addDOCtrlStirrerType')?.value || 0) : 0,
+        stirrerIndex: stirrerEnabled ? parseInt(stirrerIndexValue) : 0,
+        mfcEnabled: mfcEnabled,
+        mfcDeviceIndex: mfcEnabled ? parseInt(mfcIndexValue) : 0
+    };
+    
     try {
-        console.log(`[CONTROLLERS] Creating DO controller (placeholder) at index ${index}`, configData);
+        console.log(`[CONTROLLERS] Creating DO controller at index ${index}`, configData);
         
-        // TODO: Implement backend endpoint when DO controller is ready
-        // For now, just close the modal
+        const response = await fetch(`/api/config/docontroller/48`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to create DO controller');
+        }
+        
+        showToast('success', 'Success', 'DO Controller created successfully');
         closeAddControllerModal();
+        await loadControllers();
         
     } catch (error) {
         console.error('[DO CTRL] Error creating:', error);
@@ -7481,12 +7633,42 @@ async function renderDOConfigForm(config) {
     const container = document.getElementById('controllerConfigContent');
     if (!container) return;
     
+    // Fetch available motors and MFC devices
+    let dcMotors = [];
+    let stepperMotor = null;
+    let mfcDevices = [];
+    
+    try {
+        const outputsResponse = await fetch('/api/outputs');
+        if (outputsResponse.ok) {
+            const outputsData = await outputsResponse.json();
+            if (outputsData.dcMotors) {
+                dcMotors = outputsData.dcMotors.map(m => ({ index: m.index, name: m.name }));
+            }
+            if (outputsData.stepperMotor) {
+                stepperMotor = { index: 26, name: outputsData.stepperMotor.name || 'Stepper Motor' };
+            }
+        }
+        
+        const inputsResponse = await fetch('/api/inputs');
+        if (inputsResponse.ok) {
+            const inputsData = await inputsResponse.json();
+            if (inputsData.devices) {
+                // MFC devices - filter for MFC in name or flow sensors
+                mfcDevices = inputsData.devices
+                    .filter(ds => {
+                        const nameLower = (ds.n || '').toLowerCase();
+                        return (nameLower.includes('mfc') || nameLower.includes('mass flow') || ds.t === 6) && ds.c;
+                    })
+                    .map(ds => ({ index: ds.c, name: `[Ctrl ${ds.c}] ${ds.n || 'MFC'}` }));
+            }
+        }
+    } catch (error) {
+        console.error('[DO CONFIG] Error loading devices:', error);
+    }
+    
     container.innerHTML = `
         <h4>Dissolved Oxygen Controller Configuration</h4>
-        
-        <p style="color: #7f8c8d; font-size: 0.9em; margin-bottom: 20px;">
-            <strong>Note:</strong> DO Controller is not yet fully implemented. This configuration is for display/monitoring purposes only.
-        </p>
         
         <div class="form-group">
             <label for="doCtrlName">Name:</label>
@@ -7502,14 +7684,65 @@ async function renderDOConfigForm(config) {
         
         <div class="form-group">
             <label for="doCtrlSetpoint">Setpoint (mg/L or %):</label>
-            <input type="number" id="doCtrlSetpoint" value="${config.setpoint || 8.0}" step="0.1" min="0">
+            <input type="number" id="doCtrlSetpoint" value="${config.setpoint_mg_L || 8.0}" step="0.1" min="0">
         </div>
         
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Stirring Control</h4>
+        
         <div class="form-group">
-            <label for="doCtrlDeadband">Deadband:</label>
-            <input type="number" id="doCtrlDeadband" value="${config.deadband || 0.5}" step="0.1" min="0.1">
+            <label>
+                <input type="checkbox" id="doCtrlStirrerEnabled" ${config.stirrerEnabled ? 'checked' : ''} onchange="toggleDOConfigStirrerFields()">
+                Enable Stirring
+            </label>
+        </div>
+        
+        <div id="doStirrerConfigFields" style="display: ${config.stirrerEnabled ? 'block' : 'none'};">
+            <div class="form-group">
+                <label for="doCtrlStirrerType">Stirrer Type:</label>
+                <select id="doCtrlStirrerType" onchange="updateDOConfigStirrerOptions()">
+                    <option value="0" ${config.stirrerType === 0 ? 'selected' : ''}>DC Motor</option>
+                    <option value="1" ${config.stirrerType === 1 ? 'selected' : ''}>Stepper Motor</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="doCtrlStirrerIndex">Stirrer Motor:</label>
+                <select id="doCtrlStirrerIndex">
+                    <option value="">-- Select Motor --</option>
+                    ${config.stirrerType === 0 ? 
+                        dcMotors.map(m => `<option value="${m.index}" ${m.index === config.stirrerIndex ? 'selected' : ''}>${m.name}</option>`).join('') :
+                        (stepperMotor ? `<option value="${stepperMotor.index}" ${stepperMotor.index === config.stirrerIndex ? 'selected' : ''}>${stepperMotor.name}</option>` : '')}
+                </select>
+            </div>
+            
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ecf0f1;">
+        <h4 style="margin-bottom: 15px;">Gas Flow Control (MFC)</h4>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="doCtrlMFCEnabled" ${config.mfcEnabled ? 'checked' : ''} onchange="toggleDOConfigMFCFields()">
+                Enable MFC Gas Flow
+            </label>
+        </div>
+        
+        <div id="doMFCConfigFields" style="display: ${config.mfcEnabled ? 'block' : 'none'};">
+            <div class="form-group">
+                <label for="doCtrlMFCIndex">Mass Flow Controller:</label>
+                <select id="doCtrlMFCIndex">
+                    <option value="">-- Select MFC --</option>
+                    ${mfcDevices.map(mfc => `<option value="${mfc.index}" ${mfc.index === config.mfcDeviceIndex ? 'selected' : ''}>${mfc.name}</option>`).join('')}
+                </select>
+            </div>
         </div>
     `;
+    
+    // Store motor/device lists for later use
+    window.doConfigMotors = dcMotors;
+    window.doConfigStepper = stepperMotor;
+    window.doConfigMFCs = mfcDevices;
 }
 
 async function saveDOControllerConfig() {
@@ -7517,8 +7750,7 @@ async function saveDOControllerConfig() {
         isActive: true,
         name: document.getElementById('doCtrlName').value,
         showOnDashboard: document.getElementById('doCtrlShowDashboard').checked,
-        setpoint: parseFloat(document.getElementById('doCtrlSetpoint').value),
-        deadband: parseFloat(document.getElementById('doCtrlDeadband').value)
+        setpoint_mg_L: parseFloat(document.getElementById('doCtrlSetpoint').value)
     };
     
     // Validation
@@ -7527,8 +7759,93 @@ async function saveDOControllerConfig() {
         return;
     }
     
-    showToast('info', 'Coming Soon', 'DO Controller configuration saved for display only. Full control logic is not yet implemented.');
-    closeControllerConfigModal();
+    // Stirrer configuration
+    const stirrerEnabled = document.getElementById('doCtrlStirrerEnabled').checked;
+    configData.stirrerEnabled = stirrerEnabled;
+    if (stirrerEnabled) {
+        configData.stirrerType = parseInt(document.getElementById('doCtrlStirrerType').value);
+        configData.stirrerIndex = parseInt(document.getElementById('doCtrlStirrerIndex').value);
+        
+        if (!configData.stirrerIndex) {
+            showToast('warning', 'Validation Error', 'Please select a stirrer motor');
+            return;
+        }
+    }
+    
+    // MFC configuration
+    const mfcEnabled = document.getElementById('doCtrlMFCEnabled').checked;
+    configData.mfcEnabled = mfcEnabled;
+    if (mfcEnabled) {
+        configData.mfcDeviceIndex = parseInt(document.getElementById('doCtrlMFCIndex').value);
+        
+        if (!configData.mfcDeviceIndex) {
+            showToast('warning', 'Validation Error', 'Please select an MFC device');
+            return;
+        }
+    }
+    
+    // Must have at least one output
+    if (!stirrerEnabled && !mfcEnabled) {
+        showToast('warning', 'Validation Error', 'At least one output (stirrer or MFC) must be enabled');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/config/docontroller/48', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configData)
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to save configuration');
+        }
+        
+        showToast('success', 'Configuration Saved', 'DO controller configuration updated successfully');
+        closeControllerConfigModal();
+    } catch (error) {
+        console.error('Error saving DO controller config:', error);
+        showToast('error', 'Save Failed', error.message);
+    }
+}
+
+// Helper functions for DO controller config form
+function toggleDOConfigStirrerFields() {
+    const enabled = document.getElementById('doCtrlStirrerEnabled').checked;
+    const fields = document.getElementById('doStirrerConfigFields');
+    if (fields) {
+        fields.style.display = enabled ? 'block' : 'none';
+    }
+}
+
+function toggleDOConfigMFCFields() {
+    const enabled = document.getElementById('doCtrlMFCEnabled').checked;
+    const fields = document.getElementById('doMFCConfigFields');
+    if (fields) {
+        fields.style.display = enabled ? 'block' : 'none';
+    }
+}
+
+function updateDOConfigStirrerOptions() {
+    const stirrerType = parseInt(document.getElementById('doCtrlStirrerType').value);
+    const motorSelect = document.getElementById('doCtrlStirrerIndex');
+    
+    motorSelect.innerHTML = '<option value="">-- Select Motor --</option>';
+    
+    if (stirrerType === 0) {
+        // DC Motors (27-30)
+        if (window.doConfigMotors) {
+            window.doConfigMotors.forEach(m => {
+                motorSelect.innerHTML += `<option value="${m.index}">${m.name}</option>`;
+            });
+        }
+    } else {
+        // Stepper Motor (26)
+        if (window.doConfigStepper) {
+            motorSelect.innerHTML += `<option value="${window.doConfigStepper.index}">${window.doConfigStepper.name}</option>`;
+        }
+    }
 }
 
 async function deleteController() {
@@ -7539,7 +7856,21 @@ async function deleteController() {
     }
     
     try {
-        const response = await fetch(`/api/controller/${currentConfigIndex}`, {
+        // Determine endpoint based on controller type
+        let endpoint;
+        if (currentConfigIndex === 43) {
+            endpoint = `/api/config/phcontroller/${currentConfigIndex}`;
+        } else if (currentConfigIndex >= 44 && currentConfigIndex <= 47) {
+            endpoint = `/api/config/flowcontroller/${currentConfigIndex}`;
+        } else if (currentConfigIndex === 48) {
+            endpoint = `/api/config/docontroller/${currentConfigIndex}`;
+        } else if (currentConfigIndex >= 40 && currentConfigIndex <= 42) {
+            endpoint = `/api/config/tempcontroller/${currentConfigIndex}`;
+        } else {
+            endpoint = `/api/controller/${currentConfigIndex}`;
+        }
+        
+        const response = await fetch(endpoint, {
             method: 'DELETE'
         });
         
@@ -7574,6 +7905,10 @@ async function updateControllerSetpoint(index) {
         // Flow controller - use flowrate endpoint
         endpoint = `/api/flowcontroller/${index}/flowrate`;
         body = JSON.stringify({ flowRate: setpoint });
+    } else if (index === 48) {
+        // DO controller
+        endpoint = `/api/docontroller/${index}/setpoint`;
+        body = JSON.stringify({ setpoint });
     } else {
         // Temperature controller
         endpoint = `/api/controller/${index}/setpoint`;
@@ -7605,6 +7940,8 @@ async function enableController(index) {
         endpoint = `/api/phcontroller/${index}/enable`;
     } else if (index >= 44 && index <= 47) {
         endpoint = `/api/flowcontroller/${index}/enable`;
+    } else if (index === 48) {
+        endpoint = `/api/docontroller/${index}/enable`;
     } else {
         endpoint = `/api/controller/${index}/enable`;
     }
@@ -7633,6 +7970,8 @@ async function disableController(index) {
         endpoint = `/api/phcontroller/${index}/disable`;
     } else if (index >= 44 && index <= 47) {
         endpoint = `/api/flowcontroller/${index}/disable`;
+    } else if (index === 48) {
+        endpoint = `/api/docontroller/${index}/disable`;
     } else {
         endpoint = `/api/controller/${index}/disable`;
     }
@@ -7815,6 +8154,353 @@ async function savePIDValues(index) {
     }
 }
 
+// ============================================================================
+// DO PROFILE MANAGEMENT
+// ============================================================================
+
+let doProfiles = [];
+let currentDOProfile = null;
+let doProfileChart = null;
+
+async function loadDOProfiles() {
+    try {
+        const response = await fetch('/api/doprofiles');
+        if (!response.ok) throw new Error('Failed to load DO profiles');
+        const data = await response.json();
+        // Convert efficient array format to object format for easier manipulation
+        doProfiles = (data.profiles || []).map(p => {
+            const points = [];
+            if (p.errors && p.stirrers && p.mfcs) {
+                for (let i = 0; i < p.numPoints; i++) {
+                    points.push({
+                        error: p.errors[i] || 0,
+                        stirrer: p.stirrers[i] || 0,
+                        mfc: p.mfcs[i] || 0
+                    });
+                }
+            }
+            return {
+                index: p.index,
+                isActive: p.isActive,
+                name: p.name,
+                numPoints: p.numPoints,
+                points: points
+            };
+        });
+        console.log('[DO PROFILES] Loaded', doProfiles.length, 'profiles');
+    } catch (error) {
+        console.error('[DO PROFILES] Error loading profiles:', error);
+        showToast('error', 'Error', 'Failed to load DO profiles');
+    }
+}
+
+function openDOProfileModal(profileIndex = null) {
+    loadDOProfiles().then(() => {
+        const modal = document.getElementById('doProfileModal');
+        if (!modal) {
+            createDOProfileModal();
+            setTimeout(() => openDOProfileModal(profileIndex), 100);
+            return;
+        }
+        
+        if (profileIndex !== null) {
+            // Edit existing profile
+            currentDOProfile = doProfiles[profileIndex] || null;
+            document.getElementById('doProfileName').value = currentDOProfile?.name || '';
+            document.getElementById('doProfileIndex').value = profileIndex;
+            
+            // Load points into table
+            const tbody = document.getElementById('doProfilePoints');
+            tbody.innerHTML = '';
+            
+            if (currentDOProfile && currentDOProfile.points) {
+                currentDOProfile.points.forEach((point, idx) => {
+                    addDOProfilePointRow(point.error, point.stirrer, point.mfc);
+                });
+            }
+        } else {
+            // New profile - find first available slot
+            currentDOProfile = null;
+            const availableIndex = doProfiles.findIndex(p => !p.isActive);
+            if (availableIndex === -1) {
+                showToast('error', 'Error', 'All 3 profile slots are in use');
+                return;
+            }
+            document.getElementById('doProfileIndex').value = availableIndex;
+            document.getElementById('doProfileName').value = `Profile ${availableIndex + 1}`;
+            document.getElementById('doProfilePoints').innerHTML = '';
+            // Add initial row
+            addDOProfilePointRow(0, 0, 0);
+        }
+        
+        updateDOProfileChart();
+        modal.style.display = 'block';
+    });
+}
+
+function closeDOProfileModal() {
+    const modal = document.getElementById('doProfileModal');
+    if (modal) modal.style.display = 'none';
+    currentDOProfile = null;
+    if (doProfileChart) {
+        doProfileChart.destroy();
+        doProfileChart = null;
+    }
+}
+
+function createDOProfileModal() {
+    // Check if modal already exists
+    if (document.getElementById('doProfileModal')) {
+        return;
+    }
+    
+    const modalHtml = `
+        <div id="doProfileModal" class="modal" style="display:none;">
+            <div class="modal-content" style="max-width: 900px;">
+                <div class="modal-header">
+                    <h2>DO Control Profile</h2>
+                    <span class="close" onclick="closeDOProfileModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="doProfileIndex">
+                    
+                    <div class="form-group">
+                        <label for="doProfileName">Profile Name:</label>
+                        <input type="text" id="doProfileName" placeholder="e.g., Standard Aeration">
+                    </div>
+                    
+                    <h3>Profile Points</h3>
+                    <p style="color: #7f8c8d; font-size: 0.9em; margin-bottom: 15px;">
+                        Define how stirrer and MFC outputs respond to DO error (Setpoint - Current DO). 
+                        Points will be sorted by error value automatically.
+                    </p>
+                    
+                    <table class="config-table">
+                        <thead>
+                            <tr>
+                                <th>Error (mg/L)</th>
+                                <th>Stirrer Output (% or RPM)</th>
+                                <th>MFC Output (mL/min)</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="doProfilePoints"></tbody>
+                    </table>
+                    
+                    <button class="btn-primary" onclick="addDOProfilePointRow()" style="margin-top: 10px;">
+                        Add Point
+                    </button>
+                    
+                    <h3 style="margin-top: 25px;">Profile Visualization</h3>
+                    <canvas id="doProfileChart" width="400" height="200"></canvas>
+                </div>
+                <div class="modal-buttons">
+                    <button class="btn-danger" onclick="deleteDOProfile()" style="margin-right: auto;">Delete Profile</button>
+                    <button class="modal-cancel" onclick="closeDOProfileModal()">Cancel</button>
+                    <button class="btn-primary" onclick="saveDOProfile()">Save Profile</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function addDOProfilePointRow(error = 0, stirrer = 0, mfc = 0) {
+    const tbody = document.getElementById('doProfilePoints');
+    const row = document.createElement('tr');
+    row.innerHTML = `
+        <td><input type="number" class="profile-error" value="${error}" step="0.1"></td>
+        <td><input type="number" class="profile-stirrer" value="${stirrer}" step="1"></td>
+        <td><input type="number" class="profile-mfc" value="${mfc}" step="1"></td>
+        <td><button class="btn-danger" style="padding: 5px 10px; font-size: 0.9em;" onclick="this.closest('tr').remove(); updateDOProfileChart();">Remove</button></td>
+    `;
+    tbody.appendChild(row);
+    
+    // Add listeners to update chart
+    row.querySelectorAll('input').forEach(input => {
+        input.addEventListener('input', () => updateDOProfileChart());
+    });
+    
+    updateDOProfileChart();
+}
+
+function updateDOProfileChart() {
+    // Check if Chart.js is loaded
+    if (typeof Chart === 'undefined') {
+        console.warn('[DO PROFILE] Chart.js not loaded yet, retrying...');
+        setTimeout(updateDOProfileChart, 100);
+        return;
+    }
+    
+    const canvas = document.getElementById('doProfileChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Collect points from table
+    const rows = document.querySelectorAll('#doProfilePoints tr');
+    const points = Array.from(rows).map(row => ({
+        error: parseFloat(row.querySelector('.profile-error').value) || 0,
+        stirrer: parseFloat(row.querySelector('.profile-stirrer').value) || 0,
+        mfc: parseFloat(row.querySelector('.profile-mfc').value) || 0
+    })).sort((a, b) => a.error - b.error);
+    
+    if (doProfileChart) {
+        doProfileChart.destroy();
+    }
+    
+    doProfileChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Stirrer Output',
+                data: points.map(p => ({ x: p.error, y: p.stirrer })),
+                borderColor: '#3498db',
+                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                yAxisID: 'y'
+            }, {
+                label: 'MFC Output (mL/min)',
+                data: points.map(p => ({ x: p.error, y: p.mfc })),
+                borderColor: '#e74c3c',
+                backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                yAxisID: 'y1'
+            }]
+        },
+        options: {
+            responsive: true,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            scales: {
+                x: {
+                    type: 'linear',
+                    title: {
+                        display: true,
+                        text: 'DO Error (mg/L)'
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Stirrer Output'
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'MFC (mL/min)'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+async function saveDOProfile() {
+    try {
+        const index = parseInt(document.getElementById('doProfileIndex').value);
+        const name = document.getElementById('doProfileName').value.trim();
+        
+        if (!name) {
+            showToast('error', 'Validation Error', 'Please enter a profile name');
+            return;
+        }
+        
+        // Collect points from table
+        const rows = document.querySelectorAll('#doProfilePoints tr');
+        const points = Array.from(rows).map(row => ({
+            error: parseFloat(row.querySelector('.profile-error').value) || 0,
+            stirrer: parseFloat(row.querySelector('.profile-stirrer').value) || 0,
+            mfc: parseFloat(row.querySelector('.profile-mfc').value) || 0
+        })).sort((a, b) => a.error - b.error);
+        
+        if (points.length < 2) {
+            showToast('error', 'Validation Error', 'Profile must have at least 2 points');
+            return;
+        }
+        
+        if (points.length > 20) {
+            showToast('error', 'Validation Error', 'Profile cannot have more than 20 points');
+            return;
+        }
+        
+        // Convert to efficient array format (saves ~40 bytes per point)
+        const profileData = {
+            isActive: true,
+            name: name,
+            numPoints: points.length,
+            errors: points.map(p => p.error),
+            stirrers: points.map(p => p.stirrer),
+            mfcs: points.map(p => p.mfc)
+        };
+        
+        const response = await fetch(`/api/doprofile/${index}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(profileData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to save profile');
+        }
+        
+        showToast('success', 'Profile Saved', `Profile "${name}" saved successfully`);
+        closeDOProfileModal();
+        await loadDOProfiles();
+        
+        // Refresh profile dropdown in add controller modal if it's open
+        refreshDOProfileDropdown();
+        
+        // Refresh controller card profile dropdowns
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[DO PROFILES] Error saving profile:', error);
+        showToast('error', 'Error', error.message);
+    }
+}
+
+async function deleteDOProfile() {
+    const index = parseInt(document.getElementById('doProfileIndex').value);
+    
+    if (!confirm('Are you sure you want to delete this profile?')) return;
+    
+    try {
+        const response = await fetch(`/api/doprofile/${index}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to delete profile');
+        }
+        
+        showToast('success', 'Profile Deleted', 'Profile deleted successfully');
+        closeDOProfileModal();
+        await loadDOProfiles();
+        
+        // Refresh profile dropdowns
+        refreshDOProfileDropdown();
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[DO PROFILES] Error deleting profile:', error);
+        showToast('error', 'Error', error.message);
+    }
+}
+
 // Cleanup
 window.addEventListener('beforeunload', () => {
     if (controllersPolling) {
@@ -7822,6 +8508,69 @@ window.addEventListener('beforeunload', () => {
         controllersPolling = null;
     }
 });
+
+// Populate DO profile select dropdown on controller card
+function populateDOProfileSelect(controllerIndex, activeProfileIndex) {
+    const dropdown = document.getElementById(`do-profile-select-${controllerIndex}`);
+    if (!dropdown) return;
+    
+    const profiles = doProfiles.filter(p => p.isActive && p.numPoints >= 2);
+    
+    dropdown.innerHTML = profiles.map((p, idx) => 
+        `<option value="${idx}" ${idx === activeProfileIndex ? 'selected' : ''}>${p.name}</option>`
+    ).join('');
+}
+
+// Switch DO controller to a different profile
+async function switchDOProfile(controllerIndex, profileIndexStr) {
+    const profileIndex = parseInt(profileIndexStr);
+    
+    if (isNaN(profileIndex) || profileIndex < 0) {
+        showToast('error', 'Invalid Profile', 'Please select a valid profile');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/config/docontroller/${controllerIndex}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                activeProfileIndex: profileIndex
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to switch profile');
+        }
+        
+        showToast('success', 'Profile Switched', `Switched to profile: ${doProfiles[profileIndex]?.name || 'Unknown'}`);
+        await loadControllers();
+        
+    } catch (error) {
+        console.error('[DO CTRL] Error switching profile:', error);
+        showToast('error', 'Error', error.message);
+        // Restore previous selection
+        await loadControllers();
+    }
+}
+
+// Refresh DO profile dropdown in add controller modal
+function refreshDOProfileDropdown() {
+    const dropdown = document.getElementById('addDOCtrlProfile');
+    if (!dropdown) return; // Add modal not open or not DO controller
+    
+    const currentValue = dropdown.value;
+    const profiles = doProfiles.filter(p => p.isActive && p.numPoints >= 2);
+    
+    dropdown.innerHTML = '<option value="">-- Select Profile --</option>' +
+        profiles.map((p, idx) => `<option value="${idx}">${p.name} (${p.numPoints} points)</option>`).join('');
+    
+    // Try to restore previous selection if still valid
+    if (currentValue && currentValue < profiles.length) {
+        dropdown.value = currentValue;
+    }
+}
 
 // Export functions
 window.openAddControllerModal = openAddControllerModal;
@@ -7838,3 +8587,13 @@ window.enableController = enableController;
 window.disableController = disableController;
 window.startAutotune = startAutotune;
 window.savePIDValues = savePIDValues;
+window.openDOProfileModal = openDOProfileModal;
+window.closeDOProfileModal = closeDOProfileModal;
+window.addDOProfilePointRow = addDOProfilePointRow;
+window.updateDOProfileChart = updateDOProfileChart;
+window.saveDOProfile = saveDOProfile;
+window.deleteDOProfile = deleteDOProfile;
+window.switchDOProfile = switchDOProfile;
+window.toggleDOStirrerFields = toggleDOStirrerFields;
+window.toggleDOMFCFields = toggleDOMFCFields;
+window.updateDOStirrerOptions = updateDOStirrerOptions;

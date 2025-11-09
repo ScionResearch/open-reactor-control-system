@@ -330,12 +330,47 @@ struct DeviceControl_t {
     uint8_t sensorCount;        // Number of associated sensor objects
 };
 
+// Profile curve point for DO controller
+struct DOProfilePoint {
+    float error_mg_L;           // X: setpoint - current DO (mg/L)
+    float stirrerOutput;        // Y1: stirrer speed (% for DC motor, RPM for stepper)
+    float mfcOutput_mL_min;     // Y2: MFC flow rate (mL/min)
+};
+
+// Dissolved Oxygen Controller (index 48)
 struct DissolvedOxygenControl_t {
-    DissolvedOxygenSensor_t sensor;
-    bool enabled;
-    float setpoint;
-    float stirrerLUT[2][10];
-    float gasLUT[2][10];
+    // Identity
+    uint8_t index;              // Controller index (48)
+    char name[40];              // Controller name
+    bool enabled;               // Enable/disable controller
+    bool fault;                 // Fault condition
+    bool newMessage;            // Message available flag
+    char message[100];          // Status/error message buffer
+    
+    // Setpoint
+    float setpoint_mg_L;        // Target DO in mg/L
+    
+    // Runtime values
+    float currentDO_mg_L;       // Current DO reading from sensor
+    float error_mg_L;           // Calculated error (setpoint - current)
+    
+    // Profile curve (active profile sent from SYS MCU)
+    uint8_t numPoints;          // Number of points in profile (0-20)
+    DOProfilePoint profile[20]; // Profile curve points (sorted by error_mg_L)
+    
+    // Stirrer output configuration
+    bool stirrerEnabled;
+    uint8_t stirrerType;        // 0=DC motor, 1=stepper
+    uint8_t stirrerIndex;       // Motor index: 27-30 for DC, 26 for stepper
+    float stirrerMaxRPM;        // For stepper: maximum RPM (ignored for DC motor)
+    
+    // MFC output configuration
+    bool mfcEnabled;
+    uint8_t mfcDeviceIndex;     // Device index (50-69) of Alicat MFC
+    
+    // Current output values (calculated from profile interpolation)
+    float currentStirrerOutput; // Current stirrer command (% or RPM)
+    float currentMFCOutput;     // Current MFC flow rate (mL/min)
 };
 
 struct gasFlowControl_t {

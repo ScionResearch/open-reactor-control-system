@@ -422,10 +422,15 @@ void* DeviceManager::createDeviceInstance(const IPC_DeviceConfig_t* config) {
                              config->busIndex, config->address);
                 return new HamiltonArcOD(driver, config->address);
             
-            case IPC_DEV_ALICAT_MFC:
-                Serial.printf("[DEV MGR] Creating Alicat MFC (port %d, ID %d)\n",
-                             config->busIndex, config->address);
-                return new AlicatMFC(driver, config->address);
+            case IPC_DEV_ALICAT_MFC: {
+                Serial.printf("[DEV MGR] Creating Alicat MFC (port %d, ID %d, max %.1f mL/min)\n",
+                             config->busIndex, config->address, config->maxFlowRate_mL_min);
+                AlicatMFC* mfc = new AlicatMFC(driver, config->address);
+                if (mfc && config->maxFlowRate_mL_min > 0) {
+                    mfc->setMaxFlowRate(config->maxFlowRate_mL_min);
+                }
+                return mfc;
+            }
             
             default:
                 Serial.printf("[DEV MGR] ERROR: Unsupported Modbus device type %d\n",

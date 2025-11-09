@@ -184,9 +184,5 @@ bool stepper_update(bool setParams) {
     // Update status
     stepperDevice.running = stepperDriver.stepper->status.running;
 
-    // Debug
-    Serial.printf("[STEPPER] Max RPM: %.1f, Irun: %d, Ihold: %d, Acceleration: %d\n", 
-                 stepperDriver.stepper->config.max_rpm, stepperDriver.stepper->config.irun, stepperDriver.stepper->config.ihold, stepperDriver.stepper->config.accelleration);
-
     return true;
 }

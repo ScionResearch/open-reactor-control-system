@@ -238,12 +238,14 @@ void ipc_handle_config_comport(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_temp_controller(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_ph_controller(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_flow_controller(const uint8_t *payload, uint16_t len);
+void ipc_handle_config_do_controller(const uint8_t *payload, uint16_t len);
 void ipc_handle_config_pressure_ctrl(const uint8_t *payload, uint16_t len);
 
 // Controller control handlers
 void ipc_handle_temp_controller_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len);
 void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len);
+void ipc_handle_do_controller_control(const uint8_t *payload, uint16_t len);
 
 // ============================================================================
 // UTILITY FUNCTIONS

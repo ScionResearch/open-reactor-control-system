@@ -59,7 +59,7 @@ void pollSensors(void) {
   if (now - lastSensorPollTime < SENSOR_POLL_INTERVAL) return;
   lastSensorPollTime = now;
   
-  // Request fixed hardware objects + controllers (indices 0-42)
+  // Request fixed hardware objects + controllers (indices 0-48)
   // Sensors: ADC (0-7), DAC (8-9), RTD (10-12), GPIO (13-20)
   // Outputs: Digital Outputs (21-25), Stepper (26), DC Motors (27-30)
   // Energy Monitors: Main Power (31), Heater Power (32)
@@ -67,7 +67,8 @@ void pollSensors(void) {
   // Temperature Controllers: (40-42)
   // pH Controller: (43)
   // Flow Controllers: (44-47)
-  objectCache.requestBulkUpdate(0, 48);
+  // DO Controller: (48)
+  objectCache.requestBulkUpdate(0, 49);  // Request indices 0-48 (49 total)
   
   // Request device control objects (indices 50-69)
   // These provide control status for peripheral devices (setpoint, actual, connected, fault)

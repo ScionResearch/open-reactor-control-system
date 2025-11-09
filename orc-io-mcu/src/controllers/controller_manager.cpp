@@ -1,6 +1,7 @@
 #include "controller_manager.h"
 #include "ctrl_ph.h"
 #include "ctrl_flow.h"
+#include "ctrl_do.h"
 #include "../sys_init.h"
 #include "../drivers/onboard/drv_output.h"
 
@@ -13,6 +14,7 @@ extern int numObjects;
 ManagedController ControllerManager::controllers[MAX_TEMP_CONTROLLERS];
 ManagedpHController ControllerManager::phController;
 ManagedFlowController ControllerManager::flowControllers[MAX_FLOW_CONTROLLERS];
+ManagedDOController ControllerManager::doController;
 bool ControllerManager::initialized = false;
 
 // ============================================================================
@@ -27,6 +29,8 @@ bool ControllerManager::initialized = false;
 static TemperatureController* controllerInstances[MAX_TEMP_CONTROLLERS] = {nullptr};
 // Store flow controller instances for each wrapper slot (0-3 maps to controllers 44-47)
 static FlowController* flowControllerInstances[MAX_FLOW_CONTROLLERS] = {nullptr};
+// Store DO controller instance (index 48)
+static DOController* doControllerInstance = nullptr;
 
 // Temperature Controller task wrapper functions - one per slot
 static void controllerTaskWrapper_0() {
@@ -88,6 +92,13 @@ static TaskWrapperFunc flowTaskWrappers[MAX_FLOW_CONTROLLERS] = {
     flowControllerTaskWrapper_3
 };
 
+// DO Controller task wrapper
+static void doControllerTaskWrapper() {
+    if (doControllerInstance != nullptr) {
+        doControllerInstance->update();
+    }
+}
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -112,10 +123,16 @@ bool ControllerManager::init() {
         flowControllers[i].index = 44 + i;
         flowControllers[i].controllerInstance = nullptr;
         flowControllers[i].controlObject = nullptr;
-        flowControllers[i].updateTask = nullptr;
+        flowControllers[i].task = nullptr;
         flowControllers[i].active = false;
-        flowControllers[i].message[0] = '\0';
     }
+    
+    // Initialize DO controller slot
+    doController.index = 48;
+    doController.controllerInstance = nullptr;
+    doController.controlObject = nullptr;
+    doController.task = nullptr;
+    doController.active = false;
     
     Serial.println("[CTRL MGR] Controller Manager initialized");
     initialized = true;
@@ -700,9 +717,8 @@ bool ControllerManager::createFlowController(uint8_t index, const IPC_ConfigFlow
     
     // Store in managed controller
     ctrl->index = config->index;
-    ctrl->updateTask = task;
+    ctrl->task = task;
     ctrl->active = true;
-    snprintf(ctrl->message, sizeof(ctrl->message), "Flow controller active");
     
     Serial.printf("[CTRL MGR] Created flow controller %d: %s\n", index, config->name);
     return true;
@@ -721,9 +737,9 @@ bool ControllerManager::deleteFlowController(uint8_t index) {
     }
     
     // Remove scheduler task
-    if (ctrl->updateTask != nullptr) {
-        tasks.removeTask(ctrl->updateTask);
-        ctrl->updateTask = nullptr;
+    if (ctrl->task != nullptr) {
+        tasks.removeTask(ctrl->task);
+        ctrl->task = nullptr;
     }
     
     // Clear static array entry
@@ -1055,4 +1071,153 @@ int ControllerManager::indexToArrayIndex(uint8_t index) {
         return -1;
     }
     return index - 40;
+}
+
+// ============================================================================
+// DO CONTROLLER LIFECYCLE (Index 48)
+// ============================================================================
+
+bool ControllerManager::createDOController(const IPC_ConfigDOController_t* config) {
+    if (!initialized) {
+        Serial.println("[CTRL MGR] ERROR: Not initialized");
+        return false;
+    }
+    
+    // Validate index (must be 48)
+    if (config->index != 48) {
+        Serial.printf("[CTRL MGR] ERROR: Invalid DO controller index %d (must be 48)\n", config->index);
+        return false;
+    }
+    
+    // Save current runtime enabled state to preserve it during config update
+    bool wasEnabled = false;
+    if (doController.active && doController.controlObject != nullptr) {
+        wasEnabled = doController.controlObject->enabled;
+        Serial.printf("[CTRL MGR] DO controller already exists (enabled=%d), deleting first\n", wasEnabled);
+        deleteDOController();
+    }
+    
+    // Create DissolvedOxygenControl_t object
+    DissolvedOxygenControl_t* ctrlObj = new DissolvedOxygenControl_t();
+    if (ctrlObj == nullptr) {
+        Serial.println("[CTRL MGR] ERROR: Failed to allocate DO control object");
+        return false;
+    }
+    
+    // Initialize control object from config
+    ctrlObj->index = config->index;
+    strncpy(ctrlObj->name, config->name, sizeof(ctrlObj->name) - 1);
+    ctrlObj->enabled = wasEnabled;  // Preserve runtime enabled state, ignore config->enabled
+    ctrlObj->setpoint_mg_L = config->setpoint_mg_L;
+    ctrlObj->numPoints = config->numPoints;
+    
+    // Convert flattened arrays from IPC to DOProfilePoint structs
+    for (int i = 0; i < config->numPoints && i < 20; i++) {
+        ctrlObj->profile[i].error_mg_L = config->profileErrorValues[i];
+        ctrlObj->profile[i].stirrerOutput = config->profileStirrerValues[i];
+        ctrlObj->profile[i].mfcOutput_mL_min = config->profileMFCValues[i];
+    }
+    
+    ctrlObj->stirrerEnabled = config->stirrerEnabled;
+    ctrlObj->stirrerType = config->stirrerType;
+    ctrlObj->stirrerIndex = config->stirrerIndex;
+    ctrlObj->stirrerMaxRPM = config->stirrerMaxRPM;
+    ctrlObj->mfcEnabled = config->mfcEnabled;
+    ctrlObj->mfcDeviceIndex = config->mfcDeviceIndex;
+    
+    // Create controller instance
+    DOController* ctrlInstance = new DOController(ctrlObj);
+    if (ctrlInstance == nullptr) {
+        Serial.println("[CTRL MGR] ERROR: Failed to allocate DO controller instance");
+        delete ctrlObj;
+        return false;
+    }
+    
+    // Register in object index
+    objIndex[config->index].valid = true;
+    objIndex[config->index].type = OBJ_T_DISSOLVED_OXYGEN_CONTROL;
+    objIndex[config->index].obj = ctrlObj;
+    sprintf(objIndex[config->index].name, "%s", config->name);
+    
+    // Add scheduler task (1000ms = 1Hz update rate)
+    doControllerInstance = ctrlInstance;
+    ScheduledTask* task = tasks.addTask(doControllerTaskWrapper, 1000, true);
+    
+    // Update managed controller
+    doController.controllerInstance = ctrlInstance;
+    doController.controlObject = ctrlObj;
+    doController.task = task;
+    doController.active = true;
+    
+    Serial.printf("[CTRL MGR] ✓ DO Controller[%d] created: %s\n", config->index, config->name);
+    return true;
+}
+
+bool ControllerManager::deleteDOController() {
+    if (!doController.active) {
+        return false;  // Not active
+    }
+    
+    // Remove scheduler task
+    if (doController.task != nullptr) {
+        tasks.removeTask(doController.task);
+        delete doController.task;
+        doController.task = nullptr;
+    }
+    
+    // Delete controller instance
+    if (doController.controllerInstance != nullptr) {
+        delete doController.controllerInstance;
+        doController.controllerInstance = nullptr;
+        doControllerInstance = nullptr;
+    }
+    
+    // Delete control object
+    if (doController.controlObject != nullptr) {
+        delete doController.controlObject;
+        doController.controlObject = nullptr;
+    }
+    
+    // Unregister from object index
+    objIndex[48].valid = false;
+    objIndex[48].type = OBJ_T_ANALOG_INPUT;  // Reset to default
+    objIndex[48].obj = nullptr;
+    objIndex[48].name[0] = '\0';
+    
+    doController.active = false;
+    
+    Serial.printf("[CTRL MGR] DO Controller deleted\n");
+    return true;
+}
+
+bool ControllerManager::setDOSetpoint(float setpoint_mg_L) {
+    if (!doController.active || doController.controllerInstance == nullptr) {
+        return false;
+    }
+    doController.controllerInstance->setSetpoint(setpoint_mg_L);
+    return true;
+}
+
+bool ControllerManager::enableDOController() {
+    if (!doController.active || doController.controlObject == nullptr) {
+        return false;
+    }
+    doController.controlObject->enabled = true;
+    Serial.printf("[CTRL MGR] DO controller enabled (enabled=%d)\n", doController.controlObject->enabled);
+    return true;
+}
+
+bool ControllerManager::disableDOController() {
+    if (!doController.active || doController.controlObject == nullptr) {
+        return false;
+    }
+    doController.controlObject->enabled = false;
+    return true;
+}
+
+ManagedDOController* ControllerManager::findDOController() {
+    if (doController.active) {
+        return &doController;
+    }
+    return nullptr;
 }

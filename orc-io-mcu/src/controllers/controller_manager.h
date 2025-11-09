@@ -8,10 +8,12 @@ class ScheduledTask;
 class TaskScheduler;
 class pHController;
 class FlowController;
+class DOController;
 
 // IPC structures
 struct IPC_ConfigpHController_t;
 struct IPC_ConfigFlowController_t;
+struct IPC_ConfigDOController_t;
 
 // Maximum number of temperature controllers (matches ioConfig.h)
 #define MAX_TEMP_CONTROLLERS 3
@@ -47,7 +49,7 @@ struct ManagedpHController {
 };
 
 /**
- * @brief Managed Flow Controller Entry
+ * @brief Managed flow controller structure
  * 
  * Tracks all information needed for flow controllers (indices 44-47)
  */
@@ -55,9 +57,21 @@ struct ManagedFlowController {
     uint8_t index;                          // Controller object index (44-47)
     FlowController* controllerInstance;     // Pointer to flow controller class instance
     FlowControl_t* controlObject;           // Pointer to control structure in objIndex
-    ScheduledTask* updateTask;              // Scheduler task for periodic update()
-    bool active;                            // Controller is active and updating
-    char message[100];                      // Status/error message
+    ScheduledTask* task;                    // Pointer to scheduler task
+    bool active;                            // Controller is active
+};
+
+/**
+ * @brief Managed DO controller structure
+ * 
+ * Tracks all information needed for the DO controller (index 48)
+ */
+struct ManagedDOController {
+    uint8_t index;                          // Controller object index (always 48)
+    DOController* controllerInstance;       // Pointer to DO controller class instance
+    DissolvedOxygenControl_t* controlObject; // Pointer to control structure in objIndex
+    ScheduledTask* task;                    // Pointer to scheduler task
+    bool active;                            // Controller is active
 };
 
 /**
@@ -328,6 +342,50 @@ public:
     static ManagedFlowController* findFlowController(uint8_t index);
     
     // ========================================================================
+    // DO CONTROLLER LIFECYCLE (Index 48)
+    // ========================================================================
+    
+    /**
+     * @brief Create or update the DO controller instance
+     * 
+     * @param config Controller configuration from IPC
+     * @return true if controller created successfully
+     */
+    static bool createDOController(const IPC_ConfigDOController_t* config);
+    
+    /**
+     * @brief Delete the DO controller instance
+     * @return true if controller deleted successfully
+     */
+    static bool deleteDOController();
+    
+    /**
+     * @brief Set DO setpoint
+     * 
+     * @param setpoint_mg_L Target DO in mg/L
+     * @return true if successful
+     */
+    static bool setDOSetpoint(float setpoint_mg_L);
+    
+    /**
+     * @brief Enable DO controller
+     * @return true if successful
+     */
+    static bool enableDOController();
+    
+    /**
+     * @brief Disable DO controller
+     * @return true if successful
+     */
+    static bool disableDOController();
+    
+    /**
+     * @brief Find the managed DO controller
+     * @return Pointer to ManagedDOController or nullptr if not active
+     */
+    static ManagedDOController* findDOController();
+    
+    // ========================================================================
     // Controller Query
     // ========================================================================
     
@@ -366,6 +424,7 @@ private:
     static ManagedController controllers[MAX_TEMP_CONTROLLERS];  // Controller array (3 slots)
     static ManagedpHController phController;  // Single pH controller (index 43)
     static ManagedFlowController flowControllers[MAX_FLOW_CONTROLLERS];  // Flow controller array (4 slots)
+    static ManagedDOController doController;  // Single DO controller (index 48)
     static bool initialized;
     
     // ========================================================================

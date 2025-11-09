@@ -6,6 +6,7 @@ AlicatMFC* AlicatMFC::_currentInstance = nullptr;
 // Constructor
 AlicatMFC::AlicatMFC(ModbusDriver_t *modbusDriver, uint8_t slaveID)
     : _modbusDriver(modbusDriver), _slaveID(slaveID), _setpoint(0.0),
+      _maxFlowRate_mL_min(1250.0),  // Default to Alicat max (1250 mL/min)
       _fault(false), _newMessage(false), _newSetpoint(false),
       _pendingSetpoint(0.0), _writeAttempts(0), 
       _setpointUnitCode(0), _flowUnitCode(0), _pressureUnitCode(0) {

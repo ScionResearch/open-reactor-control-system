@@ -169,7 +169,7 @@
             <!-- Controllers Tab -->
             <div id="controllers" class="tab-content">
                 <h2>Control Loops</h2>
-                <p class="page-description">Process control loops including temperature, pH, and dissolved oxygen</p>
+                <p class="page-description">Process control loops for reactor operation, including temperature, pH, DO, nutrient dosing and waste removal</p>
                 
                 <div class="devices-toolbar">
                     <button class="btn-primary" onclick="openAddControllerModal()">
@@ -1237,6 +1237,8 @@
         </div>
     </div>
     
+    <!-- Chart.js for DO Profile visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="script/script.js"></script>
 </body>
 </html>

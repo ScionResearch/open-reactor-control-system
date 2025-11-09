@@ -37,9 +37,6 @@ void ObjectCache::updateObject(const IPC_SensorData_t* data) {
             obj->additionalUnits[i][sizeof(obj->additionalUnits[i]) - 1] = '\0';
         }
     }
-    
-    // log(LOG_DEBUG, false, "Cache: Updated object %d (type %d) = %.2f %s\n", 
-    //     data->index, data->objectType, data->value, data->unit);
 }
 
 void ObjectCache::updateObjectName(uint8_t index, const char* name, uint8_t type) {

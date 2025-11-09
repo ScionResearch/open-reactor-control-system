@@ -167,6 +167,18 @@ public:
      */
     DeviceControl_t* getControlObject() { return &_controlObj; }
     
+    /**
+     * @brief Set the maximum flow rate for this MFC
+     * @param maxFlowRate Maximum flow rate in mL/min
+     */
+    void setMaxFlowRate(float maxFlowRate) { _maxFlowRate_mL_min = maxFlowRate; }
+    
+    /**
+     * @brief Get the maximum flow rate for this MFC
+     * @return Maximum flow rate in mL/min
+     */
+    float getMaxFlowRate() const { return _maxFlowRate_mL_min; }
+    
 private:
     ModbusDriver_t *_modbusDriver;          ///< Pointer to the Modbus driver managing the serial port
     uint8_t _slaveID;                        ///< Modbus slave ID
@@ -175,6 +187,7 @@ private:
     DeviceControl_t _controlObj;             ///< Device control object (indices 50-69)
     float _setpoint;                         ///< Current setpoint
     char _setpointUnit[10];                  ///< Setpoint unit string
+    float _maxFlowRate_mL_min;               ///< Maximum flow rate capability (mL/min)
     bool _fault;                             ///< Fault flag
     bool _newMessage;                        ///< New message flag
     char _message[100];                      ///< Message buffer

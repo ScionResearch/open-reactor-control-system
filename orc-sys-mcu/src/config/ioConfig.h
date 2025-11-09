@@ -255,6 +255,57 @@ struct FlowControllerConfig {
 };
 
 /**
+ * @brief DO Profile Point - one point in the control curve
+ * Stored on SYS MCU, sent to IO MCU when profile is activated
+ */
+struct DOProfilePoint {
+    float error_mg_L;           // X: setpoint - current DO (mg/L)
+    float stirrerOutput;        // Y1: stirrer speed (% for DC motor, RPM for stepper)
+    float mfcOutput_mL_min;     // Y2: MFC flow rate (mL/min)
+};
+
+/**
+ * @brief DO Profile Configuration
+ * Maximum of 3 user-defined profiles
+ * Each profile can have 10-20 points
+ */
+#define MAX_DO_PROFILES 3
+#define MAX_DO_PROFILE_POINTS 20
+
+struct DOProfileConfig {
+    bool isActive;              // Profile slot in use
+    char name[40];              // User-defined profile name
+    uint8_t numPoints;          // Number of points in profile (10-20)
+    DOProfilePoint points[MAX_DO_PROFILE_POINTS];  // Profile curve points
+};
+
+/**
+ * @brief Configuration for DO Controller (index 48)
+ * Single controller for dissolved oxygen control
+ * Uses profile-based control with linear interpolation
+ */
+struct DOControllerConfig {
+    bool isActive;              // Controller in use
+    char name[40];              // User-defined name
+    bool enabled;               // Enable/disable controller (runtime only, not saved)
+    bool showOnDashboard;       // Dashboard visibility
+    float setpoint_mg_L;        // Target DO in mg/L
+    
+    // Active profile (0-2, references doProfiles array)
+    uint8_t activeProfileIndex; // Index of active profile (0-2)
+    
+    // Stirrer output configuration
+    bool stirrerEnabled;
+    uint8_t stirrerType;        // 0=DC motor, 1=stepper
+    uint8_t stirrerIndex;       // Motor index: 27-30 for DC, 26 for stepper
+    float stirrerMaxRPM;        // For stepper: maximum RPM (ignored for DC motor)
+    
+    // MFC output configuration
+    bool mfcEnabled;
+    uint8_t mfcDeviceIndex;     // Device index (50-69) of Alicat MFC
+};
+
+/**
  * @brief Configuration for COM ports (serial communication)
  * Ports: 0-1 = RS-232, 2-3 = RS-485
  */
@@ -337,6 +388,9 @@ struct DeviceConfig {
             uint8_t motorIndex;         // Motor index: 26 for stepper, 27-30 for DC
         } motorDriven;
     };
+    
+    // Device-specific parameters (outside union, applies to all devices)
+    float maxFlowRate_mL_min;           // For Alicat MFC: maximum flow rate capability
 };
 
 /**
@@ -358,6 +412,8 @@ struct IOConfig {
     TemperatureControllerConfig tempControllers[MAX_TEMP_CONTROLLERS];  // Indices 40-42
     pHControllerConfig phController;  // Index 43 (single controller)
     FlowControllerConfig flowControllers[MAX_FLOW_CONTROLLERS];  // Indices 44-47 (3 feed + 1 waste)
+    DOControllerConfig doController;  // Index 48 (single controller)
+    DOProfileConfig doProfiles[MAX_DO_PROFILES];  // User-defined DO control profiles (3 max)
     ComPortConfig comPorts[MAX_COM_PORTS];  // RS-232 (0-1) and RS-485 (2-3)
     
     // Dynamic peripheral devices (sensor indices 70-99, control indices 50-69)

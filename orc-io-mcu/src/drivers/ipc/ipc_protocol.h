@@ -90,6 +90,7 @@ enum IPC_MsgType : uint8_t {
     IPC_MSG_CONFIG_TEMP_CONTROLLER = 0x6C,  // Configure temperature controller
     IPC_MSG_CONFIG_PH_CONTROLLER  = 0x6D,  // Configure pH controller
     IPC_MSG_CONFIG_FLOW_CONTROLLER = 0x6E,  // Configure flow controller (feed/waste pumps)
+    IPC_MSG_CONFIG_DO_CONTROLLER  = 0x70,  // Configure DO controller
     IPC_MSG_CONFIG_PRESSURE_CTRL  = 0x6F,  // Configure pressure controller
 };
 
@@ -421,7 +422,8 @@ struct IPC_DeviceConfig_t {
     uint8_t busIndex;           // Bus/port index (COM port 0-3, I2C bus 0-1, etc.)
     uint8_t address;            // Device address (Modbus slave ID, I2C address, SPI CS, etc.)
     uint8_t objectCount;        // Number of sensor objects created (1-4, set by IO MCU)
-    uint8_t reserved[3];        // Padding for future expansion
+    float maxFlowRate_mL_min;   // For MFC devices: maximum flow rate capability (mL/min)
+    uint8_t reserved[3];        // Padding for future expansion (reduced from 7 to 3)
 } __attribute__((packed));
 
 /**
@@ -800,6 +802,73 @@ struct IPC_FlowControllerControl_t {
     uint8_t objectType;              // OBJ_T_FLOW_CONTROL
     uint8_t command;                 // FlowControllerCommand
     float flowRate_mL_min;           // For SET_FLOW_RATE command
+    uint8_t reserved[8];             // Reserved for future use
+} __attribute__((packed));
+
+// ============================================================================
+// DO CONTROLLER CONFIGURATION & CONTROL
+// ============================================================================
+
+// Note: DOProfilePoint is defined in objects.h
+
+/**
+ * @brief DO Controller configuration
+ * Message type: IPC_MSG_CONFIG_DO_CONTROLLER
+ * Sent from SYS MCU to IO MCU to configure DO controller (index 48)
+ * 
+ * DO controller uses profile-based control with linear interpolation.
+ * Requires DO sensor and at least one output (stirrer and/or MFC).
+ */
+struct IPC_ConfigDOController_t {
+    uint8_t index;                    // Controller index (always 48)
+    bool isActive;                    // true=create/update, false=delete
+    char name[40];                    // Controller name
+    bool enabled;                     // Enable/disable controller (runtime state)
+    bool showOnDashboard;             // Dashboard visibility
+    float setpoint_mg_L;              // Target DO in mg/L
+    
+    // Profile curve (sorted by error_mg_L, ascending)
+    uint8_t numPoints;                // Number of points in profile (0-20)
+    
+    // Profile points (flattened arrays for IPC transmission)
+    float profileErrorValues[20];     // X values: error (mg/L)
+    float profileStirrerValues[20];   // Y1 values: stirrer output (% or RPM)
+    float profileMFCValues[20];       // Y2 values: MFC flow (mL/min)
+    
+    // Stirrer output configuration
+    bool stirrerEnabled;
+    uint8_t stirrerType;              // 0=DC motor, 1=stepper
+    uint8_t stirrerIndex;             // Motor index: 27-30 for DC, 26 for stepper
+    float stirrerMaxRPM;              // For stepper: maximum RPM (ignored for DC motor)
+    
+    // MFC output configuration
+    bool mfcEnabled;
+    uint8_t mfcDeviceIndex;           // Device index (50-69) of Alicat MFC
+    
+    uint8_t _padding[2];              // Alignment
+} __attribute__((packed));
+
+/**
+ * @brief DO Controller runtime control commands
+ */
+enum DOControllerCommand : uint8_t {
+    DO_CMD_SET_SETPOINT = 0,     // Set target DO (mg/L)
+    DO_CMD_ENABLE = 1,           // Enable controller (automatic control)
+    DO_CMD_DISABLE = 2,          // Disable controller
+    DO_CMD_SET_PROFILE = 3       // Update active profile (numPoints + profile array)
+};
+
+/**
+ * @brief DO Controller runtime control
+ * Message type: IPC_MSG_CONTROL_WRITE (with OBJ_T_DISSOLVED_OXYGEN_CONTROL)
+ * 
+ * Runtime commands for DO controller: setpoint, enable, disable
+ */
+struct IPC_DOControllerControl_t {
+    uint16_t index;                  // Controller index (always 48)
+    uint8_t objectType;              // OBJ_T_DISSOLVED_OXYGEN_CONTROL
+    uint8_t command;                 // DOControllerCommand
+    float setpoint_mg_L;             // For SET_SETPOINT command
     uint8_t reserved[8];             // Reserved for future use
 } __attribute__((packed));
 

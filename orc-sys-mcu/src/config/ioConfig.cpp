@@ -196,6 +196,33 @@ void setDefaultIOConfig() {
     }
     
     // ========================================================================
+    // DO Controller (Index 48)
+    // ========================================================================
+    ioConfig.doController.isActive = false;
+    strlcpy(ioConfig.doController.name, "DO Controller", sizeof(ioConfig.doController.name));
+    ioConfig.doController.enabled = false;
+    ioConfig.doController.showOnDashboard = false;
+    ioConfig.doController.setpoint_mg_L = 8.0f;  // Default DO setpoint
+    ioConfig.doController.activeProfileIndex = 0;  // Use first profile by default
+    ioConfig.doController.stirrerEnabled = false;
+    ioConfig.doController.stirrerType = 0;  // DC motor
+    ioConfig.doController.stirrerIndex = 27;  // First DC motor
+    ioConfig.doController.stirrerMaxRPM = 300.0f;  // Example max RPM for stepper
+    ioConfig.doController.mfcEnabled = false;
+    ioConfig.doController.mfcDeviceIndex = 50;  // First device index
+    
+    // ========================================================================
+    // DO Profiles
+    // ========================================================================
+    for (int i = 0; i < MAX_DO_PROFILES; i++) {
+        ioConfig.doProfiles[i].isActive = false;
+        snprintf(ioConfig.doProfiles[i].name, sizeof(ioConfig.doProfiles[i].name), "Profile %d", i + 1);
+        ioConfig.doProfiles[i].numPoints = 0;
+        // Points initialized to zero
+        memset(ioConfig.doProfiles[i].points, 0, sizeof(ioConfig.doProfiles[i].points));
+    }
+    
+    // ========================================================================
     // COM Ports (0-1: RS-232, 2-3: RS-485)
     // ========================================================================
     const char* portNames[] = {"RS-232 Port 1", "RS-232 Port 2", "RS-485 Port 1", "RS-485 Port 2"};
@@ -216,6 +243,7 @@ void setDefaultIOConfig() {
         ioConfig.devices[i].isActive = false;
         ioConfig.devices[i].dynamicIndex = 0xFF;  // Unassigned
         ioConfig.devices[i].name[0] = '\0';
+        ioConfig.devices[i].maxFlowRate_mL_min = 1250.0f;  // Default Alicat MFC max flow rate
     }
     
     // ========================================================================
@@ -520,6 +548,67 @@ bool loadIOConfig() {
     }
     
     // ========================================================================
+    // Parse DO Controller
+    // ========================================================================
+    JsonObject doCtrl = doc["do_controller"];
+    if (doCtrl) {
+        ioConfig.doController.isActive = doCtrl["isActive"] | false;
+        strlcpy(ioConfig.doController.name, doCtrl["name"] | "DO Controller", 
+                sizeof(ioConfig.doController.name));
+        ioConfig.doController.enabled = doCtrl["enabled"] | false;
+        ioConfig.doController.showOnDashboard = doCtrl["showOnDashboard"] | false;
+        ioConfig.doController.setpoint_mg_L = doCtrl["setpoint_mg_L"] | 8.0f;
+        ioConfig.doController.activeProfileIndex = doCtrl["activeProfileIndex"] | 0;
+        ioConfig.doController.stirrerEnabled = doCtrl["stirrerEnabled"] | false;
+        ioConfig.doController.stirrerType = doCtrl["stirrerType"] | 0;
+        ioConfig.doController.stirrerIndex = doCtrl["stirrerIndex"] | 27;
+        ioConfig.doController.stirrerMaxRPM = doCtrl["stirrerMaxRPM"] | 300.0f;
+        ioConfig.doController.mfcEnabled = doCtrl["mfcEnabled"] | false;
+        ioConfig.doController.mfcDeviceIndex = doCtrl["mfcDeviceIndex"] | 50;
+    }
+    
+    // ========================================================================
+    // Parse DO Profiles
+    // ========================================================================
+    JsonArray doProfilesArray = doc["do_profiles"];
+    if (doProfilesArray) {
+        for (int i = 0; i < MAX_DO_PROFILES && i < doProfilesArray.size(); i++) {
+            JsonObject profile = doProfilesArray[i];
+            ioConfig.doProfiles[i].isActive = profile["isActive"] | false;
+            strlcpy(ioConfig.doProfiles[i].name, profile["name"] | "", 
+                    sizeof(ioConfig.doProfiles[i].name));
+            ioConfig.doProfiles[i].numPoints = profile["numPoints"] | 0;
+            
+            // Parse profile points - support both OLD and NEW formats for backward compatibility
+            JsonArray errorsArray = profile["errors"];
+            JsonArray stirrersArray = profile["stirrers"];
+            JsonArray mfcsArray = profile["mfcs"];
+            
+            if (errorsArray && stirrersArray && mfcsArray) {
+                // NEW efficient array format
+                int numPoints = min((int)errorsArray.size(), MAX_DO_PROFILE_POINTS);
+                for (int j = 0; j < numPoints; j++) {
+                    ioConfig.doProfiles[i].points[j].error_mg_L = errorsArray[j] | 0.0f;
+                    ioConfig.doProfiles[i].points[j].stirrerOutput = stirrersArray[j] | 0.0f;
+                    ioConfig.doProfiles[i].points[j].mfcOutput_mL_min = mfcsArray[j] | 0.0f;
+                }
+            } else {
+                // OLD object-per-point format (backward compatibility)
+                JsonArray pointsArray = profile["points"];
+                if (pointsArray) {
+                    int numPoints = min((int)pointsArray.size(), MAX_DO_PROFILE_POINTS);
+                    for (int j = 0; j < numPoints; j++) {
+                        JsonObject point = pointsArray[j];
+                        ioConfig.doProfiles[i].points[j].error_mg_L = point["error"] | 0.0f;
+                        ioConfig.doProfiles[i].points[j].stirrerOutput = point["stirrer"] | 0.0f;
+                        ioConfig.doProfiles[i].points[j].mfcOutput_mL_min = point["mfc"] | 0.0f;
+                    }
+                }
+            }
+        }
+    }
+    
+    // ========================================================================
     // Parse COM Ports
     // ========================================================================
     JsonArray comPortArray = doc["com_ports"];
@@ -565,6 +654,9 @@ bool loadIOConfig() {
                 ioConfig.devices[i].motorDriven.usesStepper = dev["usesStepper"] | false;
                 ioConfig.devices[i].motorDriven.motorIndex = dev["motorIndex"] | 27;
             }
+            
+            // Parse device-specific parameters
+            ioConfig.devices[i].maxFlowRate_mL_min = dev["maxFlowRate_mL_min"] | 1250.0f;
         }
     }
     
@@ -795,6 +887,48 @@ void saveIOConfig() {
     }
     
     // ========================================================================
+    // Serialize DO Controller
+    // ========================================================================
+    JsonObject doCtrl = doc.createNestedObject("do_controller");
+    doCtrl["isActive"] = ioConfig.doController.isActive;
+    doCtrl["name"] = ioConfig.doController.name;
+    doCtrl["enabled"] = ioConfig.doController.enabled;
+    doCtrl["showOnDashboard"] = ioConfig.doController.showOnDashboard;
+    doCtrl["setpoint_mg_L"] = ioConfig.doController.setpoint_mg_L;
+    doCtrl["activeProfileIndex"] = ioConfig.doController.activeProfileIndex;
+    doCtrl["stirrerEnabled"] = ioConfig.doController.stirrerEnabled;
+    doCtrl["stirrerType"] = ioConfig.doController.stirrerType;
+    doCtrl["stirrerIndex"] = ioConfig.doController.stirrerIndex;
+    doCtrl["stirrerMaxRPM"] = ioConfig.doController.stirrerMaxRPM;
+    doCtrl["mfcEnabled"] = ioConfig.doController.mfcEnabled;
+    doCtrl["mfcDeviceIndex"] = ioConfig.doController.mfcDeviceIndex;
+    
+    // ========================================================================
+    // Serialize DO Profiles
+    // ========================================================================
+    JsonArray doProfilesArray = doc.createNestedArray("do_profiles");
+    for (int i = 0; i < MAX_DO_PROFILES; i++) {
+        JsonObject profile = doProfilesArray.createNestedObject();
+        profile["isActive"] = ioConfig.doProfiles[i].isActive;
+        profile["name"] = ioConfig.doProfiles[i].name;
+        profile["numPoints"] = ioConfig.doProfiles[i].numPoints;
+        
+        // Serialize profile points in efficient array format (saves ~40 bytes per point)
+        int maxPoints = (ioConfig.doProfiles[i].numPoints < MAX_DO_PROFILE_POINTS) 
+                         ? ioConfig.doProfiles[i].numPoints : MAX_DO_PROFILE_POINTS;
+        
+        JsonArray errorsArray = profile.createNestedArray("errors");
+        JsonArray stirrersArray = profile.createNestedArray("stirrers");
+        JsonArray mfcsArray = profile.createNestedArray("mfcs");
+        
+        for (int j = 0; j < maxPoints; j++) {
+            errorsArray.add(ioConfig.doProfiles[i].points[j].error_mg_L);
+            stirrersArray.add(ioConfig.doProfiles[i].points[j].stirrerOutput);
+            mfcsArray.add(ioConfig.doProfiles[i].points[j].mfcOutput_mL_min);
+        }
+    }
+    
+    // ========================================================================
     // Serialize COM Ports
     // ========================================================================
     JsonArray comPortArray = doc.createNestedArray("com_ports");
@@ -836,6 +970,9 @@ void saveIOConfig() {
             dev["usesStepper"] = ioConfig.devices[i].motorDriven.usesStepper;
             dev["motorIndex"] = ioConfig.devices[i].motorDriven.motorIndex;
         }
+        
+        // Serialize device-specific parameters
+        dev["maxFlowRate_mL_min"] = ioConfig.devices[i].maxFlowRate_mL_min;
     }
     
     // ========================================================================
@@ -1248,6 +1385,9 @@ void pushIOConfigToIOmcu() {
                 break;
         }
         
+        // Set device-specific parameters
+        ipcConfig.maxFlowRate_mL_min = ioConfig.devices[i].maxFlowRate_mL_min;
+        
         // Send device create command
         IPC_DeviceCreate_t createCmd;
         createCmd.startIndex = dynamicIndex;
@@ -1461,6 +1601,68 @@ void pushIOConfigToIOmcu() {
             
             delay(10);
         }
+    }
+    
+    // ========================================================================
+    // Push DO Controller configuration (index 48)
+    // ========================================================================
+    if (ioConfig.doController.isActive) {
+        IPC_ConfigDOController_t cfg;
+        memset(&cfg, 0, sizeof(cfg));
+        
+        cfg.index = 48;
+        cfg.isActive = true;
+        strncpy(cfg.name, ioConfig.doController.name, sizeof(cfg.name) - 1);
+        cfg.enabled = ioConfig.doController.enabled;
+        cfg.showOnDashboard = ioConfig.doController.showOnDashboard;
+        cfg.setpoint_mg_L = ioConfig.doController.setpoint_mg_L;
+        
+        // Get active profile and copy points
+        uint8_t profileIdx = ioConfig.doController.activeProfileIndex;
+        if (profileIdx < MAX_DO_PROFILES && ioConfig.doProfiles[profileIdx].isActive) {
+            // Safety: limit to MAX_DO_PROFILE_POINTS to prevent overflow
+            int numPoints = ioConfig.doProfiles[profileIdx].numPoints;
+            cfg.numPoints = (numPoints < MAX_DO_PROFILE_POINTS) ? numPoints : MAX_DO_PROFILE_POINTS;
+            
+            // Copy profile points to flattened arrays
+            for (int j = 0; j < cfg.numPoints; j++) {
+                cfg.profileErrorValues[j] = ioConfig.doProfiles[profileIdx].points[j].error_mg_L;
+                cfg.profileStirrerValues[j] = ioConfig.doProfiles[profileIdx].points[j].stirrerOutput;
+                cfg.profileMFCValues[j] = ioConfig.doProfiles[profileIdx].points[j].mfcOutput_mL_min;
+            }
+        } else {
+            cfg.numPoints = 0;
+        }
+        
+        // Stirrer configuration
+        cfg.stirrerEnabled = ioConfig.doController.stirrerEnabled;
+        cfg.stirrerType = ioConfig.doController.stirrerType;
+        cfg.stirrerIndex = ioConfig.doController.stirrerIndex;
+        cfg.stirrerMaxRPM = ioConfig.doController.stirrerMaxRPM;
+        
+        // MFC configuration
+        cfg.mfcEnabled = ioConfig.doController.mfcEnabled;
+        cfg.mfcDeviceIndex = ioConfig.doController.mfcDeviceIndex;
+        
+        // Retry up to 10 times if queue is full
+        bool sent = false;
+        for (int retry = 0; retry < 10; retry++) {
+            if (ipc.sendPacket(IPC_MSG_CONFIG_DO_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg))) {
+                sent = true;
+                sentCount++;
+                log(LOG_INFO, false, "  → DOController[48]: %s, setpoint=%.2f mg/L, %d profile points\n",
+                    cfg.name, cfg.setpoint_mg_L, cfg.numPoints);
+                break;
+            }
+            ipc.update();
+            delay(10);
+        }
+        
+        if (!sent) {
+            log(LOG_WARNING, false, "  ✗ Failed to send DOController[48] config after retries\n");
+        }
+        
+        delay(10);
     }
     
     log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports + devices + controllers)\n", sentCount);

@@ -112,6 +112,10 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             ipc_handle_config_flow_controller(payload, len);
             break;
             
+        case IPC_MSG_CONFIG_DO_CONTROLLER:
+            ipc_handle_config_do_controller(payload, len);
+            break;
+            
         case IPC_MSG_CONFIG_PRESSURE_CTRL:
             ipc_handle_config_pressure_ctrl(payload, len);
             break;
@@ -386,29 +390,19 @@ void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len) {
             sentCount++;
         }
     }
-    
-    /*Serial.printf("[IPC] ✓ Sent bulk read response: %d-%d (%d requested, %d sent)\n",
-                 req->startIndex, req->startIndex + count - 1, count, sentCount);*/
 }
 
 bool ipc_sendSensorData(uint16_t index) {
     if (index >= MAX_NUM_OBJECTS) {
-        // Commented out - too spammy when polling dynamic device range
-        // Serial.printf("[IPC] DEBUG: Index %d out of range (max %d)\n", index, MAX_NUM_OBJECTS);
         return false;
     }
     
     if (!objIndex[index].valid) {
-        // Commented out - expected when polling empty device slots (indices 60-79)
-        // Serial.printf("[IPC] DEBUG: Index %d not valid\n", index);
         return false;
     }
     
     void *obj = objIndex[index].obj;
     if (obj == nullptr) {
-        // Commented out - too spammy
-        // Serial.printf("[IPC] DEBUG: Index %d obj pointer is NULL (type=%d)\n", 
-        //              index, objIndex[index].type);
         return false;
     }
     
@@ -649,6 +643,28 @@ bool ipc_sendSensorData(uint16_t index) {
             break;
         }
         
+        case OBJ_T_DISSOLVED_OXYGEN_CONTROL: {
+            DissolvedOxygenControl_t *ctrl = (DissolvedOxygenControl_t*)obj;
+            data.value = ctrl->currentDO_mg_L;  // Process value (current DO)
+            strncpy(data.unit, "mg/L", sizeof(data.unit) - 1);
+            
+            // Additional values: [0]=stirrerOutput, [1]=mfcOutput, [2]=error, [3]=setpoint
+            data.valueCount = 4;
+            data.additionalValues[0] = ctrl->currentStirrerOutput;
+            data.additionalValues[1] = ctrl->currentMFCOutput;
+            data.additionalValues[2] = ctrl->error_mg_L;
+            data.additionalValues[3] = ctrl->setpoint_mg_L;
+            
+            if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
+            if (ctrl->enabled) data.flags |= IPC_SENSOR_FLAG_RUNNING;
+            if (ctrl->newMessage) {
+                data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
+                strncpy(data.message, ctrl->message, sizeof(data.message) - 1);
+                ctrl->newMessage = false;
+            }
+            break;
+        }
+        
         case OBJ_T_VOLTAGE_SENSOR: {
             VoltageSensor_t *sensor = (VoltageSensor_t*)obj;
             data.value = sensor->voltage;
@@ -840,6 +856,10 @@ void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
             
         case OBJ_T_FLOW_CONTROL:
             ipc_handle_flow_controller_control(payload, len);
+            break;
+            
+        case OBJ_T_DISSOLVED_OXYGEN_CONTROL:
+            ipc_handle_do_controller_control(payload, len);
             break;
             
         default:
@@ -2510,6 +2530,175 @@ void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len) {
                     strcpy(message, "Controller not found");
                     errorCode = IPC_ERR_DEVICE_FAIL;
                 }
+            }
+            break;
+            
+        default:
+            strcpy(message, "Invalid command");
+            errorCode = CTRL_ERR_INVALID_CMD;
+            break;
+    }
+    
+    // Send acknowledgment
+    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+}
+
+// ============================================================================
+// DO CONTROLLER CONFIGURATION & CONTROL
+// ============================================================================
+
+/**
+ * @brief Handle DO controller configuration message
+ * 
+ * Creates, updates, or deletes the DO controller instance (index 48).
+ * Uses ControllerManager to manage lifecycle and registration.
+ */
+void ipc_handle_config_do_controller(const uint8_t *payload, uint16_t len) {
+    Serial.printf("[IPC] DO controller config: received %d bytes, expected %d bytes\n", 
+                  len, sizeof(IPC_ConfigDOController_t));
+    
+    if (len != sizeof(IPC_ConfigDOController_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid DO controller config message size");
+        return;
+    }
+    
+    const IPC_ConfigDOController_t *cfg = (const IPC_ConfigDOController_t*)payload;
+    
+    // Validate controller index (must be 48)
+    if (cfg->index != 48) {
+        char errMsg[100];
+        snprintf(errMsg, sizeof(errMsg), "Invalid DO controller index %d (must be 48)", cfg->index);
+        ipc_sendError(IPC_ERR_INDEX_INVALID, errMsg);
+        return;
+    }
+    
+    bool success;
+    
+    if (!cfg->isActive) {
+        // Delete controller
+        success = ControllerManager::deleteDOController();
+        if (success) {
+            Serial.printf("[IPC] ✓ DO Controller deleted\n");
+        } else {
+            ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to delete DO controller");
+        }
+    } else {
+        // Create or update controller - validate configuration first
+        
+        // Must have at least one output enabled
+        if (!cfg->stirrerEnabled && !cfg->mfcEnabled) {
+            ipc_sendError(IPC_ERR_PARAM_INVALID, "At least one output (stirrer or MFC) must be enabled");
+            return;
+        }
+        
+        // Validate stirrer configuration if enabled
+        if (cfg->stirrerEnabled) {
+            if (cfg->stirrerType == 0) {
+                // DC motor (27-30)
+                if (cfg->stirrerIndex < 27 || cfg->stirrerIndex > 30) {
+                    ipc_sendError(IPC_ERR_INDEX_INVALID, "DC motor index must be 27-30");
+                    return;
+                }
+            } else if (cfg->stirrerType == 1) {
+                // Stepper motor (26)
+                if (cfg->stirrerIndex != 26) {
+                    ipc_sendError(IPC_ERR_INDEX_INVALID, "Stepper motor index must be 26");
+                    return;
+                }
+            } else {
+                ipc_sendError(IPC_ERR_PARAM_INVALID, "Invalid stirrer type (must be 0=DC or 1=stepper)");
+                return;
+            }
+        }
+        
+        // Validate MFC configuration if enabled
+        if (cfg->mfcEnabled) {
+            if (cfg->mfcDeviceIndex < 50 || cfg->mfcDeviceIndex >= 70) {
+                ipc_sendError(IPC_ERR_INDEX_INVALID, "MFC device index must be 50-69");
+                return;
+            }
+        }
+        
+        // Validate profile
+        if (cfg->numPoints > 20) {
+            ipc_sendError(IPC_ERR_PARAM_INVALID, "Profile cannot have more than 20 points");
+            return;
+        }
+        if (cfg->numPoints == 0) {
+            Serial.printf("[IPC] WARNING: DO controller has no profile points\n");
+        }
+        
+        // Validation passed - create or update controller
+        success = ControllerManager::createDOController(cfg);
+        if (success) {
+            Serial.printf("[IPC] ✓ DOController[%d]: %s, setpoint=%.2f mg/L, %d profile points\n",
+                         cfg->index, cfg->name, cfg->setpoint_mg_L, cfg->numPoints);
+        } else {
+            ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to create/update DO controller");
+        }
+    }
+}
+
+/**
+ * @brief Handle DO controller runtime control message
+ * 
+ * Processes runtime commands for DO controller: setpoint, enable, disable
+ */
+void ipc_handle_do_controller_control(const uint8_t *payload, uint16_t len) {
+    if (len != sizeof(IPC_DOControllerControl_t)) {
+        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid DO controller control message size");
+        return;
+    }
+    
+    const IPC_DOControllerControl_t *cmd = (const IPC_DOControllerControl_t*)payload;
+    
+    // Validate index (must be 48)
+    if (cmd->index != 48) {
+        char errMsg[100];
+        snprintf(errMsg, sizeof(errMsg), "Invalid DO controller index %d (must be 48)", cmd->index);
+        ipc_sendError(IPC_ERR_INDEX_INVALID, errMsg);
+        return;
+    }
+    
+    // Validate object type
+    if (cmd->objectType != OBJ_T_DISSOLVED_OXYGEN_CONTROL) {
+        ipc_sendError(CTRL_ERR_TYPE_MISMATCH, "Object type mismatch for DO controller");
+        return;
+    }
+    
+    bool success = false;
+    uint8_t errorCode = IPC_ERR_NONE;
+    char message[100];
+    
+    // Execute command
+    switch (cmd->command) {
+        case DO_CMD_SET_SETPOINT:
+            success = ControllerManager::setDOSetpoint(cmd->setpoint_mg_L);
+            if (success) {
+                snprintf(message, sizeof(message), "Setpoint set to %.2f mg/L", cmd->setpoint_mg_L);
+            } else {
+                strcpy(message, "Failed to set setpoint");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case DO_CMD_ENABLE:
+            success = ControllerManager::enableDOController();
+            if (success) {
+                strcpy(message, "Controller enabled");
+            } else {
+                strcpy(message, "Failed to enable controller");
+                errorCode = IPC_ERR_DEVICE_FAIL;
+            }
+            break;
+            
+        case DO_CMD_DISABLE:
+            success = ControllerManager::disableDOController();
+            if (success) {
+                strcpy(message, "Controller disabled");
+            } else {
+                strcpy(message, "Failed to disable controller");
+                errorCode = IPC_ERR_DEVICE_FAIL;
             }
             break;
             

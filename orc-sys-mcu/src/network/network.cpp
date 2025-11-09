@@ -579,10 +579,15 @@ void handleGetSensors() {
 void handleGetInputs() {
   // Compact JSON response for inputs tab
   // Data is served from cache, which is continuously updated by pollSensors()
-  StaticJsonDocument<6144> doc;  // Increased for energy sensors (31-32) with multi-value data
+  // Use heap allocation - 6KB is too large for stack
+  DynamicJsonDocument* doc = new DynamicJsonDocument(6144);
+  if (!doc) {
+    server.send(500, "application/json", "{\"error\":\"Memory allocation failed\"}");
+    return;
+  }
   
   // Analog Inputs (ADC) - Indices 0-7
-  JsonArray adc = doc.createNestedArray("adc");
+  JsonArray adc = doc->createNestedArray("adc");
   for (uint8_t i = 0; i < 8; i++) {
     ObjectCache::CachedObject* obj = objectCache.getObject(i);
     if (obj && obj->valid) {
@@ -601,7 +606,7 @@ void handleGetInputs() {
   }
   
   // RTD Temperature Sensors - Indices 10-12
-  JsonArray rtd = doc.createNestedArray("rtd");
+  JsonArray rtd = doc->createNestedArray("rtd");
   for (uint8_t i = 10; i < 13; i++) {
     ObjectCache::CachedObject* obj = objectCache.getObject(i);
     if (obj && obj->valid) {
@@ -620,7 +625,7 @@ void handleGetInputs() {
   }
   
   // Digital GPIO - Indices 13-20
-  JsonArray gpio = doc.createNestedArray("gpio");
+  JsonArray gpio = doc->createNestedArray("gpio");
   for (uint8_t i = 13; i < 21; i++) {
     ObjectCache::CachedObject* obj = objectCache.getObject(i);
     if (obj && obj->valid) {
@@ -630,14 +635,11 @@ void handleGetInputs() {
       o["s"] = (obj->value > 0.5) ? 1 : 0;  // State as boolean
       o["d"] = ioConfig.gpio[i - 13].showOnDashboard;  // Dashboard flag
       if (obj->flags & IPC_SENSOR_FLAG_FAULT) o["f"] = 1;
-    } else {
-      log(LOG_DEBUG, false, "GPIO %d skipped: obj=%p, valid=%d\n", 
-          i, obj, obj ? obj->valid : 0);
     }
   }
   
   // Energy Sensors - Indices 31-32
-  JsonArray energy = doc.createNestedArray("energy");
+  JsonArray energy = doc->createNestedArray("energy");
   for (uint8_t i = 31; i < 33; i++) {
     ObjectCache::CachedObject* obj = objectCache.getObject(i);
     if (obj && obj->valid) {
@@ -660,7 +662,7 @@ void handleGetInputs() {
   
   // Dynamic Device Sensors - Indices 70-99
   // These are created by dynamic devices (pH probes, MFCs, etc.)
-  JsonArray devices = doc.createNestedArray("devices");
+  JsonArray devices = doc->createNestedArray("devices");
   for (uint8_t i = 70; i <= 99; i++) {
     ObjectCache::CachedObject* obj = objectCache.getObject(i);
     if (obj && obj->valid) {
@@ -691,6 +693,13 @@ void handleGetInputs() {
       // Object type for display (pH, DO, Temperature, Flow, Pressure, etc.)
       o["t"] = obj->objectType;
       
+      // Control index for devices that have both sensor and control objects
+      // Devices with controls are typically at sensor indices 70-89, control indices 50-69
+      if (i >= 70 && i < 90) {
+        uint8_t controlIdx = i - 20;  // Control index = sensor index - 20
+        o["c"] = controlIdx;  // Add control index for frontend use
+      }
+      
       // Show on dashboard flag from config
       o["d"] = ioConfig.deviceSensors[sensorIndex].showOnDashboard;
       
@@ -699,16 +708,17 @@ void handleGetInputs() {
   }
   
   String response;
-  serializeJson(doc, response);
+  serializeJson(*doc, response);
   
   // Check for overflow
-  if (doc.overflowed()) {
+  if (doc->overflowed()) {
     log(LOG_ERROR, true, "JSON document overflow in /api/inputs! Increase buffer size.\n");
   }
   
   // Debug: Log the JSON response size
   //log(LOG_DEBUG, false, "API /api/inputs response (%d bytes)\n", response.length());
   
+  delete doc;  // Clean up heap allocation
   server.send(200, "application/json", response);
 }
 
@@ -2856,6 +2866,81 @@ void handleGetControllers() {
     }
   }
   
+  // DO Controller (index 48)
+  if (ioConfig.doController.isActive) {
+    uint8_t index = 48;
+    JsonObject ctrl = controllers.createNestedObject();
+    
+    ctrl["index"] = index;
+    ctrl["name"] = ioConfig.doController.name;
+    ctrl["showOnDashboard"] = ioConfig.doController.showOnDashboard;
+    ctrl["unit"] = "mg/L";  // Dissolved oxygen unit
+    ctrl["setpoint"] = ioConfig.doController.setpoint_mg_L;
+    ctrl["controlMethod"] = 4;  // Use 4 for DO controller type
+    
+    // DO configuration info
+    ctrl["activeProfileIndex"] = ioConfig.doController.activeProfileIndex;
+    if (ioConfig.doController.activeProfileIndex < MAX_DO_PROFILES) {
+      ctrl["activeProfileName"] = ioConfig.doProfiles[ioConfig.doController.activeProfileIndex].name;
+    } else {
+      ctrl["activeProfileName"] = "None";
+    }
+    ctrl["stirrerEnabled"] = ioConfig.doController.stirrerEnabled;
+    ctrl["stirrerType"] = ioConfig.doController.stirrerType;
+    ctrl["stirrerIndex"] = ioConfig.doController.stirrerIndex;
+    ctrl["stirrerMaxRPM"] = ioConfig.doController.stirrerMaxRPM;
+    ctrl["mfcEnabled"] = ioConfig.doController.mfcEnabled;
+    ctrl["mfcDeviceIndex"] = ioConfig.doController.mfcDeviceIndex;
+    
+    // Get runtime values from object cache for controller status
+    ObjectCache::CachedObject* obj = objectCache.getObject(index);
+    bool enabled = false;
+    
+    if (obj && obj->valid && obj->lastUpdate > 0) {
+      // Controller object exists - read all values from object cache
+      ctrl["enabled"] = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+      ctrl["fault"] = (obj->flags & IPC_SENSOR_FLAG_FAULT) ? true : false;
+      ctrl["message"] = obj->message;
+      
+      // Always read values from object cache when it exists
+      ctrl["processValue"] = obj->value;  // Process value (DO in mg/L)
+      // additionalValues: [0]=stirrerOutput, [1]=mfcOutput, [2]=error, [3]=setpoint
+      ctrl["stirrerOutput"] = obj->valueCount > 0 ? obj->additionalValues[0] : 0.0f;
+      ctrl["mfcOutput"] = obj->valueCount > 1 ? obj->additionalValues[1] : 0.0f;
+      ctrl["error"] = obj->valueCount > 2 ? obj->additionalValues[2] : 0.0f;
+      float runtimeSetpoint = obj->valueCount > 3 ? obj->additionalValues[3] : ioConfig.doController.setpoint_mg_L;
+      ctrl["setpoint"] = runtimeSetpoint;  // Use runtime setpoint (may have been updated)
+      ctrl["output"] = ctrl["error"];  // Use error as primary output for card display
+      
+      // Stirrer unit based on motor type (0=DC %, 1=Stepper RPM)
+      ctrl["stirrerUnit"] = (ioConfig.doController.stirrerType == 0) ? "%" : "RPM";
+    } else {
+      // Controller doesn't exist yet or no data - scan for DO sensor
+      ctrl["enabled"] = false;
+      ctrl["fault"] = false;
+      ctrl["message"] = "";
+      ctrl["output"] = 0.0f;
+      ctrl["stirrerOutput"] = 0.0f;
+      ctrl["mfcOutput"] = 0.0f;
+      ctrl["stirrerUnit"] = (ioConfig.doController.stirrerType == 0) ? "%" : "RPM";
+      
+      // Try to find DO sensor in object cache to show process value
+      bool foundDOSensor = false;
+      for (uint8_t i = 0; i < 100; i++) {
+        ObjectCache::CachedObject* sensorObj = objectCache.getObject(i);
+        if (sensorObj && sensorObj->valid && sensorObj->objectType == OBJ_T_DISSOLVED_OXYGEN_SENSOR && sensorObj->lastUpdate > 0) {
+          ctrl["processValue"] = sensorObj->value;
+          foundDOSensor = true;
+          break;
+        }
+      }
+      
+      if (!foundDOSensor) {
+        ctrl["processValue"] = 0.0f;
+      }
+    }
+  }
+  
   String response;
   serializeJson(doc, response);
   server.send(200, "application/json", response);
@@ -3774,6 +3859,475 @@ void handleDeleteFlowController(uint8_t index) {
 }
 
 // ============================================================================
+// DO Controller Configuration and Control (Index 48)
+// ============================================================================
+
+void handleGetDOControllerConfig() {
+  // Use smaller buffer - this response is only ~300 bytes
+  StaticJsonDocument<512> doc;
+  
+  doc["index"] = 48;
+  doc["isActive"] = ioConfig.doController.isActive;
+  doc["name"] = ioConfig.doController.name;
+  doc["enabled"] = ioConfig.doController.enabled;
+  doc["showOnDashboard"] = ioConfig.doController.showOnDashboard;
+  doc["setpoint_mg_L"] = ioConfig.doController.setpoint_mg_L;
+  doc["activeProfileIndex"] = ioConfig.doController.activeProfileIndex;
+  doc["stirrerEnabled"] = ioConfig.doController.stirrerEnabled;
+  doc["stirrerType"] = ioConfig.doController.stirrerType;
+  doc["stirrerIndex"] = ioConfig.doController.stirrerIndex;
+  doc["stirrerMaxRPM"] = ioConfig.doController.stirrerMaxRPM;
+  doc["mfcEnabled"] = ioConfig.doController.mfcEnabled;
+  doc["mfcDeviceIndex"] = ioConfig.doController.mfcDeviceIndex;
+  
+  // Include active profile name if valid
+  if (ioConfig.doController.activeProfileIndex < MAX_DO_PROFILES) {
+    doc["activeProfileName"] = ioConfig.doProfiles[ioConfig.doController.activeProfileIndex].name;
+  }
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveDOControllerConfig() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  // Use heap allocation to avoid stack overflow
+  DynamicJsonDocument* doc = new DynamicJsonDocument(4096);
+  if (!doc) {
+    server.send(500, "application/json", "{\"error\":\"Memory allocation failed\"}");
+    return;
+  }
+  
+  DeserializationError error = deserializeJson(*doc, server.arg("plain"));
+  
+  if (error) {
+    delete doc;
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  // Validate profile index if provided
+  if (doc->containsKey("activeProfileIndex")) {
+    uint8_t profIdx = (*doc)["activeProfileIndex"];
+    if (profIdx >= MAX_DO_PROFILES) {
+      delete doc;
+      server.send(400, "application/json", "{\"error\":\"Invalid profile index\"}");
+      return;
+    }
+  }
+  
+  // Update configuration
+  ioConfig.doController.isActive = (*doc)["isActive"] | true;
+  strlcpy(ioConfig.doController.name, (*doc)["name"] | "DO Controller", sizeof(ioConfig.doController.name));
+  // DO NOT save enabled state - runtime only
+  ioConfig.doController.enabled = false;
+  
+  if (doc->containsKey("showOnDashboard")) {
+    ioConfig.doController.showOnDashboard = (*doc)["showOnDashboard"];
+  }
+  
+  ioConfig.doController.setpoint_mg_L = (*doc)["setpoint_mg_L"] | 8.0f;
+  
+  // Only update profile index if provided (preserve existing if not)
+  if (doc->containsKey("activeProfileIndex")) {
+    ioConfig.doController.activeProfileIndex = (*doc)["activeProfileIndex"];
+  }
+  
+  // Only update stirrer configuration if provided (preserve existing if not)
+  if (doc->containsKey("stirrerEnabled")) {
+    ioConfig.doController.stirrerEnabled = (*doc)["stirrerEnabled"];
+    if (ioConfig.doController.stirrerEnabled) {
+      ioConfig.doController.stirrerType = (*doc)["stirrerType"] | 0;
+      ioConfig.doController.stirrerIndex = (*doc)["stirrerIndex"] | 27;
+      ioConfig.doController.stirrerMaxRPM = (*doc)["stirrerMaxRPM"] | 300.0f;
+    } else {
+      ioConfig.doController.stirrerType = 0;
+      ioConfig.doController.stirrerIndex = 0;
+      ioConfig.doController.stirrerMaxRPM = 0.0f;
+    }
+  }
+  
+  // Only update MFC configuration if provided (preserve existing if not)
+  if (doc->containsKey("mfcEnabled")) {
+    ioConfig.doController.mfcEnabled = (*doc)["mfcEnabled"];
+    if (ioConfig.doController.mfcEnabled) {
+      ioConfig.doController.mfcDeviceIndex = (*doc)["mfcDeviceIndex"] | 50;
+    } else {
+      ioConfig.doController.mfcDeviceIndex = 0;
+    }
+  }
+  
+  delete doc;  // Clean up heap allocation
+  
+  // Validate configuration before saving
+  if (ioConfig.doController.mfcEnabled) {
+    if (ioConfig.doController.mfcDeviceIndex < 50 || ioConfig.doController.mfcDeviceIndex >= 70) {
+      log(LOG_ERROR, true, "Invalid MFC device index: %d (must be 50-69)\n", ioConfig.doController.mfcDeviceIndex);
+      server.send(400, "application/json", "{\"error\":\"MFC device index must be between 50-69\"}");
+      return;
+    }
+  }
+  
+  if (ioConfig.doController.stirrerEnabled) {
+    if (ioConfig.doController.stirrerIndex < 26 || ioConfig.doController.stirrerIndex >= 31) {
+      log(LOG_ERROR, true, "Invalid stirrer index: %d\n", ioConfig.doController.stirrerIndex);
+      server.send(400, "application/json", "{\"error\":\"Invalid stirrer motor index\"}");
+      return;
+    }
+  }
+  
+  // Save configuration
+  saveIOConfig();
+  // Send IPC config packet to IO MCU
+  IPC_ConfigDOController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  
+  cfg.index = 48;
+  cfg.isActive = ioConfig.doController.isActive;
+  strncpy(cfg.name, ioConfig.doController.name, sizeof(cfg.name) - 1);
+  cfg.enabled = false;  // Don't send enabled state in config - preserve runtime state on IO MCU
+  cfg.showOnDashboard = ioConfig.doController.showOnDashboard;
+  cfg.setpoint_mg_L = ioConfig.doController.setpoint_mg_L;
+  
+  // Get active profile and copy points
+  uint8_t profileIdx = ioConfig.doController.activeProfileIndex;
+  if (profileIdx < MAX_DO_PROFILES && ioConfig.doProfiles[profileIdx].isActive) {
+    // Safety: limit to MAX_DO_PROFILE_POINTS to prevent overflow
+    int numPoints = ioConfig.doProfiles[profileIdx].numPoints;
+    cfg.numPoints = (numPoints < MAX_DO_PROFILE_POINTS) ? numPoints : MAX_DO_PROFILE_POINTS;
+    
+    // Copy profile points to flattened arrays
+    for (int j = 0; j < cfg.numPoints; j++) {
+      cfg.profileErrorValues[j] = ioConfig.doProfiles[profileIdx].points[j].error_mg_L;
+      cfg.profileStirrerValues[j] = ioConfig.doProfiles[profileIdx].points[j].stirrerOutput;
+      cfg.profileMFCValues[j] = ioConfig.doProfiles[profileIdx].points[j].mfcOutput_mL_min;
+    }
+  } else {
+    cfg.numPoints = 0;
+  }
+  
+  cfg.stirrerEnabled = ioConfig.doController.stirrerEnabled;
+  cfg.stirrerType = ioConfig.doController.stirrerType;
+  cfg.stirrerIndex = ioConfig.doController.stirrerIndex;
+  cfg.stirrerMaxRPM = ioConfig.doController.stirrerMaxRPM;
+  cfg.mfcEnabled = ioConfig.doController.mfcEnabled;
+  cfg.mfcDeviceIndex = ioConfig.doController.mfcDeviceIndex;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_DO_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "Saved and sent DO controller configuration to IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved and applied\"}");
+  } else {
+    log(LOG_WARNING, false, "Saved DO controller config but failed to send to IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved but IO MCU update failed\"}");
+  }
+}
+
+void handleSetDOSetpoint() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  float setpoint = doc["setpoint"] | 8.0f;
+  
+  // Send runtime control command to IO MCU
+  IPC_DOControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 48;
+  cmd.objectType = OBJ_T_DISSOLVED_OXYGEN_CONTROL;
+  cmd.command = DO_CMD_SET_SETPOINT;
+  cmd.setpoint_mg_L = setpoint;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "DO setpoint changed to %.2f mg/L\n", setpoint);
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
+  }
+}
+
+void handleEnableDOController() {
+  IPC_DOControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 48;
+  cmd.objectType = OBJ_T_DISSOLVED_OXYGEN_CONTROL;
+  cmd.command = DO_CMD_ENABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "DO controller enabled\n");
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
+  }
+}
+
+void handleDisableDOController() {
+  IPC_DOControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.index = 48;
+  cmd.objectType = OBJ_T_DISSOLVED_OXYGEN_CONTROL;
+  cmd.command = DO_CMD_DISABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    log(LOG_INFO, false, "DO controller disabled\n");
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
+  }
+}
+
+void handleDeleteDOController() {
+  // Disable and mark inactive
+  ioConfig.doController.isActive = false;
+  ioConfig.doController.enabled = false;
+  memset(ioConfig.doController.name, 0, sizeof(ioConfig.doController.name));
+  
+  saveIOConfig();
+  
+  // Send IPC delete command to IO MCU
+  IPC_ConfigDOController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.index = 48;
+  cfg.isActive = false;  // This signals deletion
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_DO_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    log(LOG_INFO, false, "DO controller deleted and removed from IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"DO controller deleted\"}");
+  } else {
+    log(LOG_WARNING, false, "DO controller deleted from config but failed to remove from IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"DO controller deleted but IO MCU update failed\"}");
+  }
+}
+
+// ============================================================================
+// DO Profile Management (Indices 0-2)
+// ============================================================================
+
+void handleGetAllDOProfiles() {
+  // SAFETY: Check config magic number
+  if (ioConfig.magicNumber != IO_CONFIG_MAGIC_NUMBER) {
+    server.send(200, "application/json", "{\"profiles\":[]}");
+    return;
+  }
+  
+  // Use heap allocation to avoid stack overflow - 4KB is too large for stack
+  DynamicJsonDocument* doc = new DynamicJsonDocument(4096);
+  if (!doc) {
+    server.send(500, "application/json", "{\"error\":\"Memory allocation failed\"}");
+    return;
+  }
+  
+  JsonArray profiles = doc->createNestedArray("profiles");
+  
+  // Iterate profiles - use intermediate variables to avoid optimization issues
+  for (int i = 0; i < MAX_DO_PROFILES; i++) {
+    JsonObject profile = profiles.createNestedObject();
+    profile["index"] = i;
+    
+    // Read fields into intermediate variables (prevents crash from optimization bug)
+    bool isActive = ioConfig.doProfiles[i].isActive;
+    profile["isActive"] = isActive;
+    
+    // Direct string assignment works when fields are read separately
+    profile["name"] = ioConfig.doProfiles[i].name;
+    
+    uint8_t numPoints = ioConfig.doProfiles[i].numPoints;
+    if (numPoints > MAX_DO_PROFILE_POINTS) {
+      numPoints = MAX_DO_PROFILE_POINTS;
+    }
+    profile["numPoints"] = numPoints;
+    
+    // Efficient array format
+    JsonArray errors = profile.createNestedArray("errors");
+    JsonArray stirrers = profile.createNestedArray("stirrers");
+    JsonArray mfcs = profile.createNestedArray("mfcs");
+    
+    for (int j = 0; j < numPoints; j++) {
+      errors.add(ioConfig.doProfiles[i].points[j].error_mg_L);
+      stirrers.add(ioConfig.doProfiles[i].points[j].stirrerOutput);
+      mfcs.add(ioConfig.doProfiles[i].points[j].mfcOutput_mL_min);
+    }
+  }
+  
+  // Check for overflow
+  if (doc->overflowed()) {
+    delete doc;
+    server.send(500, "application/json", "{\"error\":\"JSON buffer overflow\"}");
+    return;
+  }
+  
+  String response;
+  serializeJson(*doc, response);
+  delete doc;
+  
+  server.send(200, "application/json", response);
+}
+
+void handleGetDOProfile(uint8_t index) {
+  if (index >= MAX_DO_PROFILES) {
+    server.send(400, "application/json", "{\"error\":\"Invalid profile index\"}");
+    return;
+  }
+  
+  // 1KB buffer sufficient with efficient array format
+  StaticJsonDocument<1024> doc;
+  doc["index"] = index;
+  doc["isActive"] = ioConfig.doProfiles[index].isActive;
+  doc["name"] = ioConfig.doProfiles[index].name;
+  doc["numPoints"] = ioConfig.doProfiles[index].numPoints;
+  
+  // Efficient array format
+  int maxPoints = (ioConfig.doProfiles[index].numPoints < MAX_DO_PROFILE_POINTS) 
+                   ? ioConfig.doProfiles[index].numPoints : MAX_DO_PROFILE_POINTS;
+  
+  JsonArray errors = doc.createNestedArray("errors");
+  JsonArray stirrers = doc.createNestedArray("stirrers");
+  JsonArray mfcs = doc.createNestedArray("mfcs");
+  
+  for (int j = 0; j < maxPoints; j++) {
+    errors.add(ioConfig.doProfiles[index].points[j].error_mg_L);
+    stirrers.add(ioConfig.doProfiles[index].points[j].stirrerOutput);
+    mfcs.add(ioConfig.doProfiles[index].points[j].mfcOutput_mL_min);
+  }
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveDOProfile(uint8_t index) {
+  if (index >= MAX_DO_PROFILES) {
+    server.send(400, "application/json", "{\"error\":\"Invalid profile index\"}");
+    return;
+  }
+  
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  // 1KB buffer sufficient with efficient array format
+  StaticJsonDocument<1024> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    log(LOG_ERROR, true, "DO profile JSON parse error: %s\n", error.c_str());
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  // Validate number of points
+  uint8_t numPoints = doc["numPoints"] | 0;
+  if (numPoints > MAX_DO_PROFILE_POINTS) {
+    server.send(400, "application/json", "{\"error\":\"Too many profile points (max 20)\"}");
+    return;
+  }
+  
+  // Update profile
+  ioConfig.doProfiles[index].isActive = doc["isActive"] | true;
+  strlcpy(ioConfig.doProfiles[index].name, doc["name"] | "", sizeof(ioConfig.doProfiles[index].name));
+  ioConfig.doProfiles[index].numPoints = numPoints;
+  
+  // Parse profile points from efficient array format
+  JsonArray errors = doc["errors"];
+  JsonArray stirrers = doc["stirrers"];
+  JsonArray mfcs = doc["mfcs"];
+  
+  if (errors && stirrers && mfcs) {
+    for (int j = 0; j < numPoints && j < MAX_DO_PROFILE_POINTS; j++) {
+      ioConfig.doProfiles[index].points[j].error_mg_L = errors[j] | 0.0f;
+      ioConfig.doProfiles[index].points[j].stirrerOutput = stirrers[j] | 0.0f;
+      ioConfig.doProfiles[index].points[j].mfcOutput_mL_min = mfcs[j] | 0.0f;
+    }
+  }
+  
+  // Save to flash
+  saveIOConfig();
+  
+  // If this profile is currently active in the DO controller, update the controller
+  if (ioConfig.doController.isActive && ioConfig.doController.activeProfileIndex == index) {
+    // Send updated config to IO MCU
+    IPC_ConfigDOController_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    
+    cfg.index = 48;
+    cfg.isActive = true;
+    strncpy(cfg.name, ioConfig.doController.name, sizeof(cfg.name) - 1);
+    cfg.enabled = ioConfig.doController.enabled;
+    cfg.setpoint_mg_L = ioConfig.doController.setpoint_mg_L;
+    
+    // Copy updated profile points
+    // Safety: limit to MAX_DO_PROFILE_POINTS to prevent overflow
+    int numPoints = ioConfig.doProfiles[index].numPoints;
+    cfg.numPoints = (numPoints < MAX_DO_PROFILE_POINTS) ? numPoints : MAX_DO_PROFILE_POINTS;
+    for (int j = 0; j < cfg.numPoints; j++) {
+      cfg.profileErrorValues[j] = ioConfig.doProfiles[index].points[j].error_mg_L;
+      cfg.profileStirrerValues[j] = ioConfig.doProfiles[index].points[j].stirrerOutput;
+      cfg.profileMFCValues[j] = ioConfig.doProfiles[index].points[j].mfcOutput_mL_min;
+    }
+    
+    cfg.stirrerEnabled = ioConfig.doController.stirrerEnabled;
+    cfg.stirrerType = ioConfig.doController.stirrerType;
+    cfg.stirrerIndex = ioConfig.doController.stirrerIndex;
+    cfg.stirrerMaxRPM = ioConfig.doController.stirrerMaxRPM;
+    cfg.mfcEnabled = ioConfig.doController.mfcEnabled;
+    cfg.mfcDeviceIndex = ioConfig.doController.mfcDeviceIndex;
+    
+    ipc.sendPacket(IPC_MSG_CONFIG_DO_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+    log(LOG_INFO, false, "DO profile %d updated and applied to controller\n", index);
+  }
+  
+  server.send(200, "application/json", "{\"success\":true,\"message\":\"Profile saved\"}");
+}
+
+void handleDeleteDOProfile(uint8_t index) {
+  if (index >= MAX_DO_PROFILES) {
+    server.send(400, "application/json", "{\"error\":\"Invalid profile index\"}");
+    return;
+  }
+  
+  // Check if this profile is currently active
+  if (ioConfig.doController.isActive && ioConfig.doController.activeProfileIndex == index) {
+    server.send(400, "application/json", "{\"error\":\"Cannot delete active profile. Switch to another profile first.\"}");
+    return;
+  }
+  
+  // Mark inactive and clear data
+  ioConfig.doProfiles[index].isActive = false;
+  memset(ioConfig.doProfiles[index].name, 0, sizeof(ioConfig.doProfiles[index].name));
+  ioConfig.doProfiles[index].numPoints = 0;
+  memset(ioConfig.doProfiles[index].points, 0, sizeof(ioConfig.doProfiles[index].points));
+  
+  saveIOConfig();
+  
+  log(LOG_INFO, false, "DO profile %d deleted\n", index);
+  server.send(200, "application/json", "{\"success\":true,\"message\":\"Profile deleted\"}");
+}
+
+// ============================================================================
 // Device Control (Peripheral Devices like MFC, pH controllers)
 // ============================================================================
 
@@ -4149,6 +4703,28 @@ void setupWebServer()
   server.on("/api/flowcontroller/47/dose", HTTP_POST, []() { handleManualFlowDose(47); });
   server.on("/api/flowcontroller/47/reset-volume", HTTP_POST, []() { handleResetFlowVolume(47); });
   
+  // DO controller config endpoints (index 48)
+  server.on("/api/config/docontroller/48", HTTP_GET, handleGetDOControllerConfig);
+  server.on("/api/config/docontroller/48", HTTP_POST, handleSaveDOControllerConfig);
+  server.on("/api/config/docontroller/48", HTTP_DELETE, handleDeleteDOController);
+  
+  // DO controller control endpoints (runtime actions)
+  server.on("/api/docontroller/48/setpoint", HTTP_POST, handleSetDOSetpoint);
+  server.on("/api/docontroller/48/enable", HTTP_POST, handleEnableDOController);
+  server.on("/api/docontroller/48/disable", HTTP_POST, handleDisableDOController);
+  
+  // DO profile endpoints (indices 0-2)
+  server.on("/api/doprofiles", HTTP_GET, handleGetAllDOProfiles);
+  server.on("/api/doprofile/0", HTTP_GET, []() { handleGetDOProfile(0); });
+  server.on("/api/doprofile/0", HTTP_POST, []() { handleSaveDOProfile(0); });
+  server.on("/api/doprofile/0", HTTP_DELETE, []() { handleDeleteDOProfile(0); });
+  server.on("/api/doprofile/1", HTTP_GET, []() { handleGetDOProfile(1); });
+  server.on("/api/doprofile/1", HTTP_POST, []() { handleSaveDOProfile(1); });
+  server.on("/api/doprofile/1", HTTP_DELETE, []() { handleDeleteDOProfile(1); });
+  server.on("/api/doprofile/2", HTTP_GET, []() { handleGetDOProfile(2); });
+  server.on("/api/doprofile/2", HTTP_POST, []() { handleSaveDOProfile(2); });
+  server.on("/api/doprofile/2", HTTP_DELETE, []() { handleDeleteDOProfile(2); });
+  
   // Note: RESTful controller endpoints are handled dynamically in onNotFound():
   //   - GET    /api/controller/{40-43}     - Get controller config (REST)
   //   - PUT    /api/controller/{40-43}     - Save controller config (REST)
@@ -4291,6 +4867,21 @@ void setupWebServer()
             return;
           } else if (method == HTTP_DELETE) {
             handleDeleteFlowController(index);
+            return;
+          } else {
+            server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
+            return;
+          }
+        } else if (index == 48) {
+          // DO Controller (index 48)
+          if (method == HTTP_GET) {
+            handleGetDOControllerConfig();
+            return;
+          } else if (method == HTTP_PUT) {
+            handleSaveDOControllerConfig();
+            return;
+          } else if (method == HTTP_DELETE) {
+            handleDeleteDOController();
             return;
           } else {
             server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
