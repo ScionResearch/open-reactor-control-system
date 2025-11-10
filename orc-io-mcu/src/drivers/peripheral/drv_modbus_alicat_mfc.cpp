@@ -64,7 +64,11 @@ void AlicatMFC::update() {
 }
 
 // Write setpoint method
-bool AlicatMFC::writeSetpoint(float setpoint) {
+bool AlicatMFC::writeSetpoint(float setpoint, bool mLmin) {
+    // If setpoint is in mL/min instead of current units, and setpoint unit is not mL/min, convert it
+    if (mLmin && _setpointUnitCode != 4) {
+        setpoint *= _flowConversionFactor;
+    }
     _pendingSetpoint = setpoint;
     _writeAttempts = 0;  // Reset attempts
     
@@ -146,10 +150,11 @@ void AlicatMFC::handleMfcResponse(bool valid, uint16_t *data) {
     strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
     _controlObj.slaveID = _slaveID;
     _controlObj.deviceType = IPC_DEV_ALICAT_MFC;
+
     
     // If we just wrote a setpoint, validate it
     if (_newSetpoint) {
-        if (fabs(_setpoint - _pendingSetpoint) > 0.01) {
+        if (fabs(_setpoint - _pendingSetpoint) > _adjustedAbsDevFlow) {
             _fault = true;
             snprintf(_message, sizeof(_message), 
                      "Setpoint write validation failed for MFC (ID %d): expected %0.4f, got %0.4f", 
@@ -215,6 +220,10 @@ void AlicatMFC::handleUnitsResponse(bool valid, uint16_t *data) {
         const char* unitStr = getAlicatFlowUnit(_setpointUnitCode);
         strncpy(_setpointUnit, unitStr, sizeof(_setpointUnit) - 1);
         _setpointUnit[sizeof(_setpointUnit) - 1] = '\0';  // Ensure null termination
+
+        // Update flow conversion factor for setpoint translation
+        _flowConversionFactor = getAlicatFlowConversionFactor(_setpointUnitCode);
+        _adjustedAbsDevFlow = _flowConversionFactor * 3.2;  // 3.2mL/min allowable deviation from setpoint due to device characterstics
     }
     
     // Extract pressure unit code (uint16_t from buffer[1])

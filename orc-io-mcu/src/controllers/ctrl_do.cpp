@@ -200,11 +200,14 @@ void DOController::_applyMFCOutput(float output_mL_min) {
                 if (managedDev && managedDev->deviceInstance) {
                     AlicatMFC* mfc = (AlicatMFC*)managedDev->deviceInstance;
                     
-                    // Update control object setpoint
-                    dev->setpoint = output_mL_min;
+                    // Convert from mL/min to device units if necessary
+                    float setpointInDeviceUnits = mfc->convertFromMLmin(output_mL_min);
                     
-                    // Write setpoint to hardware
-                    mfc->writeSetpoint(output_mL_min);
+                    // Update control object setpoint (in device units for correct display)
+                    dev->setpoint = setpointInDeviceUnits;
+                    
+                    // Write setpoint to hardware, in mL/min (forces conversion if necessary)
+                    mfc->writeSetpoint(output_mL_min, true);
                 }
             }
         }

@@ -41,6 +41,18 @@ static const char* alicatFlowUnits[64] = {
     "", "", "", "", "", "", "Count", "%"
 };
 
+// Alicat flow units conversion factors - mL/min standard
+static const float alicatFlowUnitsConversion[64] = {
+    0, 0, 1000, 0.016666666, 1, 60, 0.000016666666, 0.001,
+    0.06, 0.016666666, 0, 0, 1, 60, 0.000001, 0.00006,
+    0.00144, 0.061023744, 0.00003531466672, 0.002118880003, 0.0000000351466672, 0.05085312, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    1000, 0.0166666666, 1, 60, 0.000016666666, 0.001, 0.06, 0,
+    0, 0.0166666666, 1, 60, 0.000001, 0.00006, 0.00144, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0
+};
+
 static const char* alicatPressureUnits[64] = {
     "", "---", "Pa", "hPa", "kPa", "MPa", "mbar", "bar",
     "g/cm²", "kg/cm²", "PSI", "PSF", "mTorr", "torr", "mmHg", "inHg",
@@ -82,6 +94,13 @@ inline const char* getAlicatPressureUnit(uint16_t unitCode) {
     return "?";  // Default if code is out of range
 }
 
+inline const float getAlicatFlowConversionFactor(uint16_t unitCode) {
+    if (unitCode < 64) {
+        return alicatFlowUnitsConversion[unitCode];
+    }
+    return 0;  // Default if code is out of range
+}
+
 class AlicatMFC {
 public:
     /**
@@ -104,9 +123,10 @@ public:
      * @brief Write a new setpoint to the MFC
      * 
      * @param setpointDesired flow setpoint (units depend on MFC configuration)
+     * @param mLmin If true, setpoint is in mL/min instead of current units (default false)
      * @return true if request was queued successfully
      */
-    bool writeSetpoint(float setpoint);
+    bool writeSetpoint(float setpoint, bool mLmin = false);
     
     /**
      * @brief Get the flow sensor object
@@ -125,6 +145,18 @@ public:
      * @return Current setpoint value
      */
     float getSetpoint() const { return _setpoint; }
+    
+    /**
+     * @brief Convert from mL/min to device's current units
+     * @param value_mLmin Value in mL/min
+     * @return Converted value in device's current units
+     */
+    float convertFromMLmin(float value_mLmin) const {
+        if (_setpointUnitCode == 4) {
+            return value_mLmin;  // Already in mL/min
+        }
+        return value_mLmin * _flowConversionFactor;
+    }
     
     /**
      * @brief Get the setpoint unit string
@@ -205,6 +237,8 @@ private:
     uint16_t _flowUnitCode;                  ///< Flow unit code (for change detection)
     uint16_t _pressureUnitCode;              ///< Pressure unit code (for change detection)
     uint16_t _unitBuffer[3];                 ///< Buffer for unit read requests (3 units x 1 reg each)
+    float _flowConversionFactor;             ///< Conversion factor for flow units
+    float _adjustedAbsDevFlow = 0.3;         ///< Adjusted acceptable absolute deviation of flow from setpoint (current unit)
     
     // Static callback context pointer (updated before each request)
     static AlicatMFC* _currentInstance;
