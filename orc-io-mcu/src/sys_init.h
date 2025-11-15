@@ -4,7 +4,6 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
-#include <FlashStorage_SAMD.hpp>
 
 // Task scheduler
 #include "tasks/taskManager.h"
@@ -37,6 +36,7 @@
 #include "controllers/ctrl_temperature.h"
 #include "controllers/ctrl_ph.h"
 #include "controllers/ctrl_flow.h"
+#include "controllers/ctrl_do.h"
 #include "controllers/controller_manager.h"
 
 // Utility

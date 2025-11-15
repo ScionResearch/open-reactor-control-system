@@ -36,21 +36,26 @@ class TMC5130 {
         // Initialisation
         bool begin(void);
 
-        // Simplified configuration
+        // Configuration
         bool setStepsPerRev(uint32_t steps);        // Default 200, call before any other config if changing
         bool setMaxRPM(float rpm);                  // Used to limit stepper speed and sets threshold for CoolStep and StealthChop at 1/3rd of max RPM
+        bool setMaxRPM(float maxRPM, float stealthChopMaxRPM, float coolStepMinRPM, float fullStepMinRPM); // Manually set thresholds for CoolStep and StealthChop
         bool setIrun(uint16_t rms_mA);              // Set run current limit in mA, max 1800mA rms
         bool setIhold(uint16_t rms_mA);             // Set hold current limit in mA, max 1000mA rms
         bool setRPM(float rpm);                     // Target RPM value
         bool setAcceleration(float rpm_per_s);     // Accelleration/decelleration value in RPM/s
-        bool setStealthChop(bool enable);           // Enable StealthChop mode (NOTE: Disables load feedback!)
+        bool setStealthChop(bool enable);           // Enable StealthChop mode
+        bool setCoolStep(bool enable);              // Enable CoolStep mode
+        bool setFullStep(bool enable);              // Enable FullStep mode
         bool setDirection(bool forward);            // Set direction
         bool invertDirection(bool invert);          // Invert direction
+
+        // Status
+        bool updateStatus(void);
 
         // Motion control
         bool run(void);
         bool stop(void);
-
 
         // Read write functions
         uint8_t readRegister(uint8_t reg, uint32_t *data);
@@ -65,6 +70,8 @@ class TMC5130 {
             float rpm = 0.0;
             float accelleration = 10.0;
             bool stealth_chop = false;
+            bool cool_step = false;
+            bool full_step = false;
             bool stall_guard2 = false;
             bool dc_step = false;
             bool spread_cycle = false;
@@ -72,12 +79,15 @@ class TMC5130 {
 
         struct status_t {
             float rpm;
-            float load;
+            uint32_t tstep;
             bool running;
             bool stall;
             bool overTemp;
-            bool openCircuit;
-            bool shortCircuit;
+            bool openCircuitA;
+            bool openCircuitB;
+            bool shortCircuitA;
+            bool shortCircuitB;
+            bool fullStep;
         } status;
 
         // Register map and defaults - RTFM
@@ -129,7 +139,7 @@ class TMC5130 {
             uint32_t MSCNT = 0;                     // R
             uint32_t MSCURACT = 0;                  // R
             uint32_t CHOPCONF = 0x0002A1B0;         // RW   POR: 0x0
-            uint32_t COOLCONF = 0x00008044;         // W    POR: 0x0 - CoolStep disabled, 0x00008044 - CoolStep enabled
+            uint32_t COOLCONF = 0;                  // W    POR: 0x0 - CoolStep disabled, 0x00008044 - CoolStep enabled
             uint32_t DCCTRL = 0;                    // W
             uint32_t DRV_STATUS = 0;                // R
             uint32_t PWMCONF = 0x00050480;          // W    POR: 0x00050480
@@ -145,4 +155,5 @@ class TMC5130 {
 
         uint8_t ImAtoIRUN_IHOLD(uint16_t mAval, bool vsense);
         uint32_t RPMtoTSTEP(float rpm);
+        float TSTEPtoRPM(uint32_t tstep);
 };

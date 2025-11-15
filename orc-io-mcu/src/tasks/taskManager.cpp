@@ -11,6 +11,7 @@ ScheduledTask *ipc_task;
 ScheduledTask *phProbe_task;
 ScheduledTask *mfc_task;
 ScheduledTask *pwrSensor_task;
+ScheduledTask *stepper_task;
 ScheduledTask *motor_task;
 ScheduledTask *printStuff_task;
 ScheduledTask *RTDsensor_task;

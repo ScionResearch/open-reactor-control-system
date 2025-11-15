@@ -1,7 +1,5 @@
 #include "ctrl_do.h"
 #include "sys_init.h"
-#include "../drivers/device_manager.h"
-#include "../drivers/peripheral/drv_modbus_alicat_mfc.h"
 
 DOController::DOController(DissolvedOxygenControl_t* control)
     : _control(control),
@@ -178,7 +176,7 @@ void DOController::_applyStirrerOutput(float output) {
                 stepper->enabled = enabledState;
                 
                 if (needsUpdate) {
-                    stepper_update(true);  // Apply changes
+                    stepper_update_cfg(true);  // Apply changes
                 }
             }
         }

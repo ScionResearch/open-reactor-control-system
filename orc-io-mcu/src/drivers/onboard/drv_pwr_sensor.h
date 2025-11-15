@@ -13,4 +13,4 @@ extern EnergySensor_t pwr_energy[2];
 extern PowerSensorDriver_t pwr_interface[2];
 
 bool pwrSensor_init(void);
-bool pwrSensor_update(void);
+void pwrSensor_update(void);

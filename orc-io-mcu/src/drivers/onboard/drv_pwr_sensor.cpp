@@ -46,12 +46,11 @@ bool pwrSensor_init(void) {
     return true;
 }
 
-bool pwrSensor_update(void) {
+void pwrSensor_update(void) {
     for (int i = 0; i < 2; i++) {
         // Read all three values atomically into single object
         pwr_energy[i].voltage = pwr_interface[i].sensor->volts();
         pwr_energy[i].current = pwr_interface[i].sensor->amps();
         pwr_energy[i].power = pwr_interface[i].sensor->watts();
     }
-    return true;
 }

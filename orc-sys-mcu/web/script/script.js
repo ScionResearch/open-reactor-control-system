@@ -4017,8 +4017,8 @@ async function saveStepperConfig() {
         return;
     }
     
-    if (configData.maxRPM < 1 || configData.maxRPM > 900) {
-        showToast('error', 'Validation Error', 'Max RPM must be 1-900');
+    if (configData.maxRPM < 1 || configData.maxRPM > 3000) {
+        showToast('error', 'Validation Error', 'Max RPM must be 1-3000');
         return;
     }
     

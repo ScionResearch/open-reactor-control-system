@@ -17,4 +17,5 @@ extern StepperDriver_t stepperDriver;
 extern StepperDevice_t stepperDevice;
 
 bool stepper_init(void);
-bool stepper_update(bool setParams);
+void stepper_update(void);
+bool stepper_update_cfg(bool setParams);

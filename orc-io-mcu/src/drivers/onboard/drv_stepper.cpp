@@ -42,7 +42,24 @@ bool stepper_init(void) {
     return true;
 }
 
-bool stepper_update(bool setParams) {
+void stepper_update(void) {
+    stepper_update_cfg(false);
+}
+
+bool stepper_update_cfg(bool setParams) {
+    if (!stepperDriver.stepper->updateStatus()) {
+        stepperDriver.fault = true;
+        stepperDriver.newMessage = true;
+        strcpy(stepperDriver.message, "Stepper update failed");
+        
+        // Propagate fault to device object
+        stepperDevice.fault = true;
+        stepperDevice.newMessage = true;
+        strcpy(stepperDevice.message, stepperDriver.message);
+        return false;
+    } else if (stepperDriver.stepper->status.running) {
+        Serial.printf("TSTEP: %d, fullStep: %s\n", stepperDriver.stepper->status.tstep, stepperDriver.stepper->status.fullStep ? "enabled" : "disabled");
+    }
     if (setParams) {
         // Update stepper parameters
         if (!stepperDriver.stepper->setMaxRPM(stepperDevice.maxRPM)) {
@@ -138,7 +155,6 @@ bool stepper_update(bool setParams) {
                 strcpy(stepperDevice.message, stepperDriver.message);
                 return false;
             }
-            Serial.printf("[STEPPER] Stopped motor\n");
         } else if (stepperDevice.enabled && !stepperDriver.stepper->status.running) {
             // Need to start
             if (!stepperDriver.stepper->setRPM(stepperDevice.rpm)) {
@@ -163,8 +179,6 @@ bool stepper_update(bool setParams) {
                 strcpy(stepperDevice.message, stepperDriver.message);
                 return false;
             }
-            Serial.printf("[STEPPER] Started motor at %.1f RPM, dir=%d\n", 
-                         stepperDevice.rpm, stepperDevice.direction);
         } else if (stepperDevice.enabled && stepperDriver.stepper->status.running) {
             // Motor is running - update RPM if changed
             if (!stepperDriver.stepper->setRPM(stepperDevice.rpm)) {
@@ -178,7 +192,6 @@ bool stepper_update(bool setParams) {
                 strcpy(stepperDevice.message, stepperDriver.message);
                 return false;
             }
-            Serial.printf("[STEPPER] Updated RPM to %.1f while running\n", stepperDevice.rpm);
         }
     }
     // Update status

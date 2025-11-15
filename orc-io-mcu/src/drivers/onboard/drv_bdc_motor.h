@@ -17,7 +17,7 @@ extern MotorDriver_t motorDriver[4];
 extern MotorDevice_t motorDevice[4];
 
 bool motor_init(void);
-bool motor_update(void);
+void motor_update(void);
 bool motor_stop(uint8_t motor);
 bool motor_run(uint8_t motor);
 bool motor_run(uint8_t motor, uint8_t speed, bool reverse);

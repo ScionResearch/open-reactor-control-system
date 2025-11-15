@@ -74,31 +74,53 @@ bool TMC5130::setMaxRPM(float rpm) {
     float v_val = TMC5130_V_STEP * config.steps_per_rev * (rpm/60);
     Serial.printf("Max RPM %f V value: %f\n", rpm, v_val);
 
-    // check for V value greater than 2^20 (max)
-    if (v_val > 0x000FFFFF) {
-        Serial.printf("Max RPM %f V value: %f (greater than 2^20)\n", rpm, v_val); 
+    // check for V value greater than 2^23 (max)
+    if (v_val > 0x007FFFFF) {
+        Serial.printf("Max RPM %f V value: %f (greater than 2^23)\n", rpm, v_val); 
         return false;
     }
     config.max_rpm = rpm;
     
     // Set THIGH to 3x TSTEP max value (Coolstep will operate above this value, ie at 1/3rd max RPM and below)
-    uint32_t thigh = RPMtoTSTEP(rpm) * 3;
-    // Set TPWMTHRS to 2x TSTEP
-    uint32_t tpwmthrs = RPMtoTSTEP(rpm) * 2;
-    if (!writeRegister(TMC5130_REG_TPWMTHRS, tpwmthrs)) {
+    uint32_t tstep_max = RPMtoTSTEP(rpm);
+    reg.THIGH = RPMtoTSTEP(rpm) * 1.2;
+    reg.TCOOLTHRS = RPMtoTSTEP(rpm) * 2;
+    reg.TPWMTHRS = RPMtoTSTEP(rpm) * 3;
+    if (!writeRegister(TMC5130_REG_TPWMTHRS, reg.TPWMTHRS)) {
         Serial.println("Failed to write TPWMTHRS");
         return false;
     }
-    if (!writeRegister(TMC5130_REG_TCOOLTHRS, thigh)) {
+    if (!writeRegister(TMC5130_REG_TCOOLTHRS, reg.TCOOLTHRS)) {
         Serial.println("Failed to write TCOOLTHRS");
         return false;
     }
-    if (!writeRegister(TMC5130_REG_THIGH, thigh)) {
+    if (!writeRegister(TMC5130_REG_THIGH, reg.THIGH)) {
         Serial.println("Failed to write THIGH");
         return false;
     }
-    Serial.printf("THIGH: %d\n", thigh);
+    Serial.printf("TSTEP_MAX: %d, TPWMTHRS: %d, TCOOLTHRS: %d, THIGH: %d\n", tstep_max, reg.TPWMTHRS, reg.TCOOLTHRS, reg.THIGH);
 
+    return true;
+}
+
+bool TMC5130::setMaxRPM(float maxRPM, float stealthChopMaxRPM, float coolStepMinRPM, float fullStepMinRPM) {
+    uint32_t tstep_max = RPMtoTSTEP(maxRPM);
+    reg.THIGH = RPMtoTSTEP(fullStepMinRPM);
+    reg.TCOOLTHRS = RPMtoTSTEP(coolStepMinRPM);
+    reg.TPWMTHRS = RPMtoTSTEP(stealthChopMaxRPM);
+    if (!writeRegister(TMC5130_REG_TPWMTHRS, reg.TPWMTHRS)) {
+        Serial.println("Failed to write TPWMTHRS");
+        return false;
+    }
+    if (!writeRegister(TMC5130_REG_TCOOLTHRS, reg.TCOOLTHRS)) {
+        Serial.println("Failed to write TCOOLTHRS");
+        return false;
+    }
+    if (!writeRegister(TMC5130_REG_THIGH, reg.THIGH)) {
+        Serial.println("Failed to write THIGH");
+        return false;
+    }
+    Serial.printf("TSTEP_MAX: %d, TPWMTHRS: %d, TCOOLTHRS: %d, THIGH: %d\n", tstep_max, reg.TPWMTHRS, reg.TCOOLTHRS, reg.THIGH);
     return true;
 }
 
@@ -168,7 +190,44 @@ bool TMC5130::setStealthChop(bool enable) {
     if (status.running) stop();     // PWM mode cannot be enabled while motor is running
     if (enable) reg.GCONF |= TMC5130_GCONF_EN_PWM_MODE_bm;
     else reg.GCONF &= ~(TMC5130_GCONF_EN_PWM_MODE_bm);
-    return writeRegister(TMC5130_REG_GCONF, reg.GCONF);
+    if (writeRegister(TMC5130_REG_GCONF, reg.GCONF)) {
+        // Debug: Print GCONF
+        uint32_t gconf;
+        readRegister(TMC5130_REG_GCONF, &gconf);
+        Serial.printf("StealthChop %s - GCONF: 0x%08X\n", enable ? "Enabled" : "Disabled", gconf);
+        return true;
+    }
+    return false;
+}
+
+bool TMC5130::setCoolStep(bool enable) {
+    config.cool_step = enable;
+    // Disable Coolstep by setting TCOOLTHRS to 0
+    if (!enable) {
+        reg.TCOOLTHRS = 0;
+        if (writeRegister(TMC5130_REG_TCOOLTHRS, reg.TCOOLTHRS)) {
+            // Debug: Print TCOOLTHRS
+            uint32_t tcoolthrs;
+            readRegister(TMC5130_REG_TCOOLTHRS, &tcoolthrs);
+            Serial.printf("Coolstep %s - TCOOLTHRS: 0x%08X\n", enable ? "Enabled" : "Disabled", tcoolthrs);
+            return true;
+        } else return false;
+    }
+    return true;
+}
+
+bool TMC5130::setFullStep(bool enable) {
+    config.full_step = enable;
+    if (enable) reg.CHOPCONF |= 1 << TMC5130_CHOPCONF_VHIGHFS_bp;
+    else reg.CHOPCONF &= ~(1 << TMC5130_CHOPCONF_VHIGHFS_bp);
+    if (writeRegister(TMC5130_REG_CHOPCONF, reg.CHOPCONF)) {
+        // Debug: Print CHOPCONF
+        uint32_t chopconf;
+        readRegister(TMC5130_REG_CHOPCONF, &chopconf);
+        Serial.printf("FullStep %s - CHOPCONF: 0x%08X\n", enable ? "Enabled" : "Disabled", chopconf);
+        return true;
+    }
+    return false;
 }
 
 bool TMC5130::setDirection(bool forward) {
@@ -181,6 +240,21 @@ bool TMC5130::invertDirection(bool invert) {
     if (invert) reg.GCONF |= TMC5130_GCONF_REVERSE_SHAFT_bm;
     else reg.GCONF &= ~(TMC5130_GCONF_REVERSE_SHAFT_bm);
     return writeRegister(TMC5130_REG_GCONF, reg.GCONF);
+}
+
+bool TMC5130::updateStatus(void) {
+    if (!readRegister(TMC5130_REG_DRV_STATUS, &reg.DRV_STATUS)) return false;
+    if (!readRegister(TMC5130_REG_TSTEP, &reg.TSTEP)) return false;
+    status.rpm = TSTEPtoRPM(reg.TSTEP);
+    status.tstep = reg.TSTEP;
+    status.stall = (reg.DRV_STATUS >> TMC5130_DRV_STATUS_STALLGUARD_bp) & 1;
+    status.overTemp = (reg.DRV_STATUS >> TMC5130_DRV_STATUS_OT_bp) & 1;
+    status.openCircuitA = (reg.DRV_STATUS >> TMC5130_DRV_STATUS_OLA_bp) & 1;
+    status.openCircuitB = (reg.DRV_STATUS >> TMC5130_DRV_STATUS_OLB_bp) & 1;
+    status.shortCircuitA = (reg.DRV_STATUS >> TMC5130_DRV_STATUS_S2GA_bp) & 1;
+    status.shortCircuitB = (reg.DRV_STATUS >> TMC5130_DRV_STATUS_S2GB_bp) & 1;
+    status.fullStep = (reg.DRV_STATUS >> TMC5130_DRV_STATUS_FSACTIVE_bp) & 1;
+    return true;
 }
 
 bool TMC5130::run(void) {
@@ -202,7 +276,7 @@ bool TMC5130::stop(void) {
 // Read write functions
 uint8_t TMC5130::readRegister(uint8_t reg, uint32_t *data) {
     if (!_initialised) return 0;
-    uint8_t status = 0;
+    uint8_t result = 0;
     uint8_t buf[4] = {0, 0, 0, 0};
     _spi->beginTransaction(SPISettings(TMC5130_SPI_SPEED, MSBFIRST, SPI_MODE3));
 
@@ -215,12 +289,12 @@ uint8_t TMC5130::readRegister(uint8_t reg, uint32_t *data) {
 
     // Get data
     digitalWrite(_cs_pin, LOW);
-    status = _spi->transfer(reg);
+    result = _spi->transfer(reg);
     for (int i = 0; i < 4; i++) buf[i] = _spi->transfer(0);
     digitalWrite(_cs_pin, HIGH);
     _spi->endTransaction();
     *data = (uint32_t)buf[0] << 24 | (uint32_t)buf[1] << 16 | (uint32_t)buf[2] << 8 | (uint32_t)buf[3];
-    return status;
+    return result;
 }
 
 bool TMC5130::writeRegister(uint8_t reg, uint32_t data) {
@@ -255,4 +329,9 @@ uint8_t TMC5130::ImAtoIRUN_IHOLD(uint16_t mAval, bool vsense) {
 // Returns the number of clock cycles per step for TSTEP threshold values given RPM
 uint32_t TMC5130::RPMtoTSTEP(float rpm) {
     return lround(12400000 / ((rpm/60) * 256 * config.steps_per_rev));
+}
+
+// Returns the RPM given a TSTEP value
+float TMC5130::TSTEPtoRPM(uint32_t tstep) {
+    return (12400000 / (tstep * 256 * config.steps_per_rev)) * 60;
 }

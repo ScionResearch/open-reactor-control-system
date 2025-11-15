@@ -48,8 +48,7 @@ bool motor_init(void) {
     return true;
 }
 
-bool motor_update(void) {
-    bool fault_occured = false;
+void motor_update(void) {
     for (int i = 0; i < 4; i++) {
         motorDriver[i].motor->manage();
 
@@ -75,7 +74,6 @@ bool motor_update(void) {
             strcpy(motorDevice[i].message, motorDriver[i].message);
             
             motorDriver[i].motor->faultActive = false;
-            fault_occured = true;
         } else {
             motorDriver[i].fault = false;
             motorDriver[i].newMessage = false;
@@ -83,7 +81,6 @@ bool motor_update(void) {
             motorDevice[i].newMessage = false;
         }
     }
-    return !fault_occured;
 }
 
 bool motor_stop(uint8_t motor) {

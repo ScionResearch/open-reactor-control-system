@@ -1049,7 +1049,7 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
                 stepper->rpm = cmd->rpm;
                 // If motor is running, apply the new RPM immediately
                 if (stepper->enabled && stepper->running) {
-                    success = stepper_update(true);
+                    success = stepper_update_cfg(true);
                     if (!success) {
                         strcpy(message, "Failed to update RPM");
                         errorCode = CTRL_ERR_DRIVER_FAULT;
@@ -1070,7 +1070,7 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
             // If motor is running, this will update direction dynamically
             // If motor is stopped, direction is just stored for next start
             if (stepper->enabled) {
-                success = stepper_update(true);
+                success = stepper_update_cfg(true);
                 if (!success) {
                     strcpy(message, "Failed to apply direction");
                     errorCode = CTRL_ERR_DRIVER_FAULT;
@@ -1090,7 +1090,7 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
             stepper->rpm = cmd->rpm;
             stepper->direction = cmd->direction;
             stepper->enabled = true;
-            success = stepper_update(true);  // Start motor with new parameters
+            success = stepper_update_cfg(true);  // Start motor with new parameters
             if (!success) {
                 Serial.printf("[STEPPER] Start failed: %s\n", stepperDevice.message);
                 strcpy(message, "Failed to start motor");
@@ -1100,7 +1100,7 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
             
         case STEPPER_CMD_STOP:
             stepper->enabled = false;
-            success = stepper_update(true);  // Stop motor
+            success = stepper_update_cfg(true);  // Stop motor
             if (!success) {
                 Serial.printf("[STEPPER] Stop failed: %s\n", stepperDevice.message);
                 strcpy(message, "Failed to stop motor");
@@ -1113,7 +1113,7 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
             stepper->rpm = cmd->rpm;
             stepper->direction = cmd->direction;
             if (stepper->enabled) {
-                success = stepper_update(true);  // Apply changes
+                success = stepper_update_cfg(true);  // Apply changes
                 if (!success) {
                     strcpy(message, "Failed to update motor");
                     errorCode = CTRL_ERR_DRIVER_FAULT;
@@ -1938,7 +1938,7 @@ void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len) {
         // Apply to driver only if motor is currently enabled
         // This prevents the motor from starting just because config was updated
         if (wasEnabled) {
-            bool success = stepper_update(true);
+            bool success = stepper_update_cfg(true);
             if (!success) {
                 // Config validation failed - send detailed error back to SYS MCU
                 char errorMsg[128];

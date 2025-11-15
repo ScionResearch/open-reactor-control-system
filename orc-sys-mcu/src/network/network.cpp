@@ -2302,11 +2302,11 @@ void handleSaveStepperConfig() {
     return;
   }
   
-  if (ioConfig.stepperMotor.maxRPM < 1 || ioConfig.stepperMotor.maxRPM > 900) {
-    log(LOG_WARNING, false, "Stepper max RPM out of range: %d (valid: 1-900 RPM)\n",
+  if (ioConfig.stepperMotor.maxRPM < 1 || ioConfig.stepperMotor.maxRPM > 3000) {
+    log(LOG_WARNING, false, "Stepper max RPM out of range: %d (valid: 1-3000 RPM)\n",
         ioConfig.stepperMotor.maxRPM);
     server.send(400, "application/json", 
-                "{\"error\":\"Max RPM must be 1-900\"}");
+                "{\"error\":\"Max RPM must be 1-3000\"}");
     return;
   }
   
