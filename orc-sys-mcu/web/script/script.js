@@ -3980,6 +3980,14 @@ async function openStepperConfigModal() {
         document.getElementById('stepperInvertDirection').checked = stepperConfigData.invertDirection || false;
         document.getElementById('stepperShowOnDashboard').checked = stepperConfigData.showOnDashboard || false;
         
+        // Populate TMC5130 advanced features
+        document.getElementById('stepperStealthChopEnabled').checked = stepperConfigData.stealthChopEnabled || false;
+        document.getElementById('stepperCoolStepEnabled').checked = stepperConfigData.coolStepEnabled || false;
+        document.getElementById('stepperFullStepEnabled').checked = stepperConfigData.fullStepEnabled || false;
+        document.getElementById('stepperStealthChopMaxRPM').value = stepperConfigData.stealthChopMaxRPM || 100.0;
+        document.getElementById('stepperCoolStepMinRPM').value = stepperConfigData.coolStepMinRPM || 200.0;
+        document.getElementById('stepperFullStepMinRPM').value = stepperConfigData.fullStepMinRPM || 300.0;
+        
         // Show modal
         document.getElementById('stepperConfigModal').classList.add('active');
         
@@ -4003,7 +4011,15 @@ async function saveStepperConfig() {
         runCurrent_mA: parseInt(document.getElementById('stepperRunCurrent').value),
         acceleration: parseInt(document.getElementById('stepperAcceleration').value),
         invertDirection: document.getElementById('stepperInvertDirection').checked,
-        showOnDashboard: document.getElementById('stepperShowOnDashboard').checked
+        showOnDashboard: document.getElementById('stepperShowOnDashboard').checked,
+        
+        // TMC5130 advanced features
+        stealthChopEnabled: document.getElementById('stepperStealthChopEnabled').checked,
+        coolStepEnabled: document.getElementById('stepperCoolStepEnabled').checked,
+        fullStepEnabled: document.getElementById('stepperFullStepEnabled').checked,
+        stealthChopMaxRPM: parseFloat(document.getElementById('stepperStealthChopMaxRPM').value),
+        coolStepMinRPM: parseFloat(document.getElementById('stepperCoolStepMinRPM').value),
+        fullStepMinRPM: parseFloat(document.getElementById('stepperFullStepMinRPM').value)
     };
     
     // Validate configuration (TMC5130 hardware constraints)
@@ -4029,6 +4045,22 @@ async function saveStepperConfig() {
     
     if (configData.stepsPerRev < 1 || configData.stepsPerRev > 10000) {
         showToast('error', 'Validation Error', 'Steps per revolution must be 1-10000');
+        return;
+    }
+    
+    // Validate RPM thresholds: StealthChopMaxRPM < CoolStepMinRPM < FullStepMinRPM < MaxRPM
+    if (configData.stealthChopMaxRPM >= configData.coolStepMinRPM) {
+        showToast('error', 'Validation Error', 'StealthChop Max RPM must be less than CoolStep Min RPM');
+        return;
+    }
+    
+    if (configData.coolStepMinRPM >= configData.fullStepMinRPM) {
+        showToast('error', 'Validation Error', 'CoolStep Min RPM must be less than FullStep Min RPM');
+        return;
+    }
+    
+    if (configData.fullStepMinRPM >= configData.maxRPM) {
+        showToast('error', 'Validation Error', 'FullStep Min RPM must be less than Max RPM');
         return;
     }
     

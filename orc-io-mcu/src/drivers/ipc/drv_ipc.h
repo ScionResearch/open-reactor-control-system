@@ -16,6 +16,14 @@ enum IPC_State : uint8_t {
     IPC_STATE_ERROR
 };
 
+// IPC connection state for robust startup
+enum IPC_ConnectionState : uint8_t {
+    IPC_CONN_DISCONNECTED,     // No connection, broadcasting HELLO
+    IPC_CONN_HANDSHAKE_SENT,   // Sent HELLO, waiting for HELLO_ACK
+    IPC_CONN_INDEX_SYNCING,    // Handshake complete, sending index sync
+    IPC_CONN_CONNECTED         // Connected and operational
+};
+
 // TX packet queue entry
 struct IPC_TxPacket_t {
     uint8_t msgType;
@@ -33,6 +41,11 @@ struct IPC_Driver_t {
     uint32_t lastActivity;
     uint32_t lastKeepalive;
     bool connected;
+    
+    // Connection state for robust startup
+    IPC_ConnectionState connectionState;
+    uint32_t lastHelloBroadcast;
+    bool hardwareReady;  // Set when all hardware is initialized
     
     // RX buffer and packet parsing
     uint8_t rxBuffer[IPC_RX_BUFFER_SIZE];
@@ -76,6 +89,11 @@ extern IPC_Driver_t ipcDriver;
  * @return true if successful
  */
 bool ipc_init(void);
+
+/**
+ * @brief Set hardware ready flag (called after all hardware initialization)
+ */
+void ipc_setHardwareReady(void);
 
 /**
  * @brief Non-blocking update function (called from task)
@@ -210,6 +228,7 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len);
 void ipc_handle_ping(const uint8_t *payload, uint16_t len);
 void ipc_handle_pong(const uint8_t *payload, uint16_t len);
 void ipc_handle_hello(const uint8_t *payload, uint16_t len);
+void ipc_handle_hello_ack(const uint8_t *payload, uint16_t len);
 void ipc_handle_index_sync_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_sensor_read_req(const uint8_t *payload, uint16_t len);
 void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len);

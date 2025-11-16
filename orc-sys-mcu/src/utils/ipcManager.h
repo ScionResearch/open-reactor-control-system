@@ -16,6 +16,7 @@ void handleError(uint8_t messageType, const uint8_t *payload, uint16_t length);
 void handleFaultNotify(uint8_t messageType, const uint8_t *payload, uint16_t length);
 void handleControlAck(uint8_t messageType, const uint8_t *payload, uint16_t length);
 void handleDeviceStatus(uint8_t messageType, const uint8_t *payload, uint16_t length);
+void handleIndexSyncData(uint8_t messageType, const uint8_t *payload, uint16_t length);
 
 // Output control command senders
 bool sendDigitalOutputCommand(uint16_t index, uint8_t command, bool state, float pwmDuty);

@@ -2222,6 +2222,14 @@ void handleGetStepperConfig() {
   doc["enabled"] = ioConfig.stepperMotor.enabled;
   doc["showOnDashboard"] = ioConfig.stepperMotor.showOnDashboard;
   
+  // Include TMC5130 advanced features
+  doc["stealthChopEnabled"] = ioConfig.stepperMotor.stealthChopEnabled;
+  doc["coolStepEnabled"] = ioConfig.stepperMotor.coolStepEnabled;
+  doc["fullStepEnabled"] = ioConfig.stepperMotor.fullStepEnabled;
+  doc["stealthChopMaxRPM"] = ioConfig.stepperMotor.stealthChopMaxRPM;
+  doc["coolStepMinRPM"] = ioConfig.stepperMotor.coolStepMinRPM;
+  doc["fullStepMinRPM"] = ioConfig.stepperMotor.fullStepMinRPM;
+  
   String response;
   serializeJson(doc, response);
   server.send(200, "application/json", response);
@@ -2279,6 +2287,31 @@ void handleSaveStepperConfig() {
     ioConfig.stepperMotor.showOnDashboard = doc["showOnDashboard"] | false;
   }
   
+  // Handle TMC5130 advanced features
+  if (doc.containsKey("stealthChopEnabled")) {
+    ioConfig.stepperMotor.stealthChopEnabled = doc["stealthChopEnabled"] | false;
+  }
+  
+  if (doc.containsKey("coolStepEnabled")) {
+    ioConfig.stepperMotor.coolStepEnabled = doc["coolStepEnabled"] | false;
+  }
+  
+  if (doc.containsKey("fullStepEnabled")) {
+    ioConfig.stepperMotor.fullStepEnabled = doc["fullStepEnabled"] | false;
+  }
+  
+  if (doc.containsKey("stealthChopMaxRPM")) {
+    ioConfig.stepperMotor.stealthChopMaxRPM = doc["stealthChopMaxRPM"] | 100.0;
+  }
+  
+  if (doc.containsKey("coolStepMinRPM")) {
+    ioConfig.stepperMotor.coolStepMinRPM = doc["coolStepMinRPM"] | 200.0;
+  }
+  
+  if (doc.containsKey("fullStepMinRPM")) {
+    ioConfig.stepperMotor.fullStepMinRPM = doc["fullStepMinRPM"] | 300.0;
+  }
+  
   // Validate configuration before saving
   // TMC5130 Constraints:
   // - holdCurrent: 1-1000 mA
@@ -2305,8 +2338,6 @@ void handleSaveStepperConfig() {
   if (ioConfig.stepperMotor.maxRPM < 1 || ioConfig.stepperMotor.maxRPM > 3000) {
     log(LOG_WARNING, false, "Stepper max RPM out of range: %d (valid: 1-3000 RPM)\n",
         ioConfig.stepperMotor.maxRPM);
-    server.send(400, "application/json", 
-                "{\"error\":\"Max RPM must be 1-3000\"}");
     return;
   }
   
@@ -2327,10 +2358,35 @@ void handleSaveStepperConfig() {
     return;
   }
   
+  // Validate RPM thresholds: StealthChopMaxRPM < CoolStepMinRPM < FullStepMinRPM < MaxRPM
+  if (ioConfig.stepperMotor.stealthChopMaxRPM >= ioConfig.stepperMotor.coolStepMinRPM) {
+    log(LOG_WARNING, false, "Invalid RPM thresholds: stealthChopMaxRPM (%.1f) must be < coolStepMinRPM (%.1f)\n",
+        ioConfig.stepperMotor.stealthChopMaxRPM, ioConfig.stepperMotor.coolStepMinRPM);
+    server.send(400, "application/json", 
+                "{\"error\":\"StealthChop Max RPM must be less than CoolStep Min RPM\"}");
+    return;
+  }
+  
+  if (ioConfig.stepperMotor.coolStepMinRPM >= ioConfig.stepperMotor.fullStepMinRPM) {
+    log(LOG_WARNING, false, "Invalid RPM thresholds: coolStepMinRPM (%.1f) must be < fullStepMinRPM (%.1f)\n",
+        ioConfig.stepperMotor.coolStepMinRPM, ioConfig.stepperMotor.fullStepMinRPM);
+    server.send(400, "application/json", 
+                "{\"error\":\"CoolStep Min RPM must be less than FullStep Min RPM\"}");
+    return;
+  }
+  
+  if (ioConfig.stepperMotor.fullStepMinRPM >= ioConfig.stepperMotor.maxRPM) {
+    log(LOG_WARNING, false, "Invalid RPM thresholds: fullStepMinRPM (%.1f) must be < maxRPM (%.1f)\n",
+        ioConfig.stepperMotor.fullStepMinRPM, (float)ioConfig.stepperMotor.maxRPM);
+    server.send(400, "application/json", 
+                "{\"error\":\"FullStep Min RPM must be less than Max RPM\"}");
+    return;
+  }
+  
   // Save configuration to file
   saveIOConfig();
   
-  // Send updated config to IO MCU via IPC
+  // Send IPC config packet to IO MCU
   IPC_ConfigStepper_t cfg;
   cfg.index = 26;
   strncpy(cfg.name, ioConfig.stepperMotor.name, sizeof(cfg.name) - 1);
@@ -2342,6 +2398,14 @@ void handleSaveStepperConfig() {
   cfg.acceleration = ioConfig.stepperMotor.acceleration;
   cfg.invertDirection = ioConfig.stepperMotor.invertDirection;
   cfg.enabled = ioConfig.stepperMotor.enabled;
+  
+  // Include TMC5130 advanced features in IPC packet
+  cfg.stealthChopEnabled = ioConfig.stepperMotor.stealthChopEnabled;
+  cfg.coolStepEnabled = ioConfig.stepperMotor.coolStepEnabled;
+  cfg.fullStepEnabled = ioConfig.stepperMotor.fullStepEnabled;
+  cfg.stealthChopMaxRPM = ioConfig.stepperMotor.stealthChopMaxRPM;
+  cfg.coolStepMinRPM = ioConfig.stepperMotor.coolStepMinRPM;
+  cfg.fullStepMinRPM = ioConfig.stepperMotor.fullStepMinRPM;
   
   log(LOG_DEBUG, false, "Sending stepper config: size=%d bytes (TYPE=0x%02X)\n", 
       sizeof(cfg), IPC_MSG_CONFIG_STEPPER);

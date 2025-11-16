@@ -780,6 +780,15 @@ typedef struct __attribute__((packed)) {
     uint16_t acceleration;   // Acceleration in RPM/s
     uint8_t invertDirection; // Invert direction flag
     uint8_t enabled;         // Enable/disable flag
+    
+    // TMC5130 advanced features
+    uint8_t stealthChopEnabled;     // Enable StealthChop mode
+    uint8_t coolStepEnabled;        // Enable CoolStep mode
+    uint8_t fullStepEnabled;        // Enable FullStep mode
+    float stealthChopMaxRPM;        // RPM threshold for StealthChop
+    float coolStepMinRPM;           // RPM threshold for CoolStep
+    float fullStepMinRPM;           // RPM threshold for FullStep
+    uint8_t padding[4];             // Padding for alignment
 } IPC_ConfigStepper_t;
 
 /**

@@ -61,6 +61,10 @@ struct ObjectIndex_t {
 extern ObjectIndex_t objIndex[MAX_NUM_OBJECTS];
 extern int numObjects;
 
+// Object index management functions
+int countValidObjects();
+int updateObjectCount();
+
 // Object index contains types and pointers to all objects which need to be accessed from
 // the system MCU. The first ~40 objects are reserved for on-board fixed sensors, outputs
 // and control objects. The remainder are dynamic and can be created by the user.
@@ -211,6 +215,11 @@ struct StepperDevice_t {
     bool running;
     bool enabled;
     bool stealthChop;
+    bool coolStep;
+    bool fullStep;
+    float stealthChopMaxRPM;
+    float coolStepMinRPM;
+    float fullStepMinRPM;
     uint16_t stepsPerRev;
     uint16_t holdCurrent;
     uint16_t runCurrent;

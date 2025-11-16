@@ -92,6 +92,14 @@ void setDefaultIOConfig() {
     ioConfig.stepperMotor.enabled = true;
     ioConfig.stepperMotor.showOnDashboard = false;
     
+    // TMC5130 advanced features defaults
+    ioConfig.stepperMotor.stealthChopEnabled = false;     // Default disabled
+    ioConfig.stepperMotor.coolStepEnabled = false;        // Default disabled
+    ioConfig.stepperMotor.fullStepEnabled = false;        // Default disabled
+    ioConfig.stepperMotor.stealthChopMaxRPM = 100.0;      // Default threshold
+    ioConfig.stepperMotor.coolStepMinRPM = 200.0;         // Default threshold
+    ioConfig.stepperMotor.fullStepMinRPM = 300.0;         // Default threshold
+    
     // ========================================================================
     // DC Motors (Indices 27-30)
     // ========================================================================
@@ -419,6 +427,14 @@ bool loadIOConfig() {
         ioConfig.stepperMotor.invertDirection = stepper["invertDirection"] | false;
         ioConfig.stepperMotor.enabled = stepper["enabled"] | true;
         ioConfig.stepperMotor.showOnDashboard = stepper["showOnDashboard"] | false;
+        
+        // Parse TMC5130 advanced features
+        ioConfig.stepperMotor.stealthChopEnabled = stepper["stealthChopEnabled"] | false;
+        ioConfig.stepperMotor.coolStepEnabled = stepper["coolStepEnabled"] | false;
+        ioConfig.stepperMotor.fullStepEnabled = stepper["fullStepEnabled"] | false;
+        ioConfig.stepperMotor.stealthChopMaxRPM = stepper["stealthChopMaxRPM"] | 100.0;
+        ioConfig.stepperMotor.coolStepMinRPM = stepper["coolStepMinRPM"] | 200.0;
+        ioConfig.stepperMotor.fullStepMinRPM = stepper["fullStepMinRPM"] | 300.0;
     }
     
     // ========================================================================
@@ -779,6 +795,14 @@ void saveIOConfig() {
     stepper["invertDirection"] = ioConfig.stepperMotor.invertDirection;
     stepper["enabled"] = ioConfig.stepperMotor.enabled;
     stepper["showOnDashboard"] = ioConfig.stepperMotor.showOnDashboard;
+    
+    // Serialize TMC5130 advanced features
+    stepper["stealthChopEnabled"] = ioConfig.stepperMotor.stealthChopEnabled;
+    stepper["coolStepEnabled"] = ioConfig.stepperMotor.coolStepEnabled;
+    stepper["fullStepEnabled"] = ioConfig.stepperMotor.fullStepEnabled;
+    stepper["stealthChopMaxRPM"] = ioConfig.stepperMotor.stealthChopMaxRPM;
+    stepper["coolStepMinRPM"] = ioConfig.stepperMotor.coolStepMinRPM;
+    stepper["fullStepMinRPM"] = ioConfig.stepperMotor.fullStepMinRPM;
     
     // ========================================================================
     // Serialize DC Motors
@@ -1246,6 +1270,14 @@ void pushIOConfigToIOmcu() {
         cfg.acceleration = ioConfig.stepperMotor.acceleration;
         cfg.invertDirection = ioConfig.stepperMotor.invertDirection;
         cfg.enabled = ioConfig.stepperMotor.enabled;
+        
+        // Include TMC5130 advanced features
+        cfg.stealthChopEnabled = ioConfig.stepperMotor.stealthChopEnabled;
+        cfg.coolStepEnabled = ioConfig.stepperMotor.coolStepEnabled;
+        cfg.fullStepEnabled = ioConfig.stepperMotor.fullStepEnabled;
+        cfg.stealthChopMaxRPM = ioConfig.stepperMotor.stealthChopMaxRPM;
+        cfg.coolStepMinRPM = ioConfig.stepperMotor.coolStepMinRPM;
+        cfg.fullStepMinRPM = ioConfig.stepperMotor.fullStepMinRPM;
         
         // Retry up to 10 times if queue is full
         bool sent = false;

@@ -133,6 +133,11 @@ void setup() {
     Serial.println("Controller Manager initialised");
   }
 
+  // Count all registered objects for IPC index sync
+  Serial.print("Counting registered objects... ");
+  int objectCount = updateObjectCount();
+  Serial.printf("Found %d objects ready for IPC\n", objectCount);
+
   Serial.print("Adding tasks to scheduler... ");
   analog_input_task = tasks.addTask(ADC_update, 10, true, false);
   analog_output_task = tasks.addTask(DAC_update, 100, true, false);
@@ -145,7 +150,11 @@ void setup() {
   motor_task = tasks.addTask(motor_update, 10, true, false);
   pwrSensor_task = tasks.addTask(pwrSensor_update, 1000, true, false);
   
-  Serial.println("Setup done, waiting for System MCU to initialise...");
+  Serial.println("Setup done, hardware ready, waiting for System MCU to initialise...");
+  
+  // Signal to IPC driver that all hardware is ready
+  // This enables periodic HELLO broadcasting for robust startup
+  ipc_setHardwareReady();
 }
 
 void loop() {

@@ -28,6 +28,10 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             ipc_handle_hello(payload, len);
             break;
             
+        case IPC_MSG_HELLO_ACK:
+            ipc_handle_hello_ack(payload, len);
+            break;
+            
         case IPC_MSG_INDEX_SYNC_REQ:
             ipc_handle_index_sync_req(payload, len);
             break;
@@ -121,7 +125,8 @@ void ipc_handleMessage(uint8_t msgType, const uint8_t *payload, uint16_t len) {
             break;
             
         default:
-            // Unknown message type
+            // Unknown message type - debug log what we received
+            Serial.printf("[IPC] ERROR: Received unknown message type 0x%02X (len=%d)\n", msgType, len);
             ipc_sendError(IPC_ERR_INVALID_MSG, "Unknown message type");
             break;
     }
@@ -138,7 +143,7 @@ void ipc_handle_ping(const uint8_t *payload, uint16_t len) {
     // Respond with PONG
     ipc_sendPong();
     ipcDriver.connected = true;
-    ipcDriver.lastActivity = millis();
+    // lastActivity already updated by ipc_processReceivedPacket()
 }
 
 void ipc_handle_pong(const uint8_t *payload, uint16_t len) {
@@ -147,7 +152,7 @@ void ipc_handle_pong(const uint8_t *payload, uint16_t len) {
     #endif
     // PONG received, connection is alive
     ipcDriver.connected = true;
-    ipcDriver.lastActivity = millis();
+    // lastActivity already updated by ipc_processReceivedPacket()
 }
 
 void ipc_handle_hello(const uint8_t *payload, uint16_t len) {
@@ -181,7 +186,51 @@ void ipc_handle_hello(const uint8_t *payload, uint16_t len) {
     Serial.printf("[IPC] ✓ Handshake complete! Sent HELLO_ACK (%u/%u objects)\n",
                  numObjects, MAX_NUM_OBJECTS);
     
+    // Update connection state
     ipcDriver.connected = true;
+    ipcDriver.connectionState = IPC_CONN_CONNECTED;
+    Serial.println("[IPC] Connection established with SYS MCU");
+}
+
+void ipc_handle_hello_ack(const uint8_t *payload, uint16_t len) {
+    if (len < sizeof(IPC_HelloAck_t)) {
+        Serial.println("[IPC] ERROR: HELLO_ACK payload too small");
+        return;
+    }
+    
+    // lastActivity already updated by ipc_processReceivedPacket()
+    
+    IPC_HelloAck_t *ack = (IPC_HelloAck_t*)payload;
+    
+    Serial.printf("[IPC] Received HELLO_ACK from SYS MCU (protocol v%08lX, firmware v%08lX)\n",
+                 ack->protocolVersion, ack->firmwareVersion);
+    
+    // Check protocol version compatibility
+    if (ack->protocolVersion != IPC_PROTOCOL_VERSION) {
+        Serial.printf("[IPC] ERROR: Protocol version mismatch! Expected 0x%08lX, got 0x%08lX\n",
+                     IPC_PROTOCOL_VERSION, ack->protocolVersion);
+        ipc_sendError(IPC_ERR_NOT_IMPLEMENTED, "Protocol version mismatch");
+        return;
+    }
+    
+    // Only process HELLO_ACK if we're in HANDSHAKE_SENT state
+    if (ipcDriver.connectionState != IPC_CONN_HANDSHAKE_SENT) {
+        Serial.printf("[IPC] WARNING: Ignoring duplicate HELLO_ACK (state=%d)\n", ipcDriver.connectionState);
+        return;
+    }
+    
+    // Move to CONNECTED state immediately 
+    ipcDriver.connectionState = IPC_CONN_CONNECTED;
+    ipcDriver.connected = true;
+    
+    // Reset keepalive timer to prevent immediate PING
+    ipcDriver.lastKeepalive = millis();
+    
+    // Handshake complete
+    Serial.println("[IPC] ✓ Handshake complete! Connection established");
+    
+    // TODO: Re-enable index sync once basic connection is stable
+    // ipc_sendIndexSync();
 }
 
 // ============================================================================
@@ -194,9 +243,18 @@ void ipc_handle_index_sync_req(const uint8_t *payload, uint16_t len) {
 }
 
 bool ipc_sendIndexSync(void) {
+    Serial.printf("[IPC] ipc_sendIndexSync() called: numObjects=%u\n", numObjects);
+    
+    if (numObjects == 0) {
+        Serial.println("[IPC] ERROR: No objects to sync - aborting");
+        return false;
+    }
+    
     const uint8_t entriesPerPacket = 10;
     uint16_t totalPackets = (numObjects + entriesPerPacket - 1) / entriesPerPacket;
     uint16_t packetNum = 0;
+    
+    Serial.printf("[IPC] Sending %u index sync packets (%u entries per packet)\n", totalPackets, entriesPerPacket);
     
     for (uint16_t i = 0; i < numObjects; i += entriesPerPacket) {
         IPC_IndexSync_t syncData;
@@ -280,11 +338,20 @@ bool ipc_sendIndexSync(void) {
             // Calculate actual size based on entry count
             uint16_t payloadSize = sizeof(uint16_t) * 2 + sizeof(uint8_t) + 
                                    (syncData.entryCount * sizeof(IPC_IndexEntry_t));
+            Serial.printf("[IPC] Sending INDEX_SYNC_DATA packet %u/%u (entries=%u, size=%u)\n", 
+                         packetNum, totalPackets, syncData.entryCount, payloadSize);
             ipc_sendPacket(IPC_MSG_INDEX_SYNC_DATA, (uint8_t*)&syncData, payloadSize);
+        } else {
+            Serial.printf("[IPC] Skipping packet %u (no entries)\n", packetNum);
         }
         
         packetNum++;
     }
+    
+    // Index sync complete - connection already established
+    // Update activity to ensure timeout doesn't fire immediately
+    ipcDriver.lastActivity = millis();
+    Serial.println("[IPC] ✓ Index sync complete, connection fully established");
     
     return true;
 }
@@ -1893,12 +1960,14 @@ void ipc_handle_config_digital_output(const uint8_t *payload, uint16_t len) {
     }
 }
 
-/**
- * @brief Handle stepper motor configuration
- */
 void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len) {
-    if (len != sizeof(IPC_ConfigStepper_t)) {
-        ipc_sendError(IPC_ERR_PARSE_FAIL, "Invalid stepper config message size");
+    // Debug: Log expected vs actual size
+    Serial.printf("[IPC] Stepper config: expected=%d bytes, received=%d bytes\n", 
+                  sizeof(IPC_ConfigStepper_t), len);
+    
+    if (len < sizeof(IPC_ConfigStepper_t)) {
+        Serial.printf("[IPC] ERROR: Invalid stepper config message size (expected %d, got %d)\n", 
+                      sizeof(IPC_ConfigStepper_t), len);
         return;
     }
     
@@ -1932,6 +2001,46 @@ void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len) {
         stepper->runCurrent = cfg->runCurrent_mA;
         stepper->acceleration = cfg->acceleration;
         stepper->inverted = cfg->invertDirection;
+        
+        // Apply TMC5130 advanced features
+        stepper->stealthChop = cfg->stealthChopEnabled;
+        stepper->coolStep = cfg->coolStepEnabled;
+        stepper->fullStep = cfg->fullStepEnabled;
+        stepper->stealthChopMaxRPM = cfg->stealthChopMaxRPM;
+        stepper->coolStepMinRPM = cfg->coolStepMinRPM;
+        stepper->fullStepMinRPM = cfg->fullStepMinRPM;
+        
+        // Validate RPM thresholds: StealthChopMaxRPM < CoolStepMinRPM < FullStepMinRPM < MaxRPM
+        if (stepper->stealthChopMaxRPM >= stepper->coolStepMinRPM) {
+            char errorMsg[128];
+            snprintf(errorMsg, sizeof(errorMsg), 
+                    "Invalid RPM thresholds: stealthChopMaxRPM (%.1f) must be < coolStepMinRPM (%.1f)", 
+                    stepper->stealthChopMaxRPM, stepper->coolStepMinRPM);
+            Serial.printf("[IPC] ✗ Stepper config rejected: %s\n", errorMsg);
+            ipc_sendError(IPC_ERR_PARAM_INVALID, errorMsg);
+            return;
+        }
+        
+        if (stepper->coolStepMinRPM >= stepper->fullStepMinRPM) {
+            char errorMsg[128];
+            snprintf(errorMsg, sizeof(errorMsg), 
+                    "Invalid RPM thresholds: coolStepMinRPM (%.1f) must be < fullStepMinRPM (%.1f)", 
+                    stepper->coolStepMinRPM, stepper->fullStepMinRPM);
+            Serial.printf("[IPC] ✗ Stepper config rejected: %s\n", errorMsg);
+            ipc_sendError(IPC_ERR_PARAM_INVALID, errorMsg);
+            return;
+        }
+        
+        if (stepper->fullStepMinRPM >= stepper->maxRPM) {
+            char errorMsg[128];
+            snprintf(errorMsg, sizeof(errorMsg), 
+                    "Invalid RPM thresholds: fullStepMinRPM (%.1f) must be < maxRPM (%.1f)", 
+                    stepper->fullStepMinRPM, stepper->maxRPM);
+            Serial.printf("[IPC] ✗ Stepper config rejected: %s\n", errorMsg);
+            ipc_sendError(IPC_ERR_PARAM_INVALID, errorMsg);
+            return;
+        }
+        
         // DON'T update enabled state from config - preserve current runtime state
         // stepper->enabled = cfg->enabled;  // Removed to prevent inadvertent enable
         

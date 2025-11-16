@@ -117,6 +117,14 @@ struct StepperMotorConfig {
     bool invertDirection;
     bool enabled;
     bool showOnDashboard;
+    
+    // TMC5130 advanced features
+    bool stealthChopEnabled;     // Enable StealthChop mode
+    bool coolStepEnabled;        // Enable CoolStep mode
+    bool fullStepEnabled;        // Enable FullStep mode
+    float stealthChopMaxRPM;     // RPM threshold for StealthChop (default 100)
+    float coolStepMinRPM;        // RPM threshold for CoolStep (default 200)
+    float fullStepMinRPM;        // RPM threshold for FullStep (default 300)
 };
 
 /**

@@ -41,13 +41,21 @@ bool ipc_init(void) {
     // Set initial state
     ipcDriver.state = IPC_STATE_IDLE;
     ipcDriver.connected = false;
+    ipcDriver.connectionState = IPC_CONN_DISCONNECTED;  // Start in disconnected state
+    ipcDriver.hardwareReady = false;  // Will be set after hardware init
     ipcDriver.lastActivity = millis();
     ipcDriver.lastKeepalive = millis();
+    ipcDriver.lastHelloBroadcast = 0;
     
     strcpy(ipcDriver.message, "IPC initialized");
     ipcDriver.newMessage = true;
     
     return true;
+}
+
+void ipc_setHardwareReady(void) {
+    ipcDriver.hardwareReady = true;
+    Serial.println("[IPC] Hardware ready, starting HELLO broadcasts");
 }
 
 // ============================================================================
@@ -183,7 +191,8 @@ bool ipc_processTxQueue(void) {
     
     // Update statistics
     ipcDriver.txPacketCount++;
-    ipcDriver.lastActivity = millis();
+    // NOTE: Do NOT update lastActivity here - only RX should update it
+    // Otherwise timeout detection won't work (sending keeps connection "alive")
     
     // Advance tail
     ipcDriver.txQueueTail = (ipcDriver.txQueueTail + 1) % IPC_TX_QUEUE_SIZE;
@@ -338,6 +347,20 @@ void ipc_processReceivedPacket(void) {
 void ipc_update(void) {
     uint32_t now = millis();
     
+    // Handle robust startup - broadcast HELLO when disconnected and hardware ready
+    if (ipcDriver.hardwareReady && 
+        (ipcDriver.connectionState == IPC_CONN_DISCONNECTED || 
+         ipcDriver.connectionState == IPC_CONN_HANDSHAKE_SENT)) {
+        if (now - ipcDriver.lastHelloBroadcast > 2000) {  // Broadcast every 2 seconds
+            if (ipc_sendHello()) {
+                ipcDriver.lastHelloBroadcast = now;
+                // Do NOT update lastActivity - only RX updates it for timeout detection
+                ipcDriver.connectionState = IPC_CONN_HANDSHAKE_SENT;
+                Serial.println("[IPC] Broadcasting HELLO for connection");
+            }
+        }
+    }
+    
     // Process RX bytes
     while (ipcDriver.uart->available()) {
         uint8_t byte = ipcDriver.uart->read();
@@ -360,15 +383,30 @@ void ipc_update(void) {
         ipc_processTxQueue();
     }
     
-    // Send keepalive ping if needed
-    if ((now - ipcDriver.lastKeepalive) > IPC_KEEPALIVE_MS) {
-        ipc_sendPing();
-        ipcDriver.lastKeepalive = now;
+    // Send keepalive ping if connected
+    if (ipcDriver.connectionState == IPC_CONN_CONNECTED) {
+        if ((now - ipcDriver.lastKeepalive) > IPC_KEEPALIVE_MS) {
+            ipc_sendPing();
+            ipcDriver.lastKeepalive = now;
+            //Serial.println("[IPC] Sent PING keepalive");
+        }
     }
     
-    // Check connection timeout
-    if ((now - ipcDriver.lastActivity) > (IPC_KEEPALIVE_MS * 3)) {
-        ipcDriver.connected = false;
+    // Check connection timeout and reset to disconnected state
+    // Use 5-second timeout (5 missed PING/PONG cycles) to detect dead connection
+    if (ipcDriver.connectionState == IPC_CONN_CONNECTED || 
+        ipcDriver.connectionState == IPC_CONN_HANDSHAKE_SENT) {
+        // Skip check if lastActivity is in the future (just processed a message in this cycle)
+        if (ipcDriver.lastActivity <= now) {
+            uint32_t timeSinceActivity = now - ipcDriver.lastActivity;
+            if (timeSinceActivity > 5000) {  // 5 seconds
+                Serial.printf("[IPC] Connection timeout (%lu ms since last activity), returning to disconnected state\n", timeSinceActivity);
+                ipcDriver.connectionState = IPC_CONN_DISCONNECTED;
+                ipcDriver.connected = false;
+                ipcDriver.lastHelloBroadcast = 0;  // Reset to trigger immediate broadcast
+                ipcDriver.lastActivity = now;      // Reset activity timestamp for fresh start
+            }
+        }
     }
 }
 

@@ -57,8 +57,23 @@ bool stepper_update_cfg(bool setParams) {
         stepperDevice.newMessage = true;
         strcpy(stepperDevice.message, stepperDriver.message);
         return false;
-    } else if (stepperDriver.stepper->status.running) {
-        Serial.printf("TSTEP: %d, fullStep: %s\n", stepperDriver.stepper->status.tstep, stepperDriver.stepper->status.fullStep ? "enabled" : "disabled");
+    } else {
+        if (stepperDriver.stepper->status.overTemp) {
+            stepperDriver.fault = true;
+            stepperDriver.newMessage = true;
+            strcpy(stepperDriver.message, "Stepper over temperature");
+        } else if (stepperDriver.stepper->status.stall) {
+            stepperDriver.fault = true;
+            stepperDriver.newMessage = true;
+            strcpy(stepperDriver.message, "Stepper stall detected");
+        }
+        if (stepperDriver.fault) {
+            // Propagate fault to device object
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
+            return false;
+        }
     }
     if (setParams) {
         // Update stepper parameters
@@ -132,6 +147,58 @@ bool stepper_update_cfg(bool setParams) {
             stepperDriver.fault = true;
             stepperDriver.newMessage = true;
             strcpy(stepperDriver.message, "Stepper run current not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
+            return false;
+        }
+        
+        // Apply TMC5130 advanced features with RPM thresholds
+        if (!stepperDriver.stepper->setMaxRPM(stepperDevice.maxRPM, 
+                                              stepperDevice.stealthChopMaxRPM,
+                                              stepperDevice.coolStepMinRPM, 
+                                              stepperDevice.fullStepMinRPM)) {
+            stepperDriver.fault = true;
+            stepperDriver.newMessage = true;
+            strcpy(stepperDriver.message, "Stepper RPM thresholds not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
+            return false;
+        }
+        
+        if (!stepperDriver.stepper->setStealthChop(stepperDevice.stealthChop)) {
+            stepperDriver.fault = true;
+            stepperDriver.newMessage = true;
+            strcpy(stepperDriver.message, "Stepper StealthChop not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
+            return false;
+        }
+        
+        if (!stepperDriver.stepper->setCoolStep(stepperDevice.coolStep)) {
+            stepperDriver.fault = true;
+            stepperDriver.newMessage = true;
+            strcpy(stepperDriver.message, "Stepper CoolStep not set");
+            
+            // Propagate fault
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
+            return false;
+        }
+        
+        if (!stepperDriver.stepper->setFullStep(stepperDevice.fullStep)) {
+            stepperDriver.fault = true;
+            stepperDriver.newMessage = true;
+            strcpy(stepperDriver.message, "Stepper FullStep not set");
             
             // Propagate fault
             stepperDevice.fault = true;

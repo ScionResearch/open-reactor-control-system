@@ -4,6 +4,13 @@
 #include "objectCache.h" // For caching sensor data
 #include "config/ioConfig.h" // For IO configuration push
 
+// Global IPC ready flag - moved to top to fix declaration error
+bool ipcReady = false;  // Only start polling after handshake and config push complete
+
+// Continuous sensor polling for cache population
+unsigned long lastSensorPollTime = 0;
+const unsigned long SENSOR_POLL_INTERVAL = 1000; // Poll every 1 second
+
 // Inter-processor communication
 void init_ipcManager(void) {
   Serial1.setRX(PIN_SI_RX);
@@ -24,8 +31,9 @@ void init_ipcManager(void) {
   // Register message handlers
   registerIpcCallbacks();
   
-  // Send HELLO message to SAME51
-  ipc.sendHello(IPC_PROTOCOL_VERSION, 0x00010001, "RP2040-ORC-SYS");
+  // Initialize as master - wait for IO MCU HELLO before initiating handshake
+  ipcReady = false;
+  log(LOG_INFO, false, "IPC master waiting for IO MCU HELLO broadcast\n");
   
   log(LOG_INFO, false, "Inter-processor communication setup complete\n");
   if (statusLocked) return;
@@ -34,11 +42,6 @@ void init_ipcManager(void) {
   status.updated = true;
   statusLocked = false;
 }
-
-// Continuous sensor polling for cache population
-unsigned long lastSensorPollTime = 0;
-const unsigned long SENSOR_POLL_INTERVAL = 1000; // Poll every 1 second
-bool ipcReady = false;  // Only start polling after handshake and config push complete
 
 /**
  * @brief Continuously poll all IO MCU objects to keep cache fresh
@@ -92,6 +95,26 @@ void manageIPC(void) {
   // Check for incoming messages
   ipc.update();
   
+  // Monitor connection health and handle reconnection
+  static unsigned long lastConnectionCheck = 0;
+  unsigned long now = millis();
+  
+  if (now - lastConnectionCheck > 1000) {  // Check every second
+    lastConnectionCheck = now;
+    
+    // Check if connection has been lost (timeout)
+    if (ipcReady) {
+      IPC_Statistics_t stats;
+      ipc.getStatistics(&stats);
+      if (now - stats.lastRxTime > 5000) {
+        log(LOG_WARNING, true, "IPC: Connection timeout detected, resetting to disconnected state\n");
+        ipcReady = false;
+        objectCache.clear();
+        // SYS MCU will wait for next IO MCU HELLO broadcast
+      }
+    }
+  }
+  
   // Continuously poll sensors to keep cache fresh
   pollSensors();
 }
@@ -133,18 +156,22 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
 
 /**
  * @brief Handler for PING messages
+ * Only respond if handshake is complete to allow IO MCU timeout detection
  */
 void handlePing(uint8_t messageType, const uint8_t *payload, uint16_t length) {
-  //log(LOG_DEBUG, false, "IPC: Received PING from SAME51, sending PONG\n");
-  // Respond with PONG
-  ipc.sendPong();
+  // Only respond to PING if handshake is complete
+  // If we respond before handshake, IO MCU won't timeout and restart HELLO broadcasts
+  if (ipcReady) {
+    ipc.sendPong();
+  }
+  // Otherwise, ignore PING to force IO MCU timeout and handshake restart
 }
 
 /**
  * @brief Handler for PONG messages
  */
 void handlePong(uint8_t messageType, const uint8_t *payload, uint16_t length) {
-  log(LOG_INFO, true, "IPC: Received PONG from SAME51 ✓\n");
+  // Connection is alive - no need to log every keepalive
 }
 
 /**
@@ -172,8 +199,18 @@ void handleHello(uint8_t messageType, const uint8_t *payload, uint16_t length) {
   
   log(LOG_INFO, false, "IPC: Sent HELLO_ACK to SAME51\n");
   
-  // Request index sync
-  ipc.sendIndexSyncRequest();
+  // Clear object cache for fresh start
+  objectCache.clear();
+  log(LOG_INFO, false, "IPC: Object cache cleared for fresh start\n");
+  
+  // Push IO configuration to IO MCU before enabling polling
+  // This ensures IO MCU always has current config after any reboot
+  pushIOConfigToIOmcu();
+  log(LOG_INFO, false, "IPC: Configuration pushed to IO MCU\n");
+  
+  // Enable sensor polling now that handshake and config push are complete
+  ipcReady = true;
+  log(LOG_INFO, false, "IPC: Handshake complete, connection established\n");
 }
 
 /**
@@ -197,12 +234,18 @@ void handleHelloAck(uint8_t messageType, const uint8_t *payload, uint16_t length
   log(LOG_INFO, true, "IPC: ✓ Handshake complete! SAME51 firmware v%08X (%u/%u objects)\n",
       ack->firmwareVersion, ack->currentObjectCount, ack->maxObjectCount);
   
+  // Clear object cache and push fresh configuration on every handshake
+  // This ensures IO MCU always has current config after any reboot
+  objectCache.clear();
+  log(LOG_INFO, false, "IPC: Object cache cleared for fresh start\n");
+  
   // Push IO configuration to IO MCU now that IPC is established
   pushIOConfigToIOmcu();
+  log(LOG_INFO, false, "IPC: Configuration pushed to IO MCU\n");
   
   // Enable sensor polling now that IPC is ready
   ipcReady = true;
-  log(LOG_INFO, false, "IPC: Sensor polling enabled\n");
+  log(LOG_INFO, false, "IPC: Sensor polling enabled - system fully operational\n");
 }
 
 /**
@@ -262,9 +305,8 @@ void registerIpcCallbacks(void) {
   // Device management
   ipc.registerHandler(IPC_MSG_DEVICE_STATUS, handleDeviceStatus);
   
-  // TODO: Add more handlers as needed:
-  // - IPC_MSG_INDEX_SYNC_DATA
-  // etc.
+  // Index synchronization
+  ipc.registerHandler(IPC_MSG_INDEX_SYNC_DATA, handleIndexSyncData);
 
   log(LOG_INFO, false, "IPC message handlers registered.\n");
 }
@@ -326,9 +368,41 @@ void handleDeviceStatus(uint8_t messageType, const uint8_t *payload, uint16_t le
   // TODO: Trigger sensor cache refresh for the affected indices
 }
 
-// ============================================================================
-// OUTPUT CONTROL COMMAND SENDERS
-// ============================================================================
+/**
+ * @brief Handler for index synchronization data messages from IO MCU
+ */
+void handleIndexSyncData(uint8_t messageType, const uint8_t *payload, uint16_t length) {
+  if (payload == nullptr) {
+    log(LOG_ERROR, false, "IPC: Invalid index sync data payload (null)\n");
+    return;
+  }
+  
+  // Basic validation - check minimum packet size
+  if (length < (sizeof(uint16_t) * 2 + sizeof(uint8_t))) {
+    log(LOG_ERROR, false, "IPC: Index sync data payload too small (%d bytes)\n", length);
+    return;
+  }
+  
+  const IPC_IndexSync_t *syncData = (const IPC_IndexSync_t *)payload;
+  
+  log(LOG_INFO, true, "IPC: Received index sync data packet %d/%d with %d entries\n",
+      syncData->packetNum, syncData->totalPackets, syncData->entryCount);
+  
+  // For now, just log the sync data - in the future this could be used to
+  // build a dynamic object index or validate the expected objects
+  for (uint8_t i = 0; i < syncData->entryCount; i++) {
+    const IPC_IndexEntry_t *entry = &syncData->entries[i];
+    log(LOG_DEBUG, false, "  [%d] %s (type=%d, flags=0x%02X)\n",
+        entry->index, entry->name, entry->objectType, entry->flags);
+  }
+  
+  // If this is the last packet, acknowledge sync completion
+  if (syncData->packetNum == (syncData->totalPackets - 1)) {
+    log(LOG_INFO, false, "IPC: Index synchronization complete\n");
+  }
+}
+
+// ... (rest of the code remains the same)
 
 /**
  * @brief Send digital output control command
