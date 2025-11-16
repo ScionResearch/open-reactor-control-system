@@ -1,5 +1,7 @@
 #include "drv_stepper.h"
 
+#define STEPPER_DEBUG 0
+
 StepperDriver_t stepperDriver;
 StepperDevice_t stepperDevice;
 
@@ -47,17 +49,24 @@ void stepper_update(void) {
 }
 
 bool stepper_update_cfg(bool setParams) {
-    if (!stepperDriver.stepper->updateStatus()) {
-        stepperDriver.fault = true;
-        stepperDriver.newMessage = true;
-        strcpy(stepperDriver.message, "Stepper update failed");
+    static uint32_t numUpdateFail = 0;
+    if (!stepperDriver.stepper->updateStatus()) {   // Note: updateStatus() fails if the stepper velocity controller is ramping, handle gracefully instead of returning false
+        numUpdateFail++;
+        if (numUpdateFail > 10) {
+            stepperDriver.fault = true;
+            stepperDriver.newMessage = true;
+            strcpy(stepperDriver.message, "Stepper status update failed");
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
         
-        // Propagate fault to device object
-        stepperDevice.fault = true;
-        stepperDevice.newMessage = true;
-        strcpy(stepperDevice.message, stepperDriver.message);
-        return false;
+            // Propagate fault to device object
+            stepperDevice.fault = true;
+            stepperDevice.newMessage = true;
+            strcpy(stepperDevice.message, stepperDriver.message);
+        }
     } else {
+        numUpdateFail = 0;
         if (stepperDriver.stepper->status.overTemp) {
             stepperDriver.fault = true;
             stepperDriver.newMessage = true;
@@ -72,7 +81,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
-            return false;
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
         }
     }
     if (setParams) {
@@ -86,6 +97,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         if (!stepperDriver.stepper->setStepsPerRev(stepperDevice.stepsPerRev)) {
@@ -97,6 +111,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         if (!stepperDriver.stepper->invertDirection(stepperDevice.inverted)) {
@@ -108,6 +125,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         if (!stepperDriver.stepper->setDirection(stepperDevice.direction)) {
@@ -119,6 +139,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         if (!stepperDriver.stepper->setAcceleration(stepperDevice.acceleration)) {
@@ -130,6 +153,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         if (!stepperDriver.stepper->setIhold(stepperDevice.holdCurrent)) {
@@ -141,6 +167,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         if (!stepperDriver.stepper->setIrun(stepperDevice.runCurrent)) {
@@ -152,6 +181,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         
@@ -168,6 +200,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         
@@ -180,6 +215,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         
@@ -192,6 +230,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         
@@ -204,6 +245,9 @@ bool stepper_update_cfg(bool setParams) {
             stepperDevice.fault = true;
             stepperDevice.newMessage = true;
             strcpy(stepperDevice.message, stepperDriver.message);
+            #if STEPPER_DEBUG
+                Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+            #endif
             return false;
         }
         stepperDriver.ready = true;
@@ -220,6 +264,9 @@ bool stepper_update_cfg(bool setParams) {
                 stepperDevice.fault = true;
                 stepperDevice.newMessage = true;
                 strcpy(stepperDevice.message, stepperDriver.message);
+                #if STEPPER_DEBUG
+                    Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+                #endif
                 return false;
             }
         } else if (stepperDevice.enabled && !stepperDriver.stepper->status.running) {
@@ -233,6 +280,9 @@ bool stepper_update_cfg(bool setParams) {
                 stepperDevice.fault = true;
                 stepperDevice.newMessage = true;
                 strcpy(stepperDevice.message, stepperDriver.message);
+                #if STEPPER_DEBUG
+                    Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+                #endif
                 return false;
             }
             if (!stepperDriver.stepper->run()) {
@@ -244,6 +294,9 @@ bool stepper_update_cfg(bool setParams) {
                 stepperDevice.fault = true;
                 stepperDevice.newMessage = true;
                 strcpy(stepperDevice.message, stepperDriver.message);
+                #if STEPPER_DEBUG
+                    Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+                #endif
                 return false;
             }
         } else if (stepperDevice.enabled && stepperDriver.stepper->status.running) {
@@ -257,6 +310,9 @@ bool stepper_update_cfg(bool setParams) {
                 stepperDevice.fault = true;
                 stepperDevice.newMessage = true;
                 strcpy(stepperDevice.message, stepperDriver.message);
+                #if STEPPER_DEBUG
+                    Serial.printf("[STP FAULT] - %s\n", stepperDriver.message);
+                #endif
                 return false;
             }
         }

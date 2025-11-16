@@ -4790,14 +4790,14 @@ void setupWebServer()
   server.on("/api/doprofile/2", HTTP_DELETE, []() { handleDeleteDOProfile(2); });
   
   // Note: RESTful controller endpoints are handled dynamically in onNotFound():
-  //   - GET    /api/controller/{40-43}     - Get controller config (REST)
-  //   - PUT    /api/controller/{40-43}     - Save controller config (REST)
-  //   - DELETE /api/controller/{40-43}     - Delete controller (REST)
+  //   - GET    /api/controller/{40-48}     - Get controller config (REST)
+  //   - PUT    /api/controller/{40-48}     - Save controller config (REST)
+  //   - DELETE /api/controller/{40-48}     - Delete controller (REST)
   //
-  // Both endpoint styles are supported:
-  //   1. Config endpoints: /api/config/tempcontroller/{40-42} (static, for backward compatibility)
-  //   2. REST endpoints: /api/controller/{40-43} (dynamic, cleaner URLs)
-  //   3. Control endpoints: /api/controller/{40-42}/{action} and /api/phcontroller/43/{action} (static)
+  // Endpoint organization:
+  //   1. Config GET/POST: /api/config/{type}controller/{index} (static, backward compatibility)
+  //   2. Config DELETE: /api/controller/{index} (RESTful, standardized)
+  //   3. Control actions: /api/{type}controller/{index}/{action} (static, type-specific actions)
   
   // ============================================================================
   // Device Control API Endpoints (Peripheral Devices - Control indices 50-69)
@@ -4896,10 +4896,11 @@ void setupWebServer()
       
       Serial.printf("[WEB] Controller API route detected: index=%d, indexStr='%s'\n", index, indexStr.c_str());
       
-      // Validate controller range: temp controllers (40-42), pH controller (43), or flow controllers (44-47)
+      // Validate controller range: temp controllers (40-42), pH controller (43), flow controllers (44-47), DO controller (48)
       bool validRange = (index >= 40 && index < 40 + MAX_TEMP_CONTROLLERS) ||  // 40-42
                         index == 43 ||                                           // pH controller
-                        (index >= 44 && index < 44 + MAX_FLOW_CONTROLLERS);     // 44-47
+                        (index >= 44 && index < 44 + MAX_FLOW_CONTROLLERS) ||  // 44-47
+                        index == 48;                                             // DO controller
       
       if (validRange && indexStr.length() > 0) {
         // Valid controller route - dispatch to appropriate handler

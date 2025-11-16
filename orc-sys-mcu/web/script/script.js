@@ -7888,19 +7888,8 @@ async function deleteController() {
     }
     
     try {
-        // Determine endpoint based on controller type
-        let endpoint;
-        if (currentConfigIndex === 43) {
-            endpoint = `/api/config/phcontroller/${currentConfigIndex}`;
-        } else if (currentConfigIndex >= 44 && currentConfigIndex <= 47) {
-            endpoint = `/api/config/flowcontroller/${currentConfigIndex}`;
-        } else if (currentConfigIndex === 48) {
-            endpoint = `/api/config/docontroller/${currentConfigIndex}`;
-        } else if (currentConfigIndex >= 40 && currentConfigIndex <= 42) {
-            endpoint = `/api/config/tempcontroller/${currentConfigIndex}`;
-        } else {
-            endpoint = `/api/controller/${currentConfigIndex}`;
-        }
+        // Use RESTful endpoint for all controllers (temp 40-42, pH 43, flow 44-47, DO 48)
+        const endpoint = `/api/controller/${currentConfigIndex}`;
         
         const response = await fetch(endpoint, {
             method: 'DELETE'
