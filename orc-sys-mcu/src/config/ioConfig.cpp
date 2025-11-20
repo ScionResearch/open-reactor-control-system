@@ -700,11 +700,14 @@ bool loadIOConfig() {
 void saveIOConfig() {
     log(LOG_INFO, true, "Saving IO configuration to %s\n", IO_CONFIG_FILENAME);
     
+    // TEMPORARILY DISABLED FOR TESTING
+    /*
     // Check if LittleFS is mounted
     if (!LittleFS.begin()) {
         log(LOG_WARNING, true, "Failed to mount LittleFS\n");
         return;
     }
+    */
     
     // Create JSON document on heap to avoid stack overflow
     DynamicJsonDocument doc(16384);
@@ -1008,7 +1011,7 @@ void saveIOConfig() {
         sensor["name"] = ioConfig.deviceSensors[i].name;
         sensor["showOnDashboard"] = ioConfig.deviceSensors[i].showOnDashboard;
         sensor["nameOverridden"] = ioConfig.deviceSensors[i].nameOverridden;
-    }
+    }    
     
     // Open file for writing
     File configFile = LittleFS.open(IO_CONFIG_FILENAME, "w");
@@ -1028,6 +1031,7 @@ void saveIOConfig() {
     log(LOG_DEBUG, false, "IO configuration JSON doc size: %d bytes\n", doc.memoryUsage());
     
     configFile.close();
+    
     // Don't end LittleFS here as it will prevent serving web files
 }
 
@@ -1087,6 +1091,7 @@ void pushIOConfigToIOmcu() {
         if (!ioConfig.adcInputs[i].enabled) continue;
         
         IPC_ConfigAnalogInput_t cfg;
+        cfg.transactionId = generateTransactionId();
         cfg.index = i;
         strncpy(cfg.unit, ioConfig.adcInputs[i].unit, sizeof(cfg.unit) - 1);
         cfg.unit[sizeof(cfg.unit) - 1] = '\0';
@@ -1121,6 +1126,7 @@ void pushIOConfigToIOmcu() {
         if (!ioConfig.dacOutputs[i].enabled) continue;
         
         IPC_ConfigAnalogOutput_t cfg;
+        cfg.transactionId = generateTransactionId();
         cfg.index = 8 + i;
         strncpy(cfg.unit, ioConfig.dacOutputs[i].unit, sizeof(cfg.unit) - 1);
         cfg.unit[sizeof(cfg.unit) - 1] = '\0';
@@ -1155,6 +1161,7 @@ void pushIOConfigToIOmcu() {
         if (!ioConfig.rtdSensors[i].enabled) continue;
         
         IPC_ConfigRTD_t cfg;
+        cfg.transactionId = generateTransactionId();
         cfg.index = 10 + i;
         strncpy(cfg.unit, ioConfig.rtdSensors[i].unit, sizeof(cfg.unit) - 1);
         cfg.unit[sizeof(cfg.unit) - 1] = '\0';
@@ -1191,6 +1198,7 @@ void pushIOConfigToIOmcu() {
         if (!ioConfig.gpio[i].enabled) continue;
         
         IPC_ConfigGPIO_t cfg;
+        cfg.transactionId = generateTransactionId();
         cfg.index = 13 + i;
         strncpy(cfg.name, ioConfig.gpio[i].name, sizeof(cfg.name) - 1);
         cfg.name[sizeof(cfg.name) - 1] = '\0';
@@ -1227,6 +1235,7 @@ void pushIOConfigToIOmcu() {
         if (!ioConfig.digitalOutputs[i].enabled) continue;
         
         IPC_ConfigDigitalOutput_t cfg;
+        cfg.transactionId = generateTransactionId();
         cfg.index = 21 + i;
         strncpy(cfg.name, ioConfig.digitalOutputs[i].name, sizeof(cfg.name) - 1);
         cfg.name[sizeof(cfg.name) - 1] = '\0';
@@ -1260,6 +1269,7 @@ void pushIOConfigToIOmcu() {
     // ========================================================================
     if (ioConfig.stepperMotor.enabled) {
         IPC_ConfigStepper_t cfg;
+        cfg.transactionId = generateTransactionId();
         cfg.index = 26;
         strncpy(cfg.name, ioConfig.stepperMotor.name, sizeof(cfg.name) - 1);
         cfg.name[sizeof(cfg.name) - 1] = '\0';
@@ -1307,6 +1317,7 @@ void pushIOConfigToIOmcu() {
         if (!ioConfig.dcMotors[i].enabled) continue;
         
         IPC_ConfigDCMotor_t cfg;
+        cfg.transactionId = generateTransactionId();
         cfg.index = 27 + i;
         strncpy(cfg.name, ioConfig.dcMotors[i].name, sizeof(cfg.name) - 1);
         cfg.name[sizeof(cfg.name) - 1] = '\0';
@@ -1341,6 +1352,7 @@ void pushIOConfigToIOmcu() {
         if (!ioConfig.comPorts[i].enabled) continue;
         
         IPC_ConfigComPort_t cfg;
+        cfg.transactionId = generateTransactionId();
         cfg.index = i;
         cfg.baudRate = ioConfig.comPorts[i].baudRate;
         cfg.dataBits = ioConfig.comPorts[i].dataBits;
@@ -1459,6 +1471,7 @@ void pushIOConfigToIOmcu() {
             ioConfig.devices[i].interfaceType == DEVICE_INTERFACE_ANALOGUE_IO) {
             
             IPC_ConfigPressureCtrl_t cfg;
+            cfg.transactionId = generateTransactionId();
             cfg.controlIndex = ioConfig.devices[i].dynamicIndex - 20;  // Control index
             cfg.dacIndex = ioConfig.devices[i].analogueIO.dacOutputIndex;
             strncpy(cfg.unit, ioConfig.devices[i].analogueIO.unit, sizeof(cfg.unit) - 1);
@@ -1542,6 +1555,7 @@ void pushIOConfigToIOmcu() {
         IPC_ConfigpHController_t cfg;
         memset(&cfg, 0, sizeof(cfg));
         
+        cfg.transactionId = generateTransactionId();
         cfg.index = 43;
         cfg.isActive = true;
         strncpy(cfg.name, ioConfig.phController.name, sizeof(cfg.name) - 1);
@@ -1595,6 +1609,7 @@ void pushIOConfigToIOmcu() {
             IPC_ConfigFlowController_t cfg;
             memset(&cfg, 0, sizeof(cfg));
             
+            cfg.transactionId = generateTransactionId();
             cfg.index = 44 + i;
             cfg.isActive = true;
             strncpy(cfg.name, ioConfig.flowControllers[i].name, sizeof(cfg.name) - 1);
@@ -1642,6 +1657,7 @@ void pushIOConfigToIOmcu() {
         IPC_ConfigDOController_t cfg;
         memset(&cfg, 0, sizeof(cfg));
         
+        cfg.transactionId = generateTransactionId();
         cfg.index = 48;
         cfg.isActive = true;
         strncpy(cfg.name, ioConfig.doController.name, sizeof(cfg.name) - 1);
@@ -1908,4 +1924,182 @@ uint8_t getDeviceControlIndex(const DeviceConfig* device) {
     // All devices: control index = sensor index - 20
     // Maps 70-99 → 50-69
     return device->dynamicIndex - 20;
+}
+
+/**
+ * @brief Count total number of active devices
+ * @return Number of active devices (0-20)
+ */
+uint8_t getActiveDeviceCount() {
+    uint8_t count = 0;
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (ioConfig.devices[i].isActive) {
+            count++;
+        }
+    }
+    return count;
+}
+
+/**
+ * @brief Get the number of control objects a device type creates
+ * @param driverType Device driver type
+ * @return Number of control objects (typically 1)
+ */
+static uint8_t getDeviceControlObjectCount(DeviceDriverType driverType) {
+    // Most devices have 1 control object
+    // Future: Some devices might have multiple control objects
+    return 1;
+}
+
+/**
+ * @brief Get the number of sensor objects a device type creates
+ * @param driverType Device driver type
+ * @return Number of sensor objects
+ */
+static uint8_t getDeviceSensorObjectCount(DeviceDriverType driverType) {
+    switch (driverType) {
+        case DEVICE_DRIVER_HAMILTON_PH:    // pH + Temperature
+        case DEVICE_DRIVER_HAMILTON_DO:    // DO + Temperature
+        case DEVICE_DRIVER_HAMILTON_OD:    // OD + Temperature
+        case DEVICE_DRIVER_ALICAT_MFC:     // Flow rate + Pressure
+            return 2;
+        
+        case DEVICE_DRIVER_PRESSURE_CONTROLLER:  // Single pressure value
+            return 1;
+        
+        case DEVICE_DRIVER_STIRRER:        // RPM
+        case DEVICE_DRIVER_PUMP:           // Flow rate
+            return 1;
+        
+        default:
+            return 1;  // Default to 1 sensor per device
+    }
+}
+
+/**
+ * @brief Count number of device control objects (indices 50-69)
+ * Counts actual valid control objects based on configured device types
+ * @return Number of valid control objects (expected responses)
+ */
+uint8_t getActiveDeviceControlCount() {
+    uint8_t count = 0;
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (ioConfig.devices[i].isActive) {
+            count += getDeviceControlObjectCount(ioConfig.devices[i].driverType);
+        }
+    }
+    return count;
+}
+
+/**
+ * @brief Count number of device sensor objects (indices 70-99)
+ * Counts actual valid sensor objects based on configured device types
+ * @return Number of valid sensor objects (expected responses)
+ */
+uint8_t getActiveDeviceSensorCount() {
+    uint8_t count = 0;
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (ioConfig.devices[i].isActive) {
+            count += getDeviceSensorObjectCount(ioConfig.devices[i].driverType);
+        }
+    }
+    return count;
+}
+
+/**
+ * @brief Count number of fixed hardware objects (indices 0-48)
+ * Includes base sensors/outputs + active controllers
+ * Controllers are at indices 40-48, so we need to request full range
+ * @return Number of indices to request (0 to highest active object)
+ */
+uint8_t getFixedHardwareObjectCount() {
+    // Base hardware (always present):
+    // - ADC (0-7): 8
+    // - DAC (8-9): 2
+    // - RTD (10-12): 3
+    // - GPIO (13-20): 8
+    // - Digital Outputs (21-25): 5
+    // - Stepper (26): 1
+    // - DC Motors (27-30): 4
+    // - Energy Sensors (31-32): 2
+    // Total: 33 objects (indices 0-32)
+    
+    // COM ports (33-36): 4 objects
+    // Reserved (37-39): 3 indices (may or may not have objects)
+    
+    // Controllers start at index 40
+    // To include controllers, we must request up to the highest active controller index
+    
+    uint8_t highestIndex = 36;  // Default to COM ports (base hardware always ends at 36)
+    
+    // Temperature Controllers (40-42): check active ones
+    for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {
+        if (ioConfig.tempControllers[i].isActive) {
+            uint8_t controllerIndex = 40 + i;
+            if (controllerIndex > highestIndex) {
+                highestIndex = controllerIndex;
+            }
+        }
+    }
+    
+    // pH Controller (43): check if active
+    if (ioConfig.phController.isActive && 43 > highestIndex) {
+        highestIndex = 43;
+    }
+    
+    // Flow Controllers (44-47): check active ones
+    for (int i = 0; i < MAX_FLOW_CONTROLLERS; i++) {
+        if (ioConfig.flowControllers[i].isActive) {
+            uint8_t controllerIndex = 44 + i;
+            if (controllerIndex > highestIndex) {
+                highestIndex = controllerIndex;
+            }
+        }
+    }
+    
+    // DO Controller (48): check if active
+    if (ioConfig.doController.isActive && 48 > highestIndex) {
+        highestIndex = 48;
+    }
+    
+    // Return number of indices to request (0 to highestIndex inclusive)
+    return highestIndex + 1;
+}
+
+/**
+ * @brief Count expected valid responses in fixed hardware range
+ * Since range includes gaps (37-39 reserved), we need to know actual count for transaction tracking
+ * @return Number of valid objects expected to respond
+ */
+uint8_t getFixedHardwareExpectedCount() {
+    // Base hardware (0-32): 33 objects (always present)
+    // COM ports (33-36): 4 objects (always present)
+    // Reserved (37-39): 0 objects (don't respond)
+    uint8_t count = 37;
+    
+    // Temperature Controllers (40-42): count active ones
+    for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {
+        if (ioConfig.tempControllers[i].isActive) {
+            count++;
+        }
+    }
+    
+    // pH Controller (43): count if active
+    if (ioConfig.phController.isActive) {
+        count++;
+    }
+    
+    // Flow Controllers (44-47): count active ones
+    for (int i = 0; i < MAX_FLOW_CONTROLLERS; i++) {
+        if (ioConfig.flowControllers[i].isActive) {
+            count++;
+        }
+    }
+    
+    // DO Controller (48): count if active
+    if (ioConfig.doController.isActive) {
+        count++;
+    }
+    
+    return count;
 }

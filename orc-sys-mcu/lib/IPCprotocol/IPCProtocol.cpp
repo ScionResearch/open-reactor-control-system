@@ -182,8 +182,46 @@ void IPCProtocol::processRxPacket() {
     // Check if we received the expected number of bytes
     uint16_t expectedBytes = 2 + _rxPacketLength + 2;
     if (_rxBufferIndex != expectedBytes) {
-        Serial.printf("[IPC] ERROR: Length mismatch (got %d, expected %d), flushing UART buffer\n",
+        Serial.printf("[IPC] ERROR: Length mismatch (got %d, expected %d)\n",
                       _rxBufferIndex, expectedBytes);
+        
+        // Decode what we received for debugging
+        Serial.printf("[IPC] Packet header: LENGTH=0x%04X (%d), MSG_TYPE=0x%02X\n",
+                      _rxPacketLength, _rxPacketLength, _rxMessageType);
+        
+        // Try to decode message type name
+        const char* msgName = "UNKNOWN";
+        switch (_rxMessageType) {
+            case 0x01: msgName = "SENSOR_DATA"; break;
+            case 0x10: msgName = "CONTROL_ACK"; break;
+            case 0x30: msgName = "BULK_READ_REQ"; break;
+            case 0x40: msgName = "CONFIG_TEMP_CTRL"; break;
+            case 0x6E: msgName = "CONFIG_FLOW_CTRL"; break;
+            case 0xF0: msgName = "ERROR"; break;
+            case 0xFE: msgName = "PING"; break;
+            case 0xFF: msgName = "PONG"; break;
+        }
+        Serial.printf("[IPC] Message type: %s\n", msgName);
+        
+        // Show first 16 bytes of payload (if available) to help identify object
+        if (_rxPacketLength > 1 && _rxBufferIndex >= 6) {
+            Serial.printf("[IPC] Payload preview (first %d bytes): ", min(16, _rxBufferIndex - 4));
+            for (uint16_t i = 3; i < min(19, _rxBufferIndex - 2); i++) {
+                Serial.printf("%02X ", _rxBuffer[i]);
+            }
+            Serial.println();
+            
+            // If this looks like SENSOR_DATA, try to decode index/type
+            if (_rxMessageType == 0x01 && _rxBufferIndex >= 8) {
+                // IPC_SensorData_t starts with: transactionId(2), index(2), objectType(1), flags(1)
+                uint16_t txnId = ((uint16_t)_rxBuffer[3] << 8) | _rxBuffer[4];
+                uint16_t index = ((uint16_t)_rxBuffer[5] << 8) | _rxBuffer[6];
+                uint8_t objType = _rxBuffer[7];
+                Serial.printf("[IPC] Decoded: txnId=%d, index=%d, objectType=%d\n", 
+                             txnId, index, objType);
+            }
+        }
+        
         _rxErrorCount++;
         // Flush UART RX buffer to resync - critical for recovery!
         uint16_t flushed = 0;

@@ -65,6 +65,15 @@ public:
     void requestBulkUpdate(uint8_t startIndex, uint8_t count);
     
     /**
+     * @brief Request bulk sensor update with explicit expected response count
+     * Used for sparse object ranges where request count != response count
+     * @param startIndex First object index
+     * @param requestCount Number of consecutive indices to request
+     * @param expectedResponses Number of valid objects expected to respond
+     */
+    void requestBulkUpdateSparse(uint8_t startIndex, uint8_t requestCount, uint8_t expectedResponses);
+    
+    /**
      * @brief Request update for stale objects in range
      */
     void refreshStaleObjects(uint8_t startIndex, uint8_t count);
@@ -96,6 +105,14 @@ public:
      * @brief Get number of valid objects
      */
     uint8_t getValidCount();
+    
+    /**
+     * @brief Get number of valid objects in a specific range
+     * @param startIndex First index to check
+     * @param maxCount Maximum count to check (actual range is startIndex to startIndex+maxCount-1)
+     * @return Number of valid objects found in the range
+     */
+    uint8_t getValidCountInRange(uint8_t startIndex, uint8_t maxCount);
     
 private:
     CachedObject _cache[MAX_CACHED_OBJECTS];

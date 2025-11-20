@@ -808,6 +808,7 @@ void handleSaveADCConfig(uint8_t index) {
   
   // Send updated calibration to IO MCU
   IPC_ConfigAnalogInput_t cfg;
+  cfg.transactionId = generateTransactionId();
   cfg.index = index;
   strncpy(cfg.unit, ioConfig.adcInputs[index].unit, sizeof(cfg.unit) - 1);
   cfg.unit[sizeof(cfg.unit) - 1] = '\0';
@@ -816,7 +817,14 @@ void handleSaveADCConfig(uint8_t index) {
   
   log(LOG_DEBUG, false, "handleSaveADCConfig: Sending IPC packet\n");
   
-  if (ipc.sendPacket(IPC_MSG_CONFIG_ANALOG_INPUT, (uint8_t*)&cfg, sizeof(cfg))) {
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_ANALOG_INPUT, (uint8_t*)&cfg, sizeof(cfg));
+  
+  // Track transaction for ACK validation
+  if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_ANALOG_INPUT, IPC_MSG_CONTROL_ACK, 1, cfg.index);
+  }
+  
+  if (sent) {
     log(LOG_INFO, false, "Updated ADC[%d] config: %s, unit=%s, scale=%.4f, offset=%.4f\n",
         index, ioConfig.adcInputs[index].name, cfg.unit, cfg.calScale, cfg.calOffset);
     log(LOG_DEBUG, false, "handleSaveADCConfig: Sending response\n");
@@ -912,6 +920,7 @@ void handleSaveDACConfig(uint8_t index) {
   
   // Send updated calibration to IO MCU
   IPC_ConfigAnalogOutput_t cfg;
+  cfg.transactionId = generateTransactionId();
   cfg.index = index;
   strncpy(cfg.unit, ioConfig.dacOutputs[dacIndex].unit, sizeof(cfg.unit) - 1);
   cfg.unit[sizeof(cfg.unit) - 1] = '\0';
@@ -920,7 +929,14 @@ void handleSaveDACConfig(uint8_t index) {
   
   log(LOG_DEBUG, false, "handleSaveDACConfig: Sending IPC packet\n");
   
-  if (ipc.sendPacket(IPC_MSG_CONFIG_ANALOG_OUTPUT, (uint8_t*)&cfg, sizeof(cfg))) {
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_ANALOG_OUTPUT, (uint8_t*)&cfg, sizeof(cfg));
+  
+  // Track transaction for ACK validation
+  if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_ANALOG_OUTPUT, IPC_MSG_CONTROL_ACK, 1, cfg.index);
+  }
+  
+  if (sent) {
     log(LOG_INFO, false, "Updated DAC[%d] config: %s, unit=%s, scale=%.4f, offset=%.4f\n",
         index, ioConfig.dacOutputs[dacIndex].name, cfg.unit, cfg.calScale, cfg.calOffset);
     log(LOG_DEBUG, false, "handleSaveDACConfig: Sending response\n");
@@ -1032,6 +1048,7 @@ void handleSaveRTDConfig(uint8_t index) {
   
   // Send updated configuration to IO MCU
   IPC_ConfigRTD_t cfg;
+  cfg.transactionId = generateTransactionId();
   cfg.index = index;
   strncpy(cfg.unit, ioConfig.rtdSensors[rtdIndex].unit, sizeof(cfg.unit) - 1);
   cfg.unit[sizeof(cfg.unit) - 1] = '\0';
@@ -1042,7 +1059,14 @@ void handleSaveRTDConfig(uint8_t index) {
   
   log(LOG_DEBUG, false, "handleSaveRTDConfig: Sending IPC packet\n");
   
-  if (ipc.sendPacket(IPC_MSG_CONFIG_RTD, (uint8_t*)&cfg, sizeof(cfg))) {
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_RTD, (uint8_t*)&cfg, sizeof(cfg));
+  
+  // Track transaction for ACK validation
+  if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_RTD, IPC_MSG_CONTROL_ACK, 1, cfg.index);
+  }
+  
+  if (sent) {
     log(LOG_INFO, false, "Updated RTD[%d] config: %s, unit=%s, %d-wire PT%d, scale=%.4f, offset=%.4f\n",
         index, ioConfig.rtdSensors[rtdIndex].name, cfg.unit, cfg.wireConfig, cfg.nominalOhms, 
         cfg.calScale, cfg.calOffset);
@@ -1133,6 +1157,7 @@ void handleSaveGPIOConfig(uint8_t index) {
   
   // Send updated configuration to IO MCU
   IPC_ConfigGPIO_t cfg;
+  cfg.transactionId = generateTransactionId();
   cfg.index = index;
   strlcpy(cfg.name, ioConfig.gpio[gpioIndex].name, sizeof(cfg.name));
   cfg.pullMode = (uint8_t)ioConfig.gpio[gpioIndex].pullMode;
@@ -1140,7 +1165,14 @@ void handleSaveGPIOConfig(uint8_t index) {
   
   log(LOG_DEBUG, false, "handleSaveGPIOConfig: Sending IPC packet\n");
   
-  if (ipc.sendPacket(IPC_MSG_CONFIG_GPIO, (uint8_t*)&cfg, sizeof(cfg))) {
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_GPIO, (uint8_t*)&cfg, sizeof(cfg));
+  
+  // Track transaction for ACK validation
+  if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_GPIO, IPC_MSG_CONTROL_ACK, 1, cfg.index);
+  }
+  
+  if (sent) {
     log(LOG_INFO, false, "Updated GPIO[%d] config: %s, pullMode=%d, enabled=%d\n",
         index, cfg.name, cfg.pullMode, cfg.enabled);
     log(LOG_DEBUG, false, "handleSaveGPIOConfig: Sending response\n");
@@ -1386,6 +1418,7 @@ void handleSaveComPortConfig(uint8_t index) {
   
   // Send updated config to IO MCU
   IPC_ConfigComPort_t cfg;
+  cfg.transactionId = generateTransactionId();
   cfg.index = index;
   cfg.baudRate = ioConfig.comPorts[index].baudRate;
   cfg.dataBits = ioConfig.comPorts[index].dataBits;
@@ -1394,7 +1427,14 @@ void handleSaveComPortConfig(uint8_t index) {
   
   log(LOG_DEBUG, false, "handleSaveComPortConfig: Sending IPC packet\n");
   
-  if (ipc.sendPacket(IPC_MSG_CONFIG_COMPORT, (uint8_t*)&cfg, sizeof(cfg))) {
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_COMPORT, (uint8_t*)&cfg, sizeof(cfg));
+  
+  // Track transaction for ACK validation
+  if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_COMPORT, IPC_MSG_CONTROL_ACK, 1, cfg.index);
+  }
+  
+  if (sent) {
     log(LOG_INFO, false, "Updated COM port %d config: baud=%d, parity=%d, stop=%.1f\n",
         index, cfg.baudRate, cfg.parity, cfg.stopBits);
     log(LOG_DEBUG, false, "handleSaveComPortConfig: Sending response\n");
@@ -3128,6 +3168,8 @@ void handleSaveTempControllerConfig(uint8_t index) {
   IPC_ConfigTempController_t cfg;
   memset(&cfg, 0, sizeof(cfg));
   
+  // Generate transaction ID for ACK tracking
+  cfg.transactionId = generateTransactionId();
   cfg.index = index;
   cfg.isActive = ioConfig.tempControllers[ctrlIdx].isActive;
   strncpy(cfg.name, ioConfig.tempControllers[ctrlIdx].name, sizeof(cfg.name) - 1);
@@ -3145,6 +3187,11 @@ void handleSaveTempControllerConfig(uint8_t index) {
   cfg.outputMax = ioConfig.tempControllers[ctrlIdx].outputMax;
   
   bool sent = ipc.sendPacket(IPC_MSG_CONFIG_TEMP_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  // Track transaction for ACK validation
+  if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_TEMP_CONTROLLER, IPC_MSG_CONTROL_ACK, 1, cfg.index);
+  }
   
   if (sent) {
     log(LOG_INFO, false, "Saved and sent temperature controller %d configuration to IO MCU\n", index);
@@ -3181,6 +3228,7 @@ void handleUpdateControllerSetpoint(uint8_t index) {
   // Send IPC command to IO MCU (DO NOT save to config - avoid flash wear)
   IPC_TempControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = index;
   cmd.objectType = OBJ_T_TEMPERATURE_CONTROL;
   cmd.command = TEMP_CTRL_CMD_SET_SETPOINT;
@@ -3189,11 +3237,12 @@ void handleUpdateControllerSetpoint(uint8_t index) {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
     // Update in-memory config (DO NOT save to flash)
     // This allows the API to return the correct setpoint when web UI polls
     ioConfig.tempControllers[ctrlIdx].setpoint = setpoint;
     
-    log(LOG_INFO, false, "Controller %d setpoint updated to %.1f\n", index, setpoint);
+    log(LOG_INFO, false, "Controller %d setpoint updated to %.1f (txn=%d)\n", index, setpoint, cmd.transactionId);
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Setpoint updated\"}");
   } else {
     log(LOG_WARNING, false, "Failed to send setpoint command to controller %d\n", index);
@@ -3210,6 +3259,7 @@ void handleEnableController(uint8_t index) {
   // Send IPC command to IO MCU (DO NOT save to config - avoid flash wear)
   IPC_TempControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = index;
   cmd.objectType = OBJ_T_TEMPERATURE_CONTROL;
   cmd.command = TEMP_CTRL_CMD_ENABLE;
@@ -3217,7 +3267,8 @@ void handleEnableController(uint8_t index) {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "Controller %d enabled\n", index);
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_INFO, false, "Controller %d enabled (txn=%d)\n", index, cmd.transactionId);
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Controller enabled\"}");
   } else {
     log(LOG_WARNING, false, "Failed to send enable command to controller %d\n", index);
@@ -3234,6 +3285,7 @@ void handleDisableController(uint8_t index) {
   // Send IPC command to IO MCU (DO NOT save to config - avoid flash wear)
   IPC_TempControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = index;
   cmd.objectType = OBJ_T_TEMPERATURE_CONTROL;
   cmd.command = TEMP_CTRL_CMD_DISABLE;
@@ -3241,7 +3293,8 @@ void handleDisableController(uint8_t index) {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "Controller %d disabled\n", index);
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_INFO, false, "Controller %d disabled (txn=%d)\n", index, cmd.transactionId);
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Controller disabled\"}");
   } else {
     log(LOG_WARNING, false, "Failed to send disable command to controller %d\n", index);
@@ -3287,6 +3340,7 @@ void handleStartAutotune(uint8_t index) {
   // Send IPC command to IO MCU
   IPC_TempControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = index;
   cmd.objectType = OBJ_T_TEMPERATURE_CONTROL;
   cmd.command = TEMP_CTRL_CMD_START_AUTOTUNE;
@@ -3296,8 +3350,9 @@ void handleStartAutotune(uint8_t index) {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "Controller %d autotune started (setpoint=%.1f, step=%.1f%%)\n", 
-        index, targetSetpoint, outputStep);
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_INFO, false, "Controller %d autotune started (setpoint=%.1f, step=%.1f%%, txn=%d)\n", 
+        index, targetSetpoint, outputStep, cmd.transactionId);
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Autotune started\"}");
   } else {
     log(LOG_WARNING, false, "Failed to send autotune command to controller %d\n", index);
@@ -3323,10 +3378,16 @@ void handleDeleteController(uint8_t index) {
   // Send IPC delete command to IO MCU
   IPC_ConfigTempController_t cfg;
   memset(&cfg, 0, sizeof(cfg));
+  cfg.transactionId = generateTransactionId();
   cfg.index = index;
   cfg.isActive = false;  // This signals deletion
   
   bool sent = ipc.sendPacket(IPC_MSG_CONFIG_TEMP_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  // Track transaction for ACK validation
+  if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_TEMP_CONTROLLER, IPC_MSG_CONTROL_ACK, 1, cfg.index);
+  }
   
   if (sent) {
     log(LOG_INFO, false, "Controller %d deleted and removed from IO MCU\n", index);
@@ -3442,6 +3503,7 @@ void handleSavepHControllerConfig() {
   IPC_ConfigpHController_t cfg;
   memset(&cfg, 0, sizeof(cfg));
   
+  cfg.transactionId = generateTransactionId();
   cfg.index = 43;
   cfg.isActive = ioConfig.phController.isActive;
   strncpy(cfg.name, ioConfig.phController.name, sizeof(cfg.name) - 1);
@@ -3469,11 +3531,39 @@ void handleSavepHControllerConfig() {
   bool sent = ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
   
   if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_PH_CONTROLLER, IPC_MSG_CONTROL_ACK, 1, cfg.index);
     log(LOG_INFO, false, "Saved and sent pH controller configuration to IO MCU\n");
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved and applied\"}");
   } else {
     log(LOG_WARNING, false, "Saved pH controller config but failed to send to IO MCU\n");
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved but IO MCU update failed\"}");
+  }
+}
+
+void handleDeletepHController() {
+  // Disable and mark inactive
+  ioConfig.phController.isActive = false;
+  ioConfig.phController.enabled = false;
+  memset(ioConfig.phController.name, 0, sizeof(ioConfig.phController.name));
+  
+  saveIOConfig();
+  
+  // Send IPC delete command to IO MCU
+  IPC_ConfigpHController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.transactionId = generateTransactionId();
+  cfg.index = 43;
+  cfg.isActive = false;  // This signals deletion
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  
+  if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_PH_CONTROLLER, IPC_MSG_CONTROL_ACK, 1, cfg.index);
+    log(LOG_INFO, false, "pH controller deleted and removed from IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller deleted\"}");
+  } else {
+    log(LOG_WARNING, false, "pH controller deleted from config but failed to remove from IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller deleted but IO MCU update failed\"}");
   }
 }
 
@@ -3491,39 +3581,59 @@ void handleUpdatepHSetpoint() {
     return;
   }
   
-  float setpoint = doc["setpoint"] | ioConfig.phController.setpoint;
+  float setpoint = doc["setpoint"] | 7.0f;
   
-  // Validate pH range
-  if (setpoint < 0.0f || setpoint > 14.0f) {
-    server.send(400, "application/json", "{\"error\":\"pH must be between 0 and 14\"}");
-    return;
-  }
+  // Update configuration
+  ioConfig.phController.setpoint = setpoint;
   
-  // Send IPC command to IO MCU (DO NOT save to config - avoid flash wear)
-  IPC_pHControllerControl_t cmd;
-  memset(&cmd, 0, sizeof(cmd));
-  cmd.index = 43;
-  cmd.objectType = OBJ_T_PH_CONTROL;
-  cmd.command = PH_CMD_SET_SETPOINT;
-  cmd.setpoint = setpoint;
+  // Save configuration
+  saveIOConfig();
   
-  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  // Send IPC config packet to IO MCU
+  IPC_ConfigpHController_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  
+  cfg.transactionId = generateTransactionId();
+  cfg.index = 43;
+  cfg.isActive = ioConfig.phController.isActive;
+  strncpy(cfg.name, ioConfig.phController.name, sizeof(cfg.name) - 1);
+  cfg.enabled = ioConfig.phController.enabled;
+  cfg.pvSourceIndex = ioConfig.phController.pvSourceIndex;
+  cfg.setpoint = ioConfig.phController.setpoint;
+  cfg.deadband = ioConfig.phController.deadband;
+  
+  cfg.acidEnabled = ioConfig.phController.acidDosing.enabled;
+  cfg.acidOutputType = ioConfig.phController.acidDosing.outputType;
+  cfg.acidOutputIndex = ioConfig.phController.acidDosing.outputIndex;
+  cfg.acidMotorPower = ioConfig.phController.acidDosing.motorPower;
+  cfg.acidDosingTime_ms = ioConfig.phController.acidDosing.dosingTime_ms;
+  cfg.acidDosingInterval_ms = ioConfig.phController.acidDosing.dosingInterval_ms;
+  cfg.acidVolumePerDose_mL = ioConfig.phController.acidDosing.volumePerDose_mL;
+  
+  cfg.alkalineEnabled = ioConfig.phController.alkalineDosing.enabled;
+  cfg.alkalineOutputType = ioConfig.phController.alkalineDosing.outputType;
+  cfg.alkalineOutputIndex = ioConfig.phController.alkalineDosing.outputIndex;
+  cfg.alkalineMotorPower = ioConfig.phController.alkalineDosing.motorPower;
+  cfg.alkalineDosingTime_ms = ioConfig.phController.alkalineDosing.dosingTime_ms;
+  cfg.alkalineDosingInterval_ms = ioConfig.phController.alkalineDosing.dosingInterval_ms;
+  cfg.alkalineVolumePerDose_mL = ioConfig.phController.alkalineDosing.volumePerDose_mL;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
   
   if (sent) {
-    // Update in-memory config (DO NOT save to flash)
-    ioConfig.phController.setpoint = setpoint;
-    
-    log(LOG_INFO, false, "pH controller setpoint updated to %.2f\n", setpoint);
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_PH_CONTROLLER, IPC_MSG_CONTROL_ACK, 1, cfg.index);
+    log(LOG_INFO, false, "pH controller setpoint updated and sent to IO MCU\n");
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Setpoint updated\"}");
   } else {
-    log(LOG_WARNING, false, "Failed to send pH setpoint command\n");
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+    log(LOG_WARNING, false, "pH controller setpoint updated but failed to send to IO MCU\n");
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Setpoint updated but IO MCU update failed\"}");
   }
 }
 
 void handleEnablepHController() {
   IPC_pHControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = 43;
   cmd.objectType = OBJ_T_PH_CONTROL;
   cmd.command = PH_CMD_ENABLE;
@@ -3531,17 +3641,18 @@ void handleEnablepHController() {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "pH controller enabled\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller enabled\"}");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    log(LOG_INFO, false, "pH controller enabled (txn=%d)\n", cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
   } else {
-    log(LOG_WARNING, false, "Failed to send pH enable command\n");
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
   }
 }
 
 void handleDisablepHController() {
   IPC_pHControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = 43;
   cmd.objectType = OBJ_T_PH_CONTROL;
   cmd.command = PH_CMD_DISABLE;
@@ -3549,17 +3660,18 @@ void handleDisablepHController() {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "pH controller disabled\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller disabled\"}");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    log(LOG_INFO, false, "pH controller disabled (txn=%d)\n", cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
   } else {
-    log(LOG_WARNING, false, "Failed to send pH disable command\n");
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
   }
 }
 
-void handleDosepHAcid() {
+void handleManualpHAcidDose() {
   IPC_pHControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = 43;
   cmd.objectType = OBJ_T_PH_CONTROL;
   cmd.command = PH_CMD_DOSE_ACID;
@@ -3567,17 +3679,18 @@ void handleDosepHAcid() {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "Manual acid dose command sent\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Acid dose started\"}");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    log(LOG_INFO, false, "pH manual acid dose started (txn=%d)\n", cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
   } else {
-    log(LOG_WARNING, false, "Failed to send acid dose command\n");
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
   }
 }
 
-void handleDosepHAlkaline() {
+void handleManualpHAlkalineDose() {
   IPC_pHControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = 43;
   cmd.objectType = OBJ_T_PH_CONTROL;
   cmd.command = PH_CMD_DOSE_ALKALINE;
@@ -3585,17 +3698,18 @@ void handleDosepHAlkaline() {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "Manual alkaline dose command sent\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Alkaline dose started\"}");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    log(LOG_INFO, false, "pH manual alkaline dose started (txn=%d)\n", cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
   } else {
-    log(LOG_WARNING, false, "Failed to send alkaline dose command\n");
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
   }
 }
 
 void handleResetpHAcidVolume() {
   IPC_pHControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = 43;
   cmd.objectType = OBJ_T_PH_CONTROL;
   cmd.command = PH_CMD_RESET_ACID_VOLUME;
@@ -3603,17 +3717,18 @@ void handleResetpHAcidVolume() {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "pH acid cumulative volume reset command sent\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Acid volume reset to 0.0 mL\"}");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    log(LOG_INFO, false, "pH acid volume reset (txn=%d)\n", cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
   } else {
-    log(LOG_WARNING, false, "Failed to send acid volume reset command\n");
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
   }
 }
 
 void handleResetpHAlkalineVolume() {
   IPC_pHControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = 43;
   cmd.objectType = OBJ_T_PH_CONTROL;
   cmd.command = PH_CMD_RESET_BASE_VOLUME;
@@ -3621,36 +3736,49 @@ void handleResetpHAlkalineVolume() {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "pH alkaline cumulative volume reset command sent\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Alkaline volume reset to 0.0 mL\"}");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    log(LOG_INFO, false, "pH alkaline volume reset (txn=%d)\n", cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
   } else {
-    log(LOG_WARNING, false, "Failed to send alkaline volume reset command\n");
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
   }
 }
 
-void handleDeletepHController() {
-  // Disable and mark inactive
-  ioConfig.phController.isActive = false;
-  ioConfig.phController.enabled = false;
-  memset(ioConfig.phController.name, 0, sizeof(ioConfig.phController.name));
+void handleDosepHAcid() {
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_DOSE_ACID;
   
-  saveIOConfig();
-  
-  // Send IPC delete command to IO MCU
-  IPC_ConfigpHController_t cfg;
-  memset(&cfg, 0, sizeof(cfg));
-  cfg.index = 43;
-  cfg.isActive = false;  // This signals deletion
-  
-  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "pH controller deleted and removed from IO MCU\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller deleted\"}");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    log(LOG_INFO, false, "pH manual acid dose started (txn=%d)\n", cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
   } else {
-    log(LOG_WARNING, false, "pH controller deleted from config but failed to remove from IO MCU\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"pH controller deleted but IO MCU update failed\"}");
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
+  }
+}
+
+void handleDosepHAlkaline() {
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_DOSE_ALKALINE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    log(LOG_INFO, false, "pH manual alkaline dose started (txn=%d)\n", cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
   }
 }
 
@@ -3666,24 +3794,20 @@ void handleGetFlowControllerConfig(uint8_t index) {
   }
   
   int arrIdx = index - 44;
-  StaticJsonDocument<1024> doc;
   
+  StaticJsonDocument<512> doc;
   doc["index"] = index;
   doc["isActive"] = ioConfig.flowControllers[arrIdx].isActive;
   doc["name"] = ioConfig.flowControllers[arrIdx].name;
   doc["enabled"] = ioConfig.flowControllers[arrIdx].enabled;
   doc["showOnDashboard"] = ioConfig.flowControllers[arrIdx].showOnDashboard;
-  
   doc["flowRate_mL_min"] = ioConfig.flowControllers[arrIdx].flowRate_mL_min;
-  
   doc["outputType"] = ioConfig.flowControllers[arrIdx].outputType;
   doc["outputIndex"] = ioConfig.flowControllers[arrIdx].outputIndex;
   doc["motorPower"] = ioConfig.flowControllers[arrIdx].motorPower;
-  
   doc["calibrationDoseTime_ms"] = ioConfig.flowControllers[arrIdx].calibrationDoseTime_ms;
   doc["calibrationMotorPower"] = ioConfig.flowControllers[arrIdx].calibrationMotorPower;
   doc["calibrationVolume_mL"] = ioConfig.flowControllers[arrIdx].calibrationVolume_mL;
-  
   doc["minDosingInterval_ms"] = ioConfig.flowControllers[arrIdx].minDosingInterval_ms;
   doc["maxDosingTime_ms"] = ioConfig.flowControllers[arrIdx].maxDosingTime_ms;
   
@@ -3751,6 +3875,7 @@ void handleSaveFlowControllerConfig(uint8_t index) {
   IPC_ConfigFlowController_t cfg;
   memset(&cfg, 0, sizeof(cfg));
   
+  cfg.transactionId = generateTransactionId();
   cfg.index = index;
   cfg.isActive = ioConfig.flowControllers[arrIdx].isActive;
   strncpy(cfg.name, ioConfig.flowControllers[arrIdx].name, sizeof(cfg.name) - 1);
@@ -3771,121 +3896,12 @@ void handleSaveFlowControllerConfig(uint8_t index) {
   bool sent = ipc.sendPacket(IPC_MSG_CONFIG_FLOW_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
   
   if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_FLOW_CONTROLLER, IPC_MSG_CONTROL_ACK, 1, cfg.index);
     log(LOG_INFO, false, "Saved and sent flow controller %d configuration to IO MCU\n", index);
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved and applied\"}");
   } else {
     log(LOG_WARNING, false, "Saved flow controller %d config but failed to send to IO MCU\n", index);
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved but IO MCU update failed\"}");
-  }
-}
-
-void handleSetFlowRate(uint8_t index) {
-  if (!server.hasArg("plain")) {
-    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
-    return;
-  }
-  
-  StaticJsonDocument<256> doc;
-  DeserializationError error = deserializeJson(doc, server.arg("plain"));
-  
-  if (error) {
-    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
-    return;
-  }
-  
-  if (!doc.containsKey("flowRate")) {
-    server.send(400, "application/json", "{\"error\":\"Missing flowRate parameter\"}");
-    return;
-  }
-  
-  float flowRate = doc["flowRate"];
-  
-  IPC_FlowControllerControl_t cmd;
-  memset(&cmd, 0, sizeof(cmd));
-  cmd.index = index;
-  cmd.objectType = OBJ_T_FLOW_CONTROL;
-  cmd.command = FLOW_CMD_SET_FLOW_RATE;
-  cmd.flowRate_mL_min = flowRate;
-  
-  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
-  
-  if (sent) {
-    log(LOG_INFO, false, "Flow controller %d flow rate set to %.2f mL/min\n", index, flowRate);
-    server.send(200, "application/json", "{\"success\":true}");
-  } else {
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
-  }
-}
-
-void handleEnableFlowController(uint8_t index) {
-  IPC_FlowControllerControl_t cmd;
-  memset(&cmd, 0, sizeof(cmd));
-  cmd.index = index;
-  cmd.objectType = OBJ_T_FLOW_CONTROL;
-  cmd.command = FLOW_CMD_ENABLE;
-  
-  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
-  
-  if (sent) {
-    log(LOG_INFO, false, "Flow controller %d enabled\n", index);
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Flow controller enabled\"}");
-  } else {
-    log(LOG_WARNING, false, "Failed to send flow controller %d enable command\n", index);
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
-  }
-}
-
-void handleDisableFlowController(uint8_t index) {
-  IPC_FlowControllerControl_t cmd;
-  memset(&cmd, 0, sizeof(cmd));
-  cmd.index = index;
-  cmd.objectType = OBJ_T_FLOW_CONTROL;
-  cmd.command = FLOW_CMD_DISABLE;
-  
-  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
-  
-  if (sent) {
-    log(LOG_INFO, false, "Flow controller %d disabled\n", index);
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Flow controller disabled\"}");
-  } else {
-    log(LOG_WARNING, false, "Failed to send flow controller %d disable command\n", index);
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
-  }
-}
-
-void handleManualFlowDose(uint8_t index) {
-  IPC_FlowControllerControl_t cmd;
-  memset(&cmd, 0, sizeof(cmd));
-  cmd.index = index;
-  cmd.objectType = OBJ_T_FLOW_CONTROL;
-  cmd.command = FLOW_CMD_MANUAL_DOSE;
-  
-  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
-  
-  if (sent) {
-    log(LOG_INFO, false, "Manual dose command sent to flow controller %d\n", index);
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Manual dose started\"}");
-  } else {
-    log(LOG_WARNING, false, "Failed to send manual dose command to flow controller %d\n", index);
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
-  }
-}
-
-void handleResetFlowVolume(uint8_t index) {
-  IPC_FlowControllerControl_t cmd;
-  memset(&cmd, 0, sizeof(cmd));
-  cmd.index = index;
-  cmd.objectType = OBJ_T_FLOW_CONTROL;
-  cmd.command = FLOW_CMD_RESET_VOLUME;
-  
-  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
-  
-  if (sent) {
-    log(LOG_INFO, false, "Flow controller %d cumulative volume reset\n", index);
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Volume reset to 0.0 mL\"}");
-  } else {
-    log(LOG_WARNING, false, "Failed to send volume reset command to flow controller %d\n", index);
-    server.send(500, "application/json", "{\"error\":\"Failed to communicate with IO MCU\"}");
   }
 }
 
@@ -3908,12 +3924,14 @@ void handleDeleteFlowController(uint8_t index) {
   // Send IPC delete command to IO MCU
   IPC_ConfigFlowController_t cfg;
   memset(&cfg, 0, sizeof(cfg));
+  cfg.transactionId = generateTransactionId();
   cfg.index = index;
   cfg.isActive = false;  // This signals deletion
   
   bool sent = ipc.sendPacket(IPC_MSG_CONFIG_FLOW_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
   
   if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_FLOW_CONTROLLER, IPC_MSG_CONTROL_ACK, 1, cfg.index);
     log(LOG_INFO, false, "Flow controller %d deleted and removed from IO MCU\n", index);
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Flow controller deleted\"}");
   } else {
@@ -3922,12 +3940,122 @@ void handleDeleteFlowController(uint8_t index) {
   }
 }
 
+void handleSetFlowRate(uint8_t index) {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data provided\"}");
+    return;
+  }
+  
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  float flowRate = doc["flowRate"] | 10.0f;
+  
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_SET_FLOW_RATE;
+  cmd.flowRate_mL_min = flowRate;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_INFO, false, "Flow controller %d flow rate set to %.2f mL/min (txn=%d)\n", index, flowRate, cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
+  }
+}
+
+void handleEnableFlowController(uint8_t index) {
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_ENABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_INFO, false, "Flow controller %d enabled (txn=%d)\n", index, cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
+  }
+}
+
+void handleDisableFlowController(uint8_t index) {
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_DISABLE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_INFO, false, "Flow controller %d disabled (txn=%d)\n", index, cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
+  }
+}
+
+void handleManualFlowDose(uint8_t index) {
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_MANUAL_DOSE;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_INFO, false, "Flow controller %d manual dose started (txn=%d)\n", index, cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
+  }
+}
+
+void handleResetFlowVolume(uint8_t index) {
+  IPC_FlowControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
+  cmd.index = index;
+  cmd.objectType = OBJ_T_FLOW_CONTROL;
+  cmd.command = FLOW_CMD_RESET_VOLUME;
+  
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_INFO, false, "Flow controller %d volume reset (txn=%d)\n", index, cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
+  }
+}
+
 // ============================================================================
 // DO Controller Configuration and Control (Index 48)
 // ============================================================================
 
 void handleGetDOControllerConfig() {
-  // Use smaller buffer - this response is only ~300 bytes
   StaticJsonDocument<512> doc;
   
   doc["index"] = 48;
@@ -4051,6 +4179,7 @@ void handleSaveDOControllerConfig() {
   IPC_ConfigDOController_t cfg;
   memset(&cfg, 0, sizeof(cfg));
   
+  cfg.transactionId = generateTransactionId();
   cfg.index = 48;
   cfg.isActive = ioConfig.doController.isActive;
   strncpy(cfg.name, ioConfig.doController.name, sizeof(cfg.name) - 1);
@@ -4085,6 +4214,7 @@ void handleSaveDOControllerConfig() {
   bool sent = ipc.sendPacket(IPC_MSG_CONFIG_DO_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
   
   if (sent) {
+    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_DO_CONTROLLER, IPC_MSG_CONTROL_ACK, 1, cfg.index);
     log(LOG_INFO, false, "Saved and sent DO controller configuration to IO MCU\n");
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved and applied\"}");
   } else {
@@ -4112,6 +4242,7 @@ void handleSetDOSetpoint() {
   // Send runtime control command to IO MCU
   IPC_DOControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = 48;
   cmd.objectType = OBJ_T_DISSOLVED_OXYGEN_CONTROL;
   cmd.command = DO_CMD_SET_SETPOINT;
@@ -4120,7 +4251,8 @@ void handleSetDOSetpoint() {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "DO setpoint changed to %.2f mg/L\n", setpoint);
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 48);
+    log(LOG_INFO, false, "DO setpoint changed to %.2f mg/L (txn=%d)\n", setpoint, cmd.transactionId);
     server.send(200, "application/json", "{\"success\":true}");
   } else {
     server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
@@ -4130,6 +4262,7 @@ void handleSetDOSetpoint() {
 void handleEnableDOController() {
   IPC_DOControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = 48;
   cmd.objectType = OBJ_T_DISSOLVED_OXYGEN_CONTROL;
   cmd.command = DO_CMD_ENABLE;
@@ -4137,7 +4270,8 @@ void handleEnableDOController() {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "DO controller enabled\n");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 48);
+    log(LOG_INFO, false, "DO controller enabled (txn=%d)\n", cmd.transactionId);
     server.send(200, "application/json", "{\"success\":true}");
   } else {
     server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
@@ -4147,6 +4281,7 @@ void handleEnableDOController() {
 void handleDisableDOController() {
   IPC_DOControllerControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));
+  cmd.transactionId = generateTransactionId();
   cmd.index = 48;
   cmd.objectType = OBJ_T_DISSOLVED_OXYGEN_CONTROL;
   cmd.command = DO_CMD_DISABLE;
@@ -4154,7 +4289,8 @@ void handleDisableDOController() {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, false, "DO controller disabled\n");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 48);
+    log(LOG_INFO, false, "DO controller disabled (txn=%d)\n", cmd.transactionId);
     server.send(200, "application/json", "{\"success\":true}");
   } else {
     server.send(500, "application/json", "{\"error\":\"Failed to send command to IO MCU\"}");
@@ -4397,13 +4533,21 @@ void handleDeleteDOProfile(uint8_t index) {
 
 bool sendDeviceControlCommand(uint16_t controlIndex, DeviceControlCommand command, float setpoint = 0.0f) {
   IPC_DeviceControlCmd_t cmd;
+  cmd.transactionId = generateTransactionId();
   cmd.index = controlIndex;
   cmd.objectType = OBJ_T_DEVICE_CONTROL;
   cmd.command = command;
   cmd.setpoint = setpoint;
   memset(cmd.reserved, 0, sizeof(cmd.reserved));
   
-  return ipc.sendPacket(IPC_MSG_DEVICE_CONTROL, (uint8_t*)&cmd, sizeof(cmd));
+  bool sent = ipc.sendPacket(IPC_MSG_DEVICE_CONTROL, (uint8_t*)&cmd, sizeof(cmd));
+  
+  if (sent) {
+    addPendingTransaction(cmd.transactionId, IPC_MSG_DEVICE_CONTROL, IPC_MSG_CONTROL_ACK, 1, controlIndex);
+    log(LOG_DEBUG, false, "IPC TX: DeviceControl[%d] command=%d (txn=%d)\n", controlIndex, command, cmd.transactionId);
+  }
+  
+  return sent;
 }
 
 void handleSetDeviceSetpoint(uint16_t controlIndex) {
@@ -4790,14 +4934,14 @@ void setupWebServer()
   server.on("/api/doprofile/2", HTTP_DELETE, []() { handleDeleteDOProfile(2); });
   
   // Note: RESTful controller endpoints are handled dynamically in onNotFound():
-  //   - GET    /api/controller/{40-48}     - Get controller config (REST)
-  //   - PUT    /api/controller/{40-48}     - Save controller config (REST)
-  //   - DELETE /api/controller/{40-48}     - Delete controller (REST)
+  //   - GET    /api/controller/{40-43}     - Get controller config (REST)
+  //   - PUT    /api/controller/{40-43}     - Save controller config (REST)
+  //   - DELETE /api/controller/{40-43}     - Delete controller (REST)
   //
-  // Endpoint organization:
-  //   1. Config GET/POST: /api/config/{type}controller/{index} (static, backward compatibility)
-  //   2. Config DELETE: /api/controller/{index} (RESTful, standardized)
-  //   3. Control actions: /api/{type}controller/{index}/{action} (static, type-specific actions)
+  // Both endpoint styles are supported:
+  //   1. Config endpoints: /api/config/tempcontroller/{40-42} (static, for backward compatibility)
+  //   2. REST endpoints: /api/controller/{40-43} (dynamic, cleaner URLs)
+  //   3. Control endpoints: /api/controller/{40-42}/{action} and /api/phcontroller/43/{action} (static)
   
   // ============================================================================
   // Device Control API Endpoints (Peripheral Devices - Control indices 50-69)
@@ -4896,10 +5040,10 @@ void setupWebServer()
       
       Serial.printf("[WEB] Controller API route detected: index=%d, indexStr='%s'\n", index, indexStr.c_str());
       
-      // Validate controller range: temp controllers (40-42), pH controller (43), flow controllers (44-47), DO controller (48)
+      // Validate controller range: temp controllers (40-42), pH controller (43), flow controllers (44-47), or DO controller (48)
       bool validRange = (index >= 40 && index < 40 + MAX_TEMP_CONTROLLERS) ||  // 40-42
                         index == 43 ||                                           // pH controller
-                        (index >= 44 && index < 44 + MAX_FLOW_CONTROLLERS) ||  // 44-47
+                        (index >= 44 && index < 44 + MAX_FLOW_CONTROLLERS) ||   // 44-47
                         index == 48;                                             // DO controller
       
       if (validRange && indexStr.length() > 0) {

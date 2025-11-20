@@ -9,7 +9,7 @@
 // ============================================================================
 
 // Protocol version
-#define IPC_PROTOCOL_VERSION    0x00010000  // v1.0.0
+#define IPC_PROTOCOL_VERSION    0x00020600  // v2.6.0 - Added transaction IDs
 
 // Debug configuration
 #define IPC_DEBUG_ENABLED       0  // Set to 1 to enable verbose debug output
@@ -29,6 +29,10 @@
 // Timing
 #define IPC_TIMEOUT_MS          1000
 #define IPC_KEEPALIVE_MS        1000
+
+// Transaction IDs
+#define IPC_TXN_NONE        0x0000  // No transaction tracking (one-way messages)
+#define IPC_TXN_BROADCAST   0xFFFF  // Broadcast messages (PING, HELLO)
 
 // ============================================================================
 // MESSAGE TYPES
@@ -177,15 +181,18 @@ struct IPC_IndexUpdate_t {
 // Sensor Data messages --------------------------------------------------
 
 struct IPC_SensorReadReq_t {
+    uint16_t transactionId;  // Request transaction ID
     uint16_t index;
 } __attribute__((packed));
 
 struct IPC_SensorBulkReadReq_t {
+    uint16_t transactionId;  // Request transaction ID (echoed in all responses)
     uint16_t startIndex;     // Starting index
     uint16_t count;          // Number of consecutive indices to read
 } __attribute__((packed));
 
 struct IPC_SensorData_t {
+    uint16_t transactionId;  // Transaction ID from request (for response matching)
     uint16_t index;
     uint8_t objectType;      // Type verification
     uint8_t flags;           // Bit 0: fault, Bit 1: newMessage, Bit 2: running, Bit 3: direction
@@ -293,39 +300,40 @@ enum ControlErrorCode : uint8_t {
 
 // Digital Output Control (indices 21-25)
 struct IPC_DigitalOutputControl_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Output index (21-25)
     uint8_t objectType;      // Type verification (OBJ_T_DIGITAL_OUTPUT)
     uint8_t command;         // DigitalOutputCommand
     uint8_t state;           // Output state (0=off, 1=on) - changed from bool
     uint8_t reserved1;       // Padding
-    uint16_t reserved2;      // Padding
     float pwmDuty;           // PWM duty cycle (0-100%)
 } __attribute__((packed));
 
 // Stepper Motor Control (index 26)
 struct IPC_StepperControl_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Stepper index (26)
     uint8_t objectType;      // Type verification (OBJ_T_STEPPER_MOTOR)
     uint8_t command;         // StepperCommand
     float rpm;               // Target RPM
     bool direction;          // true=forward, false=reverse
     bool enable;             // Enable motor
-    uint8_t reserved[2];     // Padding
 } __attribute__((packed));
 
 // DC Motor Control (indices 27-30)
 struct IPC_DCMotorControl_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Motor index (27-30)
     uint8_t objectType;      // Type verification (OBJ_T_BDC_MOTOR)
     uint8_t command;         // DCMotorCommand
     float power;             // Power percentage (0-100%)
     bool direction;          // true=forward, false=reverse
     bool enable;             // Enable motor
-    uint8_t reserved[2];     // Padding
 } __attribute__((packed));
 
 // Analog Output (DAC) Control (indices 8-9)
 struct IPC_AnalogOutputControl_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // DAC index (8-9)
     uint8_t objectType;      // Type verification (OBJ_T_ANALOG_OUTPUT)
     uint8_t command;         // AnalogOutputCommand
@@ -334,15 +342,17 @@ struct IPC_AnalogOutputControl_t {
 
 // Device Control (indices 50-69) - for peripheral devices like MFC, pH controllers, etc.
 struct IPC_DeviceControlCmd_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Control object index (50-69)
     uint8_t objectType;      // Type verification (OBJ_T_DEVICE_CONTROL)
     uint8_t command;         // DeviceControlCommand
     float setpoint;          // New setpoint value
-    uint8_t reserved[8];     // Reserved for future use
+    uint8_t reserved[6];     // Reserved for future use
 } __attribute__((packed));
 
 // Control Acknowledgment (for all control commands)
 struct IPC_ControlAck_t {
+    uint16_t transactionId;  // Transaction ID from request
     uint16_t index;
     uint8_t objectType;      // Object type
     uint8_t command;         // Command that was executed
@@ -431,6 +441,7 @@ struct IPC_DeviceConfig_t {
  * IO MCU will allocate object indices starting at startIndex
  */
 struct IPC_DeviceCreate_t {
+    uint16_t transactionId;     // Request transaction ID
     uint8_t startIndex;         // First object index to allocate (60-79)
     IPC_DeviceConfig_t config;  // Device configuration
 } __attribute__((packed));
@@ -440,6 +451,7 @@ struct IPC_DeviceCreate_t {
  * Removes device and frees all associated object indices
  */
 struct IPC_DeviceDelete_t {
+    uint16_t transactionId;     // Request transaction ID
     uint8_t startIndex;         // First object index of device
 } __attribute__((packed));
 
@@ -456,6 +468,7 @@ struct IPC_DeviceQuery_t {
  * Device must be deleted and recreated if type changes
  */
 struct IPC_DeviceConfigUpdate_t {
+    uint16_t transactionId;     // Request transaction ID
     uint8_t startIndex;         // First object index of device
     IPC_DeviceConfig_t config;  // New configuration
 } __attribute__((packed));
@@ -464,6 +477,7 @@ struct IPC_DeviceConfigUpdate_t {
  * Device status response - sent after create/delete/config operations
  */
 struct IPC_DeviceStatus_t {
+    uint16_t transactionId;     // Transaction ID from request
     uint8_t startIndex;         // First object index
     bool active;                // Device is active and updating
     bool fault;                 // Device has a fault condition
@@ -534,8 +548,8 @@ struct IPC_ConfigWrite_t {
  * Message type: IPC_MSG_CONFIG_ANALOG_INPUT
  */
 struct IPC_ConfigAnalogInput_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Object index (0-7 for ADC inputs)
-    uint8_t _padding[2];     // Alignment padding
     char unit[8];            // Unit string (e.g., "mV", "V", "A")
     float calScale;          // Calibration scale factor
     float calOffset;         // Calibration offset
@@ -546,8 +560,8 @@ struct IPC_ConfigAnalogInput_t {
  * Message type: IPC_MSG_CONFIG_ANALOG_OUTPUT
  */
 struct IPC_ConfigAnalogOutput_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Object index (8-9 for DAC outputs)
-    uint8_t _padding[2];     // Alignment padding
     char unit[8];            // Unit string (e.g., "mV", "V", "mA")
     float calScale;          // Calibration scale factor
     float calOffset;         // Calibration offset
@@ -558,6 +572,7 @@ struct IPC_ConfigAnalogOutput_t {
  * Message type: IPC_MSG_CONFIG_RTD
  */
 struct IPC_ConfigRTD_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Object index (10-12 for RTD sensors)
     uint8_t wireConfig;      // 2, 3, or 4 wire configuration
     uint8_t _padding;        // Alignment padding
@@ -573,6 +588,7 @@ struct IPC_ConfigRTD_t {
  * Message type: IPC_MSG_CONFIG_GPIO
  */
 struct IPC_ConfigGPIO_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Object index (13-20 for GPIO)
     char name[32];           // Custom name
     uint8_t pullMode;        // 0=None (High-Z), 1=Pull-up, 2=Pull-down
@@ -584,6 +600,7 @@ struct IPC_ConfigGPIO_t {
  * Message type: IPC_MSG_CONFIG_DIGITAL_OUTPUT
  */
 struct IPC_ConfigDigitalOutput_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Object index (21-25 for digital outputs)
     char name[32];           // Custom name
     uint8_t mode;            // 0=On/Off, 1=PWM
@@ -595,6 +612,7 @@ struct IPC_ConfigDigitalOutput_t {
  * Message type: IPC_MSG_CONFIG_STEPPER
  */
 struct IPC_ConfigStepper_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Object index (26 for stepper motor)
     char name[32];           // Custom name
     uint16_t stepsPerRev;    // Steps per revolution (e.g., 200)
@@ -620,6 +638,7 @@ struct IPC_ConfigStepper_t {
  * Message type: IPC_MSG_CONFIG_DCMOTOR
  */
 struct IPC_ConfigDCMotor_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint16_t index;          // Object index (27-30 for DC motors)
     char name[32];           // Custom name
     uint8_t invertDirection; // Invert direction flag
@@ -631,7 +650,9 @@ struct IPC_ConfigDCMotor_t {
  * Message type: IPC_MSG_CONFIG_COMPORT
  */
 struct IPC_ConfigComPort_t {
+    uint16_t transactionId;  // Transaction ID for ACK tracking
     uint8_t index;           // COM port index (0-3: RS232-1,2 / RS485-1,2)
+    uint8_t _padding;        // Alignment padding
     uint32_t baudRate;       // Baud rate (1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200)
     uint8_t dataBits;        // Data bits (fixed to 8 for Modbus)
     float stopBits;          // Stop bits (1.0 or 2.0)
@@ -645,6 +666,7 @@ struct IPC_ConfigComPort_t {
  * Formula: pressure = scale * voltage_mV + offset
  */
 struct IPC_ConfigPressureCtrl_t {
+    uint16_t transactionId;      // Transaction ID for ACK tracking
     uint8_t controlIndex;        // Control object index (50-69)
     uint8_t dacIndex;            // DAC output index (8 or 9)
     char unit[8];                // Pressure unit (Pa, kPa, bar, PSI, atm, mbar)
@@ -660,6 +682,7 @@ struct IPC_ConfigPressureCtrl_t {
  * Supports both On/Off and PID control methods
  */
 struct IPC_ConfigTempController_t {
+    uint16_t transactionId;      // Transaction ID for ACK tracking
     uint8_t index;               // Controller index (40-42)
     bool isActive;               // true=create/update, false=delete
     char name[40];               // Controller name
@@ -685,12 +708,13 @@ struct IPC_ConfigTempController_t {
  * Runtime commands for temperature controllers: setpoint, enable, disable, autotune
  */
 struct IPC_TempControllerControl_t {
+    uint16_t transactionId;      // Transaction ID for ACK tracking
     uint16_t index;              // Controller index (40-42)
     uint8_t objectType;          // OBJ_T_TEMPERATURE_CONTROL
     uint8_t command;             // TempControllerCommand
     float setpoint;              // For SET_SETPOINT and AUTOTUNE commands
     float autotuneOutputStep;    // Output step size for autotune (default 50%)
-    uint8_t reserved[6];         // Reserved for future use
+    uint8_t reserved[4];         // Reserved for future use
 } __attribute__((packed));
 
 /**
@@ -699,6 +723,7 @@ struct IPC_TempControllerControl_t {
  * Sent from SYS MCU to IO MCU to configure pH controller (index 43)
  */
 struct IPC_ConfigpHController_t {
+    uint16_t transactionId;          // Transaction ID for ACK tracking
     uint8_t index;                   // Controller index (always 43)
     bool isActive;                   // true=create/update, false=delete
     char name[40];                   // Controller name
@@ -748,11 +773,12 @@ enum pHControllerCommand : uint8_t {
  * Runtime commands for pH controller: setpoint, enable, disable, manual dosing
  */
 struct IPC_pHControllerControl_t {
+    uint16_t transactionId;          // Transaction ID for ACK tracking
     uint16_t index;                  // Controller index (always 43)
     uint8_t objectType;              // OBJ_T_PH_CONTROL
     uint8_t command;                 // pHControllerCommand
     float setpoint;                  // For SET_SETPOINT command
-    uint8_t reserved[8];             // Reserved for future use
+    uint8_t reserved[6];             // Reserved for future use
 } __attribute__((packed));
 
 /**
@@ -764,6 +790,7 @@ struct IPC_pHControllerControl_t {
  * No sensor feedback - open loop control only.
  */
 struct IPC_ConfigFlowController_t {
+    uint16_t transactionId;               // Transaction ID for ACK tracking
     uint8_t index;                        // Controller index (44-47: 3 feed + 1 waste)
     bool isActive;                        // true=create/update, false=delete
     char name[40];                        // Controller name (e.g., "Feed Pump 1")
@@ -807,11 +834,12 @@ enum FlowControllerCommand : uint8_t {
  * Runtime commands for flow controllers: flow rate, enable, disable, manual dose
  */
 struct IPC_FlowControllerControl_t {
+    uint16_t transactionId;          // Transaction ID for ACK tracking
     uint16_t index;                  // Controller index (44-47)
     uint8_t objectType;              // OBJ_T_FLOW_CONTROL
     uint8_t command;                 // FlowControllerCommand
     float flowRate_mL_min;           // For SET_FLOW_RATE command
-    uint8_t reserved[8];             // Reserved for future use
+    uint8_t reserved[6];             // Reserved for future use
 } __attribute__((packed));
 
 // ============================================================================
@@ -829,6 +857,7 @@ struct IPC_FlowControllerControl_t {
  * Requires DO sensor and at least one output (stirrer and/or MFC).
  */
 struct IPC_ConfigDOController_t {
+    uint16_t transactionId;       // Transaction ID for ACK tracking
     uint8_t index;                    // Controller index (always 48)
     bool isActive;                    // true=create/update, false=delete
     char name[40];                    // Controller name
@@ -874,11 +903,12 @@ enum DOControllerCommand : uint8_t {
  * Runtime commands for DO controller: setpoint, enable, disable
  */
 struct IPC_DOControllerControl_t {
+    uint16_t transactionId;          // Transaction ID for ACK tracking
     uint16_t index;                  // Controller index (always 48)
     uint8_t objectType;              // OBJ_T_DISSOLVED_OXYGEN_CONTROL
     uint8_t command;                 // DOControllerCommand
     float setpoint_mg_L;             // For SET_SETPOINT command
-    uint8_t reserved[8];             // Reserved for future use
+    uint8_t reserved[6];             // Reserved for future use
 } __attribute__((packed));
 
 // ============================================================================

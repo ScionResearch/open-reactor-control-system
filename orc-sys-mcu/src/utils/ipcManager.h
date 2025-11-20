@@ -30,5 +30,9 @@ bool sendDeviceDeleteCommand(uint8_t startIndex);
 bool sendDeviceConfigCommand(uint8_t startIndex, const IPC_DeviceConfig_t* config);
 bool sendDeviceQueryCommand(uint8_t startIndex);
 
+// Transaction ID management (v2.6)
+uint16_t generateTransactionId();
+bool addPendingTransaction(uint16_t txnId, uint8_t reqType, uint8_t respType, uint16_t respCount, uint8_t startIdx);
+
 // Global IPC object
 extern IPCProtocol ipc;

@@ -1,5 +1,6 @@
 #include "objectCache.h"
 #include "logger.h"
+#include "ipcManager.h"  // For transaction ID management
 
 // Global instance
 ObjectCache objectCache;
@@ -75,9 +76,16 @@ void ObjectCache::requestUpdate(uint8_t index) {
         return;
     }
     
+    // Generate transaction ID and track request
+    uint16_t txnId = generateTransactionId();
+    
     IPC_SensorReadReq_t request;
+    request.transactionId = txnId;
     request.index = index;
-    ipc.sendPacket(IPC_MSG_SENSOR_READ_REQ, (uint8_t*)&request, sizeof(request));
+    
+    if (ipc.sendPacket(IPC_MSG_SENSOR_READ_REQ, (uint8_t*)&request, sizeof(request))) {
+        addPendingTransaction(txnId, IPC_MSG_SENSOR_READ_REQ, IPC_MSG_SENSOR_DATA, 1, index);
+    }
     
     // log(LOG_DEBUG, false, "Cache: Requested update for object %d\n", index);
 }
@@ -92,16 +100,51 @@ void ObjectCache::requestBulkUpdate(uint8_t startIndex, uint8_t count) {
         count = MAX_CACHED_OBJECTS - startIndex;
     }
     
-    // Use efficient bulk read request (single packet instead of 21 individual requests)
+    // Generate transaction ID and track bulk request
+    uint16_t txnId = generateTransactionId();
+    
+    // Use efficient bulk read request (single packet instead of N individual requests)
     IPC_SensorBulkReadReq_t request;
+    request.transactionId = txnId;
     request.startIndex = startIndex;
     request.count = count;
-    ipc.sendPacket(IPC_MSG_SENSOR_BULK_READ_REQ, (uint8_t*)&request, sizeof(request));
+    
+    if (ipc.sendPacket(IPC_MSG_SENSOR_BULK_READ_REQ, (uint8_t*)&request, sizeof(request))) {
+        // Track transaction - expecting 'count' SENSOR_DATA responses
+        addPendingTransaction(txnId, IPC_MSG_SENSOR_BULK_READ_REQ, IPC_MSG_SENSOR_DATA, count, startIndex);
+    }
     
     _lastBulkRequest = millis();
     
     // log(LOG_DEBUG, false, "Cache: Requested bulk update for %d objects starting at %d\n", 
     //     count, startIndex);
+}
+
+void ObjectCache::requestBulkUpdateSparse(uint8_t startIndex, uint8_t requestCount, uint8_t expectedResponses) {
+    if (startIndex >= MAX_CACHED_OBJECTS || requestCount == 0) {
+        return;
+    }
+    
+    // Clamp request count to valid range
+    if (startIndex + requestCount > MAX_CACHED_OBJECTS) {
+        requestCount = MAX_CACHED_OBJECTS - startIndex;
+    }
+    
+    // Generate transaction ID and track bulk request
+    uint16_t txnId = generateTransactionId();
+    
+    // Send bulk read request for the full range
+    IPC_SensorBulkReadReq_t request;
+    request.transactionId = txnId;
+    request.startIndex = startIndex;
+    request.count = requestCount;
+    
+    if (ipc.sendPacket(IPC_MSG_SENSOR_BULK_READ_REQ, (uint8_t*)&request, sizeof(request))) {
+        // Track transaction - expecting fewer responses than requested due to sparse objects
+        addPendingTransaction(txnId, IPC_MSG_SENSOR_BULK_READ_REQ, IPC_MSG_SENSOR_DATA, expectedResponses, startIndex);
+    }
+    
+    _lastBulkRequest = millis();
 }
 
 void ObjectCache::refreshStaleObjects(uint8_t startIndex, uint8_t count) {
@@ -172,7 +215,28 @@ void ObjectCache::clear() {
 
 uint8_t ObjectCache::getValidCount() {
     uint8_t count = 0;
-    for (int i = 0; i < MAX_CACHED_OBJECTS; i++) {
+    for (uint8_t i = 0; i < MAX_CACHED_OBJECTS; i++) {
+        if (_cache[i].valid) {
+            count++;
+        }
+    }
+    return count;
+}
+
+uint8_t ObjectCache::getValidCountInRange(uint8_t startIndex, uint8_t maxCount) {
+    if (startIndex >= MAX_CACHED_OBJECTS) {
+        return 0;
+    }
+    
+    // Clamp to valid range
+    uint8_t endIndex = startIndex + maxCount;
+    if (endIndex > MAX_CACHED_OBJECTS) {
+        endIndex = MAX_CACHED_OBJECTS;
+    }
+    
+    // Count valid objects in range
+    uint8_t count = 0;
+    for (uint8_t i = startIndex; i < endIndex; i++) {
         if (_cache[i].valid) {
             count++;
         }

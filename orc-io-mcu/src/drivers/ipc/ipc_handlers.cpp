@@ -404,8 +404,8 @@ void ipc_handle_sensor_read_req(const uint8_t *payload, uint16_t len) {
     
     IPC_SensorReadReq_t *req = (IPC_SensorReadReq_t*)payload;
     
-    // Send sensor data (logging in sendSensorData)
-    if (!ipc_sendSensorData(req->index)) {
+    // Send sensor data with transaction ID for response matching
+    if (!ipc_sendSensorData(req->index, req->transactionId)) {
         Serial.printf("[IPC] ERROR: Failed to read sensor %d\n", req->index);
         ipc_sendError(IPC_ERR_INDEX_INVALID, "Invalid sensor index");
     }
@@ -419,6 +419,9 @@ void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len) {
     }
     
     IPC_SensorBulkReadReq_t *req = (IPC_SensorBulkReadReq_t*)payload;
+    
+    // Extract transaction ID for response matching
+    uint16_t transactionId = req->transactionId;
     
     // Validate range
     if (req->startIndex >= MAX_NUM_OBJECTS || req->count == 0) {
@@ -434,32 +437,61 @@ void ipc_handle_sensor_bulk_read_req(const uint8_t *payload, uint16_t len) {
         count = MAX_NUM_OBJECTS - req->startIndex;
     }
     
-    // Send individual sensor responses
-    // Wait for IPC TX queue space before each send (queue size = 8 packets)
+    // Don't start bulk response if deferred ACKs are waiting - process them first
+    if (ipcDriver.deferredAckCount > 0) {
+        Serial.printf("[IPC] BULK DEFERRED: %d ACKs waiting, delaying bulk response\n", 
+                     ipcDriver.deferredAckCount);
+        // Don't send error - just skip this bulk request, SYS MCU will retry
+        return;
+    }
+    
+    // CRITICAL: Don't start new bulk response if one is already in progress
+    // This prevents overlapping requests from sending duplicate data with different transaction IDs
+    if (ipcDriver.bulkResponseInProgress > 0) {
+        Serial.printf("[IPC] BULK REJECTED: Response already in progress (TXN=%u), counter=%d\n", 
+                     transactionId, ipcDriver.bulkResponseInProgress);
+        // Don't send error - just skip this request, SYS MCU will retry
+        return;
+    }
+    
+    // Increment counter BEFORE queueing packets to prevent ACKs from being injected
+    ipcDriver.bulkResponseInProgress++;
+    // Queue sensor responses in batches to avoid queue overflow
+    // Process in chunks of 6 packets (TX queue size is 8, leave 2 for safety)
     uint16_t sentCount = 0;
-    for (uint16_t i = 0; i < count; i++) {
-        uint16_t index = req->startIndex + i;
+    const uint16_t BATCH_SIZE = 6;
+    
+    for (uint16_t batchStart = 0; batchStart < count; batchStart += BATCH_SIZE) {
+        // Queue up to BATCH_SIZE packets
+        uint16_t batchEnd = (batchStart + BATCH_SIZE < count) ? (batchStart + BATCH_SIZE) : count;
         
-        // Wait for TX queue to have space (process queue to drain it)
-        uint16_t waitCount = 0;
-        while (!ipc_txQueueHasSpace() && waitCount < 100) {
-            ipc_processTxQueue();  // Drain the queue
+        for (uint16_t i = batchStart; i < batchEnd; i++) {
+            uint16_t index = req->startIndex + i;
+            
+            // Send sensor data with transaction ID
+            if (ipc_sendSensorData(index, transactionId)) {
+                sentCount++;
+            }
+        }
+        
+        // Drain TX queue completely before queueing next batch
+        while (ipc_txQueueCount() > 0) {
+            ipc_processTxQueue();
             delayMicroseconds(100);
-            waitCount++;
         }
         
-        /*if (waitCount > 0) {
-            Serial.printf("[IPC] DEBUG: Waited %d*100us for queue space (queueCount=%d)\n", 
-                         waitCount, ipc_txQueueCount());
-        }*/
-        
-        if (ipc_sendSensorData(index)) {
-            sentCount++;
-        }
+        // CRITICAL: Wait for UART hardware to finish transmitting
+        // ipc_processTxQueue() only moves data to UART buffer, doesn't wait for transmission
+        ipcDriver.uart->flush();  // Wait for UART TX complete
+    }
+    
+    // Decrement counter now that THIS bulk request is complete
+    if (ipcDriver.bulkResponseInProgress > 0) {
+        ipcDriver.bulkResponseInProgress--;
     }
 }
 
-bool ipc_sendSensorData(uint16_t index) {
+bool ipc_sendSensorData(uint16_t index, uint16_t transactionId) {
     if (index >= MAX_NUM_OBJECTS) {
         return false;
     }
@@ -476,6 +508,7 @@ bool ipc_sendSensorData(uint16_t index) {
     IPC_SensorData_t data;
     memset(&data, 0, sizeof(data));
     
+    data.transactionId = transactionId;  // Echo transaction ID from request
     data.index = index;
     data.objectType = objIndex[index].type;
     data.flags = 0;
@@ -874,14 +907,14 @@ bool ipc_sendSensorBatch(const uint16_t *indices, uint8_t count) {
 
 void ipc_handle_control_write(const uint8_t *payload, uint16_t len) {
     // Determine message type by checking object type in payload
-    if (len < 4) {  // Need at least index + objectType
+    if (len < 6) {  // Need at least transactionId + index + objectType
         ipc_sendError(IPC_ERR_PARSE_FAIL, "CONTROL_WRITE: Payload too small");
         return;
     }
     
-    // All control structures have: index(uint16) at offset 0, objectType(uint8) at offset 2
-    uint16_t index = *((uint16_t*)payload);
-    uint8_t objectType = *((uint8_t*)(payload + 2));
+    // All control structures now have: transactionId(uint16) at offset 0, index(uint16) at offset 2, objectType(uint8) at offset 4
+    uint16_t index = *((uint16_t*)(payload + 2));
+    uint8_t objectType = *((uint8_t*)(payload + 4));
     
     // Validate index
     if (index >= MAX_NUM_OBJECTS || !objIndex[index].valid) {
@@ -962,14 +995,14 @@ void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len) {
     
     // Validate index range (21-25)
     if (cmd->index < 21 || cmd->index > 25) {
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false, 
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false, 
                             CTRL_ERR_INVALID_INDEX, "Index out of range for digital output");
         return;
     }
     
     DigitalOutput_t *output = (DigitalOutput_t*)objIndex[cmd->index].obj;
     if (!output) {
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Output object not found");
         return;
     }
@@ -1014,7 +1047,7 @@ void ipc_handle_digital_output_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success,
+    ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, success,
                         success ? CTRL_ERR_NONE : CTRL_ERR_INVALID_CMD, message);
 }
 
@@ -1035,7 +1068,7 @@ void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len) {
     // Validate index range (8-9)
     if (cmd->index < 8 || cmd->index > 9) {
         Serial.printf("[DAC] ERROR: Index %d out of range\n", cmd->index);
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false, 
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false, 
                             CTRL_ERR_INVALID_INDEX, "Index out of range for analog output");
         return;
     }
@@ -1045,7 +1078,7 @@ void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len) {
                  cmd->index, output, objIndex[cmd->index].valid);
     if (!output) {
         Serial.printf("[DAC] ERROR: Object not found at index %d\n", cmd->index);
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Output object not found");
         return;
     }
@@ -1076,7 +1109,7 @@ void ipc_handle_analog_output_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success,
+    ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, success,
                         success ? CTRL_ERR_NONE : CTRL_ERR_INVALID_CMD, message);
 }
 
@@ -1094,14 +1127,14 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
     
     // Validate index (must be 26)
     if (cmd->index != 26) {
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Invalid stepper motor index");
         return;
     }
     
     StepperDevice_t *stepper = (StepperDevice_t*)objIndex[26].obj;
     if (!stepper) {
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Stepper object not found");
         return;
     }
@@ -1197,7 +1230,7 @@ void ipc_handle_stepper_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 // DC Motor Control Handler
@@ -1211,7 +1244,7 @@ void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
     
     // Validate index range (27-30)
     if (cmd->index < 27 || cmd->index > 30) {
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Invalid DC motor index");
         return;
     }
@@ -1219,7 +1252,7 @@ void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
     uint8_t motorNum = cmd->index - 27;
     MotorDevice_t *motor = (MotorDevice_t*)objIndex[cmd->index].obj;
     if (!motor) {
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Motor object not found");
         return;
     }
@@ -1310,7 +1343,7 @@ void ipc_handle_dcmotor_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 // Temperature Controller Control Handler
@@ -1324,7 +1357,7 @@ void ipc_handle_temp_controller_control(const uint8_t *payload, uint16_t len) {
     
     // Validate index range (40-42)
     if (cmd->index < 40 || cmd->index >= 40 + MAX_TEMP_CONTROLLERS) {
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_INVALID_INDEX, "Invalid controller index");
         return;
     }
@@ -1391,7 +1424,7 @@ void ipc_handle_temp_controller_control(const uint8_t *payload, uint16_t len) {
             break;
     }
     
-    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 void ipc_handle_control_read(const uint8_t *payload, uint16_t len) {
@@ -1407,18 +1440,11 @@ void ipc_handle_control_read(const uint8_t *payload, uint16_t len) {
 }
 
 // Enhanced acknowledgment with error codes (for output control)
+// Uses deferred queue system - no blocking delays
 bool ipc_sendControlAck(uint16_t index, uint8_t objectType, uint8_t command,
                           bool success, uint8_t errorCode, const char *message) {
-    IPC_ControlAck_t ack;
-    ack.index = index;
-    ack.objectType = objectType;
-    ack.command = command;
-    ack.success = success;
-    ack.errorCode = errorCode;
-    strncpy(ack.message, message, sizeof(ack.message) - 1);
-    ack.message[sizeof(ack.message) - 1] = '\0';
-    
-    return ipc_sendPacket(IPC_MSG_CONTROL_ACK, (uint8_t*)&ack, sizeof(ack));
+    // Delegate to transaction ID version with txn=0 (no transaction tracking)
+    return ipc_sendControlAckWithTxn(0, index, objectType, command, success, errorCode, message);
 }
 
 // ============================================================================
@@ -1549,7 +1575,7 @@ void ipc_handle_device_control(const uint8_t *payload, uint16_t len) {
     // Validate control object index (50-69)
     if (cmd->index < 50 || cmd->index >= 70) {
         Serial.printf("[IPC] ERROR: Invalid control index %d (must be 50-69)\n", cmd->index);
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false, 
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false, 
                             CTRL_ERR_INVALID_INDEX, "Control index out of range");
         return;
     }
@@ -1557,7 +1583,7 @@ void ipc_handle_device_control(const uint8_t *payload, uint16_t len) {
     // Check object is valid and is a device control object
     if (!objIndex[cmd->index].valid || objIndex[cmd->index].type != OBJ_T_DEVICE_CONTROL) {
         Serial.printf("[IPC] ERROR: Index %d is not a valid device control object\n", cmd->index);
-        ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, false,
+        ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, false,
                             CTRL_ERR_TYPE_MISMATCH, "Not a device control object");
         return;
     }
@@ -1672,7 +1698,7 @@ void ipc_handle_device_control(const uint8_t *payload, uint16_t len) {
     }
     
     // Send acknowledgment
-    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 bool ipc_sendDeviceStatus(uint8_t startIndex, bool active, bool fault,
@@ -1770,6 +1796,10 @@ void ipc_handle_config_analog_input(const uint8_t *payload, uint16_t len) {
         
         Serial.printf("[IPC] ✓ ADC[%d]: %s, cal=(%.3f, %.3f)\n",
                      cfg->index, sensor->unit, sensor->cal->scale, sensor->cal->offset);
+        
+        // Send ACK with transaction ID
+        ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_ANALOG_INPUT, 
+                                 0, true, CTRL_ERR_NONE, "ADC config updated");
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "ADC object not initialized");
     }
@@ -1804,7 +1834,9 @@ void ipc_handle_config_analog_output(const uint8_t *payload, uint16_t len) {
         output->cal->timestamp = millis();
         
         Serial.printf("[IPC] ✓ DAC[%d]: %s, cal=(%.3f, %.3f)\n",
-                     cfg->index, output->unit, output->cal->scale, output->cal->offset);
+                     cfg->index, output->unit, output->cal->scale, output->cal->offset);        
+        ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_ANALOG_OUTPUT, 
+                                 0, true, CTRL_ERR_NONE, "DAC config updated");
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "DAC object not initialized");
     }
@@ -1861,6 +1893,10 @@ void ipc_handle_config_rtd(const uint8_t *payload, uint16_t len) {
             Serial.printf("[IPC] ✓ RTD[%d]: %s (no driver)\n",
                          cfg->index, sensor->unit);
         }
+        
+        // Send ACK with transaction ID
+        ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_TEMPERATURE_SENSOR, 
+                                 0, true, CTRL_ERR_NONE, "RTD config updated");
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "RTD object not initialized");
     }
@@ -1898,6 +1934,10 @@ void ipc_handle_config_gpio(const uint8_t *payload, uint16_t len) {
                           (cfg->pullMode == 2) ? "PULL-DOWN" : "HIGH-Z";
     Serial.printf("[IPC] GPIO[%d] configured: %s, pull=%s\n", 
                   cfg->index, cfg->name, pullStr);
+    
+    // Send ACK with transaction ID
+    ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_DIGITAL_INPUT, 
+                             0, true, CTRL_ERR_NONE, "GPIO config updated");
 }
 
 /**
@@ -1955,6 +1995,10 @@ void ipc_handle_config_digital_output(const uint8_t *payload, uint16_t len) {
         const char* modeStr = output->pwmEnabled ? "PWM" : "ON/OFF";
         Serial.printf("[IPC] ✓ DigitalOutput[%d]: %s, mode=%s (cfg->mode=%d, pwmEnabled=%d)\n",
                      cfg->index, cfg->name, modeStr, cfg->mode, output->pwmEnabled);
+        
+        // Send ACK with transaction ID
+        ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_DIGITAL_OUTPUT, 
+                                 0, true, CTRL_ERR_NONE, "Digital output config updated");
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "Digital output object not initialized");
     }
@@ -2067,6 +2111,10 @@ void ipc_handle_config_stepper(const uint8_t *payload, uint16_t len) {
             Serial.printf("[IPC] ✓ Stepper[26]: %s, maxRPM=%d, steps=%d, Irun=%dmA (config saved, motor disabled)\n",
                          cfg->name, cfg->maxRPM, cfg->stepsPerRev, cfg->runCurrent_mA);
         }
+        
+        // Send ACK with transaction ID
+        ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_STEPPER_MOTOR, 
+                                 0, true, CTRL_ERR_NONE, "Stepper config updated");
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "Stepper motor object not initialized");
     }
@@ -2107,6 +2155,10 @@ void ipc_handle_config_dcmotor(const uint8_t *payload, uint16_t len) {
         
         Serial.printf("[IPC] ✓ DCMotor[%d]: %s, invert=%s\n",
                      cfg->index, cfg->name, cfg->invertDirection ? "YES" : "NO");
+        
+        // Send ACK with transaction ID
+        ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_BDC_MOTOR, 
+                                 0, true, CTRL_ERR_NONE, "DC motor config updated");
     } else {
         ipc_sendError(IPC_ERR_DEVICE_FAIL, "DC motor object not initialized");
     }
@@ -2148,6 +2200,10 @@ void ipc_handle_config_comport(const uint8_t *payload, uint16_t len) {
         Serial.printf("[IPC] ✓ COM Port[%d]: baud=%d, parity=%d, stop=%.1f\n",
                      cfg->index, cfg->baudRate, cfg->parity, cfg->stopBits);
         
+        // Send ACK with transaction ID
+        ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_SERIAL_RS232_PORT, 
+                                 0, true, CTRL_ERR_NONE, "COM port config updated");
+        
         // Note: The actual serial port reconfiguration will happen in modbus_manage()
         // when it detects the configChanged flag
     } else {
@@ -2181,6 +2237,9 @@ void ipc_handle_config_temp_controller(const uint8_t *payload, uint16_t len) {
         return;
     }
     
+    bool success = false;
+    char ackMsg[100];
+    
     if (cfg->isActive) {
         // Create or update controller
         if (ControllerManager::createController(cfg->index, cfg)) {
@@ -2188,21 +2247,26 @@ void ipc_handle_config_temp_controller(const uint8_t *payload, uint16_t len) {
                          cfg->index, cfg->name,
                          cfg->controlMethod == 0 ? "On/Off" : "PID",
                          cfg->pvSourceIndex, cfg->outputIndex);
+            success = true;
+            snprintf(ackMsg, sizeof(ackMsg), "Controller %d created", cfg->index);
         } else {
-            char errorMsg[128];
-            snprintf(errorMsg, sizeof(errorMsg), "Failed to create controller %d", cfg->index);
-            ipc_sendError(IPC_ERR_DEVICE_FAIL, errorMsg);
+            snprintf(ackMsg, sizeof(ackMsg), "Failed to create controller %d", cfg->index);
         }
     } else {
         // Delete controller
         if (ControllerManager::deleteController(cfg->index)) {
             Serial.printf("[IPC] ✓ Deleted temperature controller %d\n", cfg->index);
+            success = true;
+            snprintf(ackMsg, sizeof(ackMsg), "Controller %d deleted", cfg->index);
         } else {
-            char errorMsg[128];
-            snprintf(errorMsg, sizeof(errorMsg), "Failed to delete controller %d", cfg->index);
-            ipc_sendError(IPC_ERR_DEVICE_FAIL, errorMsg);
+            snprintf(ackMsg, sizeof(ackMsg), "Failed to delete controller %d", cfg->index);
         }
     }
+    
+    // Send acknowledgment with transaction ID
+    // Uses deferred queue if bulk response is in progress - no blocking
+    ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_TEMPERATURE_CONTROL,
+                              0, success, success ? CTRL_ERR_NONE : CTRL_ERR_DRIVER_FAULT, ackMsg);
 }
 
 /**
@@ -2255,6 +2319,10 @@ void ipc_handle_config_pressure_ctrl(const uint8_t *payload, uint16_t len) {
     
     Serial.printf("[IPC] ✓ Pressure Controller[%d]: scale=%.6f, offset=%.2f, unit=%s, DAC=%d\n",
                  cfg->controlIndex, cfg->scale, cfg->offset, cfg->unit, cfg->dacIndex);
+    
+    // Send ACK with transaction ID
+    ipc_sendControlAckWithTxn(cfg->transactionId, cfg->controlIndex, OBJ_T_DEVICE_CONTROL, 
+                             0, true, CTRL_ERR_NONE, "Pressure controller config updated");
 }
 
 // ============================================================================
@@ -2338,6 +2406,16 @@ void ipc_handle_config_ph_controller(const uint8_t *payload, uint16_t len) {
             ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to create/update pH controller");
         }
     }
+    
+    // Send ACK with transaction ID
+    char ackMsg[100];
+    if (success) {
+        snprintf(ackMsg, sizeof(ackMsg), "pH controller %d %s", cfg->index, cfg->isActive ? "created" : "deleted");
+    } else {
+        snprintf(ackMsg, sizeof(ackMsg), "Failed to %s pH controller %d", cfg->isActive ? "create" : "delete", cfg->index);
+    }
+    ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_PH_CONTROL,
+                              0, success, success ? CTRL_ERR_NONE : CTRL_ERR_DRIVER_FAULT, ackMsg);
 }
 
 /**
@@ -2380,7 +2458,7 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
                     Serial.printf("[pH CTRL] Setpoint set to %.2f\n", cmd->setpoint);
                 } else {
                     strcpy(message, "Failed to update setpoint");
-                    errorCode = IPC_ERR_DEVICE_FAIL;
+                    errorCode = CTRL_ERR_DRIVER_FAULT;
                 }
             } else {
                 strcpy(message, "Setpoint out of range (0-14 pH)");
@@ -2394,7 +2472,7 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "pH controller enabled");
             } else {
                 strcpy(message, "Failed to enable controller");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2404,7 +2482,7 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "pH controller disabled");
             } else {
                 strcpy(message, "Failed to disable controller");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2414,7 +2492,7 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "Manual acid dose started");
             } else {
                 strcpy(message, "Failed to start acid dose");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2424,7 +2502,7 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "Manual alkaline dose started");
             } else {
                 strcpy(message, "Failed to start alkaline dose");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2434,7 +2512,7 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "Acid cumulative volume reset to 0.0 mL");
             } else {
                 strcpy(message, "Failed to reset acid volume");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2444,7 +2522,7 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "Alkaline cumulative volume reset to 0.0 mL");
             } else {
                 strcpy(message, "Failed to reset alkaline volume");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2455,7 +2533,7 @@ void ipc_handle_ph_controller_control(const uint8_t *payload, uint16_t len) {
     }
     
     // Send acknowledgment
-    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
 
 /**
@@ -2535,6 +2613,16 @@ void ipc_handle_config_flow_controller(const uint8_t *payload, uint16_t len) {
             ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to create/update flow controller");
         }
     }
+    
+    // Send ACK with transaction ID
+    char ackMsg[100];
+    if (success) {
+        snprintf(ackMsg, sizeof(ackMsg), "Flow controller %d %s", cfg->index, cfg->isActive ? "created" : "deleted");
+    } else {
+        snprintf(ackMsg, sizeof(ackMsg), "Failed to %s flow controller %d", cfg->isActive ? "create" : "delete", cfg->index);
+    }
+    ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_FLOW_CONTROL,
+                              0, success, success ? CTRL_ERR_NONE : CTRL_ERR_DRIVER_FAULT, ackMsg);
 }
 
 /**
@@ -2578,7 +2666,7 @@ void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len) {
                                  cmd->index, cmd->flowRate_mL_min);
                 } else {
                     strcpy(message, "Failed to update flow rate");
-                    errorCode = IPC_ERR_DEVICE_FAIL;
+                    errorCode = CTRL_ERR_DRIVER_FAULT;
                 }
             } else {
                 strcpy(message, "Flow rate must be >= 0");
@@ -2592,7 +2680,7 @@ void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "Flow controller enabled");
             } else {
                 strcpy(message, "Failed to enable controller");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2602,7 +2690,7 @@ void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "Flow controller disabled");
             } else {
                 strcpy(message, "Failed to disable controller");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2612,7 +2700,7 @@ void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "Manual dose started");
             } else {
                 strcpy(message, "Failed to start manual dose");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2622,7 +2710,7 @@ void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len) {
                 strcpy(message, "Cumulative volume reset to 0.0 mL");
             } else {
                 strcpy(message, "Failed to reset volume");
-                errorCode = IPC_ERR_DEVICE_FAIL;
+                errorCode = CTRL_ERR_DRIVER_FAULT;
             }
             break;
             
@@ -2637,7 +2725,7 @@ void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len) {
                     strcpy(message, "Recalibration applied");
                 } else {
                     strcpy(message, "Controller not found");
-                    errorCode = IPC_ERR_DEVICE_FAIL;
+                    errorCode = CTRL_ERR_DRIVER_FAULT;
                 }
             }
             break;
@@ -2649,12 +2737,8 @@ void ipc_handle_flow_controller_control(const uint8_t *payload, uint16_t len) {
     }
     
     // Send acknowledgment
-    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }
-
-// ============================================================================
-// DO CONTROLLER CONFIGURATION & CONTROL
-// ============================================================================
 
 /**
  * @brief Handle DO controller configuration message
@@ -2746,6 +2830,16 @@ void ipc_handle_config_do_controller(const uint8_t *payload, uint16_t len) {
             ipc_sendError(IPC_ERR_DEVICE_FAIL, "Failed to create/update DO controller");
         }
     }
+    
+    // Send ACK with transaction ID
+    char ackMsg[100];
+    if (success) {
+        snprintf(ackMsg, sizeof(ackMsg), "DO controller %d %s", cfg->index, cfg->isActive ? "created" : "deleted");
+    } else {
+        snprintf(ackMsg, sizeof(ackMsg), "Failed to %s DO controller %d", cfg->isActive ? "create" : "delete", cfg->index);
+    }
+    ipc_sendControlAckWithTxn(cfg->transactionId, cfg->index, OBJ_T_DISSOLVED_OXYGEN_CONTROL,
+                              0, success, success ? CTRL_ERR_NONE : CTRL_ERR_DRIVER_FAULT, ackMsg);
 }
 
 /**
@@ -2818,5 +2912,5 @@ void ipc_handle_do_controller_control(const uint8_t *payload, uint16_t len) {
     }
     
     // Send acknowledgment
-    ipc_sendControlAck(cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
+    ipc_sendControlAckWithTxn(cmd->transactionId, cmd->index, cmd->objectType, cmd->command, success, errorCode, message);
 }

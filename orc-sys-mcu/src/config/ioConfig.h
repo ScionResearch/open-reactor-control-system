@@ -445,6 +445,13 @@ void freeDynamicIndex(uint8_t index);    // Free a dynamic index (and all its su
 bool isDynamicIndexInUse(uint8_t index); // Check if an index is in use
 int8_t findDeviceByIndex(uint8_t dynamicIndex); // Find device array position by index, returns -1 if not found
 
+// Device counting helpers for polling
+uint8_t getActiveDeviceCount();          // Count total active devices
+uint8_t getActiveDeviceControlCount();   // Count control objects (indices 50-69)
+uint8_t getActiveDeviceSensorCount();    // Count sensor objects (indices 70-99)
+uint8_t getFixedHardwareObjectCount();   // Get highest index for fixed hardware range (returns span, not count)
+uint8_t getFixedHardwareExpectedCount(); // Get expected number of valid responses in fixed hardware range
+
 /**
  * @brief Get the control object index for a device
  * 

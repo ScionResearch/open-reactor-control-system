@@ -11,16 +11,136 @@ bool ipcReady = false;  // Only start polling after handshake and config push co
 unsigned long lastSensorPollTime = 0;
 const unsigned long SENSOR_POLL_INTERVAL = 1000; // Poll every 1 second
 
+// ============================================================================
+// Transaction ID Management (v2.6)
+// ============================================================================
+
+// Transaction ID counter (starts at 1, skips 0 and 0xFFFF)
+static uint16_t nextTransactionId = 1;
+
+// Pending transaction tracking
+struct PendingTransaction {
+    uint16_t transactionId;
+    uint8_t requestType;          // IPC_MSG_* that was sent
+    uint8_t expectedResponseType; // IPC_MSG_* expected back
+    uint16_t expectedResponseCount; // For bulk operations (number of responses expected)
+    uint16_t receivedResponseCount; // Responses received so far
+    uint8_t startIndex;           // Starting object index for bulk requests
+    unsigned long timestamp;      // For timeout detection
+};
+
+// Transaction tracking table (max 16 concurrent operations)
+#define MAX_PENDING_TRANSACTIONS 16
+static PendingTransaction pendingTransactions[MAX_PENDING_TRANSACTIONS];
+static uint8_t pendingTxnCount = 0;
+
+// Transaction timeout (5 seconds)
+const unsigned long TRANSACTION_TIMEOUT_MS = 5000;
+
+/**
+ * @brief Generate a unique transaction ID
+ * @return Transaction ID (1-65534, skips 0 and 0xFFFF)
+ */
+uint16_t generateTransactionId() {
+    uint16_t id = nextTransactionId++;
+    
+    // Skip reserved values (0 = none, 0xFFFF = broadcast)
+    if (id == IPC_TXN_NONE || id == IPC_TXN_BROADCAST) {
+        id = 1;
+        nextTransactionId = 2;
+    }
+    
+    return id;
+}
+
+/**
+ * @brief Add a pending transaction to the tracking table
+ * @param txnId Transaction ID
+ * @param reqType Request message type
+ * @param respType Expected response message type
+ * @param respCount Number of responses expected (1 for single, N for bulk)
+ * @param startIdx Starting object index for bulk requests (0 for single)
+ * @return true if added successfully, false if table is full
+ */
+bool addPendingTransaction(uint16_t txnId, uint8_t reqType, uint8_t respType, uint16_t respCount, uint8_t startIdx) {
+    if (pendingTxnCount >= MAX_PENDING_TRANSACTIONS) {
+        log(LOG_WARNING, false, "[IPC] Transaction table full! Cannot track txn %d\n", txnId);
+        return false;
+    }
+    
+    pendingTransactions[pendingTxnCount++] = {
+        txnId, reqType, respType, respCount, 0, startIdx, millis()
+    };
+    
+    return true;
+}
+
+/**
+ * @brief Find a pending transaction by ID
+ * @param txnId Transaction ID to find
+ * @return Pointer to transaction or nullptr if not found
+ */
+PendingTransaction* findPendingTransaction(uint16_t txnId) {
+    for (uint8_t i = 0; i < pendingTxnCount; i++) {
+        if (pendingTransactions[i].transactionId == txnId) {
+            return &pendingTransactions[i];
+        }
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Remove a completed transaction from the tracking table
+ * @param txnId Transaction ID to remove
+ */
+void completePendingTransaction(uint16_t txnId) {
+    for (uint8_t i = 0; i < pendingTxnCount; i++) {
+        if (pendingTransactions[i].transactionId == txnId) {
+            //log(LOG_DEBUG, false, "[IPC] Completed txn %d\n", txnId);
+            
+            // Shift remaining transactions down
+            for (uint8_t j = i; j < pendingTxnCount - 1; j++) {
+                pendingTransactions[j] = pendingTransactions[j + 1];
+            }
+            pendingTxnCount--;
+            return;
+        }
+    }
+}
+
+/**
+ * @brief Clean up stalled transactions that have timed out
+ * Called periodically from manageIPC()
+ */
+void cleanupStalledTransactions() {
+    unsigned long now = millis();
+    
+    for (uint8_t i = 0; i < pendingTxnCount; ) {
+        unsigned long age = now - pendingTransactions[i].timestamp;
+        
+        if (age > TRANSACTION_TIMEOUT_MS) {
+            log(LOG_WARNING, false, "[IPC] Transaction %d timed out after %lu ms (indices %d-%d, received %d/%d)\n",
+                pendingTransactions[i].transactionId, age,
+                pendingTransactions[i].startIndex,
+                pendingTransactions[i].startIndex + pendingTransactions[i].expectedResponseCount - 1,
+                pendingTransactions[i].receivedResponseCount,
+                pendingTransactions[i].expectedResponseCount);
+            
+            // Remove timed out transaction
+            completePendingTransaction(pendingTransactions[i].transactionId);
+            // Don't increment i - array was shifted down
+        } else {
+            i++;
+        }
+    }
+}
+
 // Inter-processor communication
 void init_ipcManager(void) {
   Serial1.setRX(PIN_SI_RX);
   Serial1.setTX(PIN_SI_TX);
   
-  // Set UART FIFO size to 8192 bytes to accommodate multiple IPC packets from bulk requests
-  // With bulk requests of 31 objects (sensors + outputs), we need room for 31 responses
-  // Each response: ~150 bytes * 31 = 4650 bytes + overhead
-  // Max packet size with byte stuffing: ~260 bytes raw data * 2 (worst case stuffing) = 520 bytes
-  Serial1.setFIFOSize(8192);
+  Serial1.setFIFOSize(16384);
   
   // Clear object cache to force fresh data from IO MCU
   objectCache.clear();
@@ -68,25 +188,36 @@ void pollSensors(void) {
   if (now - lastSensorPollTime < SENSOR_POLL_INTERVAL) return;
   lastSensorPollTime = now;
   
-  // Request fixed hardware objects + controllers (indices 0-48)
-  // Sensors: ADC (0-7), DAC (8-9), RTD (10-12), GPIO (13-20)
-  // Outputs: Digital Outputs (21-25), Stepper (26), DC Motors (27-30)
-  // Energy Monitors: Main Power (31), Heater Power (32)
-  // Modbus Ports: (37-40)
-  // Temperature Controllers: (40-42)
-  // pH Controller: (43)
-  // Flow Controllers: (44-47)
-  // DO Controller: (48)
-  objectCache.requestBulkUpdate(0, 49);  // Request indices 0-48 (49 total)
+  // Request fixed hardware range (0-36: ADC, DAC, RTD, GPIO, outputs, motors, COM ports)
+  // Always 37 objects (indices 37-39 are reserved for future use)
+  objectCache.requestBulkUpdate(0, 37);
+  
+  // Request controllers (40-48: temp, pH, flow, DO controllers)
+  // Only poll active controllers based on config
+  uint8_t controllerRangeSize = getFixedHardwareObjectCount() - 37;  // Returns highest index + 1
+  uint8_t controllerExpectedCount = getFixedHardwareExpectedCount() - 37;  // Subtract base hardware
+  if (controllerRangeSize > 0) {
+    objectCache.requestBulkUpdateSparse(40, controllerRangeSize, controllerExpectedCount);
+  }
   
   // Request device control objects (indices 50-69)
   // These provide control status for peripheral devices (setpoint, actual, connected, fault)
-  objectCache.requestBulkUpdate(50, 20);
+  // Control objects are sparse (only even indices used: 50, 52, 54, 56...)
+  // Use sparse request to handle mismatch between requested range and expected responses
+  uint8_t controlCount = getActiveDeviceControlCount();
+  if (controlCount > 0) {
+    // Request full device control range (20 indices) but expect only valid responses
+    // IO MCU will only respond for actual control objects (e.g., 50, 52, 54, 56)
+    objectCache.requestBulkUpdateSparse(50, 20, controlCount);
+  }
   
   // Request dynamic device sensor objects (indices 70-99)
   // These are user-created device sensors (Modbus, I2C, etc.)
-  // Polling them even if no devices are configured is low overhead
-  objectCache.requestBulkUpdate(70, 30);
+  // Dynamically count based on active devices from config
+  uint8_t sensorCount = getActiveDeviceSensorCount();
+  if (sensorCount > 0) {
+    objectCache.requestBulkUpdate(70, sensorCount);
+  }
   
   //log(LOG_DEBUG, false, "Polling objects: Requested bulk update for indices 0-42 (fixed+controllers), 50-69 (control), and 70-99 (sensors)\n");
 }
@@ -101,6 +232,9 @@ void manageIPC(void) {
   
   if (now - lastConnectionCheck > 1000) {  // Check every second
     lastConnectionCheck = now;
+    
+    // Clean up stalled transactions
+    cleanupStalledTransactions();
     
     // Check if connection has been lost (timeout)
     if (ipcReady) {
@@ -129,6 +263,34 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
   }
   
   const IPC_SensorData_t *sensorData = (const IPC_SensorData_t *)payload;
+  
+  // DEBUG: Log every received sensor packet with MCU timestamp
+  static uint32_t rxPacketCount = 0;
+  rxPacketCount++;
+  /*log(LOG_INFO, false, "[IPC-RX] PKT#%lu: INDEX=%u, TXN=%u, TIME=%lu us\n", 
+      rxPacketCount, sensorData->index, sensorData->transactionId, micros());*/
+  
+  // Validate transaction ID
+  PendingTransaction* txn = findPendingTransaction(sensorData->transactionId);
+  if (txn == nullptr) {
+    // Unknown transaction - could be from old request, timeout, or count mismatch
+    // This is normal for bulk reads if count doesn't match (e.g., sparse objects)
+    // Don't log to avoid spam - just process the data
+    // Still process the data - it's valid sensor information
+  } else if (txn->expectedResponseType != IPC_MSG_SENSOR_DATA) {
+    // Wrong response type for this transaction
+    log(LOG_WARNING, false, "[IPC] Txn %d expected msg type %02X but got SENSOR_DATA\n",
+        sensorData->transactionId, txn->expectedResponseType);
+    // Don't return - still process valid sensor data
+  } else {
+    // Valid transaction - increment received count
+    txn->receivedResponseCount++;
+    
+    // If all expected responses received, complete the transaction
+    if (txn->receivedResponseCount >= txn->expectedResponseCount) {
+      completePendingTransaction(sensorData->transactionId);
+    }
+  }
   
   // DEBUG: Print received sensor data (simplified for performance)
   // log(LOG_DEBUG, false, "IPC RX: Sensor[%d] = %.2f %s%s\n", 
@@ -207,6 +369,11 @@ void handleHello(uint8_t messageType, const uint8_t *payload, uint16_t length) {
   // This ensures IO MCU always has current config after any reboot
   pushIOConfigToIOmcu();
   log(LOG_INFO, false, "IPC: Configuration pushed to IO MCU\n");
+  
+  // Wait for IO MCU to finish processing config messages before starting polling
+  // This prevents sensor polling from colliding with config message processing
+  delay(200);  // 200ms should be sufficient for config processing
+  log(LOG_DEBUG, false, "IPC: Config processing delay complete\n");
   
   // Enable sensor polling now that handshake and config push are complete
   ipcReady = true;
@@ -310,7 +477,6 @@ void registerIpcCallbacks(void) {
 
   log(LOG_INFO, false, "IPC message handlers registered.\n");
 }
-
 /**
  * @brief Handler for control acknowledgment messages from IO MCU
  */
@@ -322,16 +488,36 @@ void handleControlAck(uint8_t messageType, const uint8_t *payload, uint16_t leng
   
   const IPC_ControlAck_t *ack = (const IPC_ControlAck_t *)payload;
   
-  if (ack->success) {
-    log(LOG_DEBUG, false, "IPC: Control command ACK for object %d: %s\n", 
-        ack->index, ack->message);
+  // Validate transaction ID
+  PendingTransaction* txn = findPendingTransaction(ack->transactionId);
+  if (txn == nullptr) {
+    // Unknown transaction - could be from old request or unsolicited ACK
+    log(LOG_DEBUG, false, "[IPC] Received CONTROL_ACK with unknown txn %d (object %d)\n", 
+        ack->transactionId, ack->index);
+    // Still process the ACK - it's valid acknowledgment
+  } else if (txn->expectedResponseType != IPC_MSG_CONTROL_ACK) {
+    // Wrong response type for this transaction
+    log(LOG_WARNING, false, "[IPC] Txn %d expected msg type %02X but got CONTROL_ACK\n",
+        ack->transactionId, txn->expectedResponseType);
   } else {
-    log(LOG_WARNING, false, "IPC: Control command FAILED for object %d (error %d): %s\n",
-        ack->index, ack->errorCode, ack->message);
+    // Valid transaction - increment received count and complete
+    txn->receivedResponseCount++;
+    
+    if (txn->receivedResponseCount >= txn->expectedResponseCount) {
+      completePendingTransaction(ack->transactionId);
+    }
+  }
+  
+  if (ack->success) {
+    log(LOG_DEBUG, false, "IPC: Control ACK for object %d (txn %d): %s\n", 
+        ack->index, ack->transactionId, ack->message);
+  } else {
+    log(LOG_WARNING, false, "IPC: Control FAILED for object %d (txn %d, error %d): %s\n",
+        ack->index, ack->transactionId, ack->errorCode, ack->message);
   }
   
   // TODO: Could store last error in a status structure for API queries
-}
+} // <--- Added closing brace here
 
 /**
  * @brief Handler for device status messages from IO MCU
@@ -343,6 +529,11 @@ void handleDeviceStatus(uint8_t messageType, const uint8_t *payload, uint16_t le
   }
   
   const IPC_DeviceStatus_t *status = (const IPC_DeviceStatus_t *)payload;
+  
+  // Complete pending transaction
+  if (status->transactionId > 0) {
+    completePendingTransaction(status->transactionId);
+  }
   
   if (status->active && !status->fault) {
     log(LOG_INFO, true, "IPC: Device at index %d is ACTIVE with %d sensors: %s\n",
@@ -415,6 +606,7 @@ void handleIndexSyncData(uint8_t messageType, const uint8_t *payload, uint16_t l
 bool sendDigitalOutputCommand(uint16_t index, uint8_t command, bool state, float pwmDuty) {
   IPC_DigitalOutputControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));  // Zero out structure including padding
+  cmd.transactionId = generateTransactionId();
   cmd.index = index;
   cmd.objectType = OBJ_T_DIGITAL_OUTPUT;
   cmd.command = command;
@@ -424,7 +616,8 @@ bool sendDigitalOutputCommand(uint16_t index, uint8_t command, bool state, float
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_DEBUG, false, "IPC TX: DigitalOutput[%d] command=%d (size=%d)\n", index, command, sizeof(cmd));
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_DEBUG, false, "IPC TX: DigitalOutput[%d] command=%d (txn=%d)\n", index, command, cmd.transactionId);
   } else {
     log(LOG_WARNING, false, "IPC TX: Failed to send DigitalOutput command (queue full)\n");
   }
@@ -442,6 +635,7 @@ bool sendDigitalOutputCommand(uint16_t index, uint8_t command, bool state, float
 bool sendAnalogOutputCommand(uint16_t index, uint8_t command, float value) {
   IPC_AnalogOutputControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));  // Zero out structure including padding
+  cmd.transactionId = generateTransactionId();
   cmd.index = index;
   cmd.objectType = OBJ_T_ANALOG_OUTPUT;
   cmd.command = command;
@@ -450,8 +644,9 @@ bool sendAnalogOutputCommand(uint16_t index, uint8_t command, float value) {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_DEBUG, false, "IPC TX: AnalogOutput[%d] command=%d, value=%.1f mV (size=%d)\n", 
-        index, command, value, sizeof(cmd));
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_DEBUG, false, "IPC TX: AnalogOutput[%d] command=%d, value=%.1f mV (txn=%d)\n", 
+        index, command, value, cmd.transactionId);
   } else {
     log(LOG_WARNING, false, "IPC TX: Failed to send AnalogOutput command (queue full)\n");
   }
@@ -469,6 +664,7 @@ bool sendAnalogOutputCommand(uint16_t index, uint8_t command, float value) {
 bool sendStepperCommand(uint8_t command, float rpm, bool direction) {
   IPC_StepperControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));  // Zero out structure including padding
+  cmd.transactionId = generateTransactionId();
   cmd.index = 26;
   cmd.objectType = OBJ_T_STEPPER_MOTOR;
   cmd.command = command;
@@ -479,8 +675,9 @@ bool sendStepperCommand(uint8_t command, float rpm, bool direction) {
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_DEBUG, false, "IPC TX: Stepper command=%d, rpm=%.1f, dir=%d\n", 
-        command, rpm, direction);
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 26);
+    log(LOG_DEBUG, false, "IPC TX: Stepper command=%d, rpm=%.1f, dir=%d (txn=%d)\n", 
+        command, rpm, direction, cmd.transactionId);
   } else {
     log(LOG_WARNING, false, "IPC TX: Failed to send Stepper command (queue full)\n");
   }
@@ -499,6 +696,7 @@ bool sendStepperCommand(uint8_t command, float rpm, bool direction) {
 bool sendDCMotorCommand(uint16_t index, uint8_t command, float power, bool direction) {
   IPC_DCMotorControl_t cmd;
   memset(&cmd, 0, sizeof(cmd));  // Zero out structure including padding
+  cmd.transactionId = generateTransactionId();
   cmd.index = index;
   cmd.objectType = OBJ_T_BDC_MOTOR;
   cmd.command = command;
@@ -509,8 +707,9 @@ bool sendDCMotorCommand(uint16_t index, uint8_t command, float power, bool direc
   bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_DEBUG, false, "IPC TX: DCMotor[%d] command=%d, power=%.1f%%, dir=%d\n",
-        index, command, power, direction);
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    log(LOG_DEBUG, false, "IPC TX: DCMotor[%d] command=%d, power=%.1f%%, dir=%d (txn=%d)\n",
+        index, command, power, direction, cmd.transactionId);
   } else {
     log(LOG_WARNING, false, "IPC TX: Failed to send DCMotor command (queue full)\n");
   }
@@ -530,14 +729,16 @@ bool sendDCMotorCommand(uint16_t index, uint8_t command, float power, bool direc
  */
 bool sendDeviceCreateCommand(uint8_t startIndex, const IPC_DeviceConfig_t* config) {
   IPC_DeviceCreate_t cmd;
+  cmd.transactionId = generateTransactionId();
   cmd.startIndex = startIndex;
   memcpy(&cmd.config, config, sizeof(IPC_DeviceConfig_t));
   
   bool sent = ipc.sendPacket(IPC_MSG_DEVICE_CREATE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, true, "IPC TX: Create device at index %d (type=%d)\n", 
-        startIndex, config->deviceType);
+    addPendingTransaction(cmd.transactionId, IPC_MSG_DEVICE_CREATE, IPC_MSG_DEVICE_STATUS, 1, startIndex);
+    log(LOG_INFO, true, "IPC TX: Create device at index %d (type=%d, txn=%d)\n", 
+        startIndex, config->deviceType, cmd.transactionId);
   } else {
     log(LOG_WARNING, false, "IPC TX: Failed to send device create command\n");
   }
@@ -552,12 +753,14 @@ bool sendDeviceCreateCommand(uint8_t startIndex, const IPC_DeviceConfig_t* confi
  */
 bool sendDeviceDeleteCommand(uint8_t startIndex) {
   IPC_DeviceDelete_t cmd;
+  cmd.transactionId = generateTransactionId();
   cmd.startIndex = startIndex;
   
   bool sent = ipc.sendPacket(IPC_MSG_DEVICE_DELETE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    log(LOG_INFO, true, "IPC TX: Delete device at index %d\n", startIndex);
+    addPendingTransaction(cmd.transactionId, IPC_MSG_DEVICE_DELETE, IPC_MSG_DEVICE_STATUS, 1, startIndex);
+    log(LOG_INFO, true, "IPC TX: Delete device at index %d (txn=%d)\n", startIndex, cmd.transactionId);
   } else {
     log(LOG_WARNING, false, "IPC TX: Failed to send device delete command\n");
   }
@@ -573,13 +776,16 @@ bool sendDeviceDeleteCommand(uint8_t startIndex) {
  */
 bool sendDeviceConfigCommand(uint8_t startIndex, const IPC_DeviceConfig_t* config) {
   IPC_DeviceConfigUpdate_t update;
+  update.transactionId = generateTransactionId();
   update.startIndex = startIndex;
   memcpy(&update.config, config, sizeof(IPC_DeviceConfig_t));
   
   bool sent = ipc.sendPacket(IPC_MSG_DEVICE_CONFIG, (uint8_t*)&update, sizeof(IPC_DeviceConfigUpdate_t));
   
   if (sent) {
-    log(LOG_INFO, true, "IPC TX: Update device config (index=%d, type=%d)\n", startIndex, config->deviceType);
+    addPendingTransaction(update.transactionId, IPC_MSG_DEVICE_CONFIG, IPC_MSG_DEVICE_STATUS, 1, startIndex);
+    log(LOG_INFO, true, "IPC TX: Update device config (index=%d, type=%d, txn=%d)\n", 
+        startIndex, config->deviceType, update.transactionId);
   } else {
     log(LOG_WARNING, false, "IPC TX: Failed to send device config command\n");
   }

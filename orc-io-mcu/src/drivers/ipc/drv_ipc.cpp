@@ -383,6 +383,28 @@ void ipc_update(void) {
         ipc_processTxQueue();
     }
     
+    // Set bulkJustFinished flag when counter reaches 0
+    // Counter is now managed by bulk handler itself (decrements when each bulk completes)
+    static uint8_t lastBulkCounter = 0;
+    if (ipcDriver.bulkResponseInProgress == 0 && lastBulkCounter > 0 && !ipcDriver.bulkJustFinished) {
+        // Counter just reached zero
+        ipcDriver.bulkJustFinished = true;
+        Serial.println("[IPC] Bulk cycle complete, waiting one update cycle before processing ACKs");
+        Serial.flush();
+    }
+    lastBulkCounter = ipcDriver.bulkResponseInProgress;
+    
+    // Process deferred ACKs
+    if (ipcDriver.deferredAckCount > 0) {
+        ipc_processDeferredAcks();
+    }
+    
+    // Clear grace period flag AFTER attempting to process ACKs
+    if (ipcDriver.bulkJustFinished) {
+        ipcDriver.bulkJustFinished = false;
+        Serial.println("[IPC] Bulk grace period cleared");
+    }
+    
     // Send keepalive ping if connected
     if (ipcDriver.connectionState == IPC_CONN_CONNECTED) {
         if ((now - ipcDriver.lastKeepalive) > IPC_KEEPALIVE_MS) {
@@ -438,6 +460,87 @@ bool ipc_sendError(uint8_t errorCode, const char *message) {
     error.message[sizeof(error.message) - 1] = '\0';
     
     return ipc_sendPacket(IPC_MSG_ERROR, (uint8_t*)&error, sizeof(error));
+}
+
+bool ipc_sendControlAckWithTxn(uint16_t transactionId, uint16_t index, uint8_t objectType,
+                                uint8_t command, bool success, uint8_t errorCode, const char *message) {
+    // ALWAYS defer config ACKs to avoid race condition with bulk requests
+    // The deferred queue will send them when it's truly safe (counter=0 AND no new requests starting)
+    
+    if (ipcDriver.deferredAckCount < 4) {
+        IPC_DeferredAck_t *ack = &ipcDriver.deferredAcks[ipcDriver.deferredAckCount++];
+        ack->transactionId = transactionId;
+        ack->index = index;
+        ack->objectType = objectType;
+        ack->command = command;
+        ack->success = success;
+        ack->errorCode = errorCode;
+        strncpy(ack->message, message, sizeof(ack->message) - 1);
+        ack->message[sizeof(ack->message) - 1] = '\0';
+        
+        // Store timestamp for delay calculation (rollover-safe)
+        ipcDriver.ackQueuedAt = millis();
+        
+        return true;  // Queued for later
+    } else {
+        Serial.println("[IPC] ERROR: Deferred ACK queue full! ACK will be lost!");
+        return false;  // Queue full - ACK lost
+    }
+}
+
+void ipc_processDeferredAcks(void) {
+    // Only process when bulk response counter is 0 AND TX queue is empty
+    // This ensures all bulk packets are transmitted before ACKs are sent
+    if (ipcDriver.bulkResponseInProgress > 0) {
+        return;
+    }
+    
+    uint8_t queueCount = ipc_txQueueCount();
+    if (queueCount > 0) {
+        return;
+    }
+    
+    // Don't process ACKs if bulk just finished - wait for next cycle
+    if (ipcDriver.bulkJustFinished) {
+        return;
+    }
+    
+    // Don't process ACKs if still in time-based blocking period (rollover-safe)
+    if (ipcDriver.deferredAckCount > 0) {
+        uint32_t now = millis();
+        uint32_t elapsed = now - ipcDriver.ackQueuedAt;  // Rollover-safe subtraction
+        const uint32_t DELAY_MS = 20;
+        
+        if (elapsed < DELAY_MS) {
+            return;
+        }
+    }
+    
+    // Send all deferred ACKs
+    while (ipcDriver.deferredAckCount > 0) {
+        IPC_DeferredAck_t *ack = &ipcDriver.deferredAcks[0];
+        
+        IPC_ControlAck_t packet;
+        packet.transactionId = ack->transactionId;
+        packet.index = ack->index;
+        packet.objectType = ack->objectType;
+        packet.command = ack->command;
+        packet.success = ack->success;
+        packet.errorCode = ack->errorCode;
+        strncpy(packet.message, ack->message, sizeof(packet.message) - 1);
+        packet.message[sizeof(packet.message) - 1] = '\0';
+        
+        if (ipc_sendPacket(IPC_MSG_CONTROL_ACK, (uint8_t*)&packet, sizeof(packet))) {
+            // Shift queue down
+            for (uint8_t i = 0; i < ipcDriver.deferredAckCount - 1; i++) {
+                ipcDriver.deferredAcks[i] = ipcDriver.deferredAcks[i + 1];
+            }
+            ipcDriver.deferredAckCount--;
+        } else {
+            // TX queue full, try again next update
+            break;
+        }
+    }
 }
 
 // ============================================================================

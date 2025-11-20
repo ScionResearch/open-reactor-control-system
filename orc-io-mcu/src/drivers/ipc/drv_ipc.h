@@ -31,6 +31,17 @@ struct IPC_TxPacket_t {
     uint8_t payload[IPC_MAX_PAYLOAD_SIZE];
 };
 
+// Deferred ACK queue entry (for config messages during bulk responses)
+struct IPC_DeferredAck_t {
+    uint16_t transactionId;
+    uint16_t index;           // Changed from uint8_t to match IPC_ControlAck_t
+    uint8_t objectType;
+    uint8_t command;
+    bool success;
+    uint8_t errorCode;
+    char message[100];
+};
+
 // IPC driver structure
 struct IPC_Driver_t {
     // Hardware interface
@@ -63,6 +74,13 @@ struct IPC_Driver_t {
     uint8_t txQueueHead;
     uint8_t txQueueTail;
     bool txInProgress;
+    uint8_t bulkResponseInProgress;  // Reference count for bulk requests (0 = none, >0 = in progress or queued)
+    bool bulkJustFinished;  // Set when counter reaches 0, cleared next update cycle (prevents race)
+    
+    // Deferred ACK queue (sent after bulk responses complete)
+    IPC_DeferredAck_t deferredAcks[4];  // Small queue for config ACKs
+    uint8_t deferredAckCount;
+    uint32_t ackQueuedAt;  // Timestamp (millis) when ACK was queued (for delay calculation)
     
     // Statistics
     uint32_t rxPacketCount;
@@ -165,11 +183,12 @@ bool ipc_sendIndexAdd(uint16_t index);
 bool ipc_sendIndexRemove(uint16_t index);
 
 /**
- * @brief Send sensor data for a specific index
+ * @brief Send sensor data for a specific object
  * @param index Object index
+ * @param transactionId Transaction ID from request (for response matching)
  * @return true if packet queued successfully
  */
-bool ipc_sendSensorData(uint16_t index);
+bool ipc_sendSensorData(uint16_t index, uint16_t transactionId);
 
 /**
  * @brief Send batch sensor data
@@ -189,6 +208,7 @@ bool ipc_sendFault(uint16_t index, uint8_t severity, const char *message);
 
 /**
  * @brief Send enhanced control acknowledgment with error codes
+ * If bulk response is in progress, ACK is queued and sent later
  * @param index Object index
  * @param objectType Object type
  * @param command Command that was executed
@@ -198,6 +218,26 @@ bool ipc_sendFault(uint16_t index, uint8_t severity, const char *message);
  */
 bool ipc_sendControlAck(uint16_t index, uint8_t objectType, uint8_t command,
                           bool success, uint8_t errorCode, const char *message);
+
+/**
+ * @brief Send control ACK with transaction ID (for config messages)
+ * If bulk response is in progress, ACK is queued and sent later
+ * @param transactionId Transaction ID from config message
+ * @param index Object index
+ * @param objectType Object type
+ * @param command Command (0 for config)
+ * @param success Success status
+ * @param errorCode Error code if failed
+ * @param message Response message
+ */
+bool ipc_sendControlAckWithTxn(uint16_t transactionId, uint16_t index, uint8_t objectType,
+                                uint8_t command, bool success, uint8_t errorCode, const char *message);
+
+/**
+ * @brief Process deferred ACK queue (called from ipc_update)
+ * Sends queued ACKs when bulk response is complete
+ */
+void ipc_processDeferredAcks(void);
 
 /**
  * @brief Send device status message
