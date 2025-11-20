@@ -78,7 +78,7 @@ struct IPC_Driver_t {
     bool bulkJustFinished;  // Set when counter reaches 0, cleared next update cycle (prevents race)
     
     // Deferred ACK queue (sent after bulk responses complete)
-    IPC_DeferredAck_t deferredAcks[4];  // Small queue for config ACKs
+    IPC_DeferredAck_t deferredAcks[10];  // Small queue for config ACKs
     uint8_t deferredAckCount;
     uint32_t ackQueuedAt;  // Timestamp (millis) when ACK was queued (for delay calculation)
     

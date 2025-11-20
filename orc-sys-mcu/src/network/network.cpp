@@ -2881,6 +2881,12 @@ void handleGetControllers() {
     // Dosing configuration info
     ctrl["acidEnabled"] = ioConfig.phController.acidDosing.enabled;
     ctrl["alkalineEnabled"] = ioConfig.phController.alkalineDosing.enabled;
+    ctrl["acidOutputType"] = ioConfig.phController.acidDosing.outputType;
+    ctrl["alkalineOutputType"] = ioConfig.phController.alkalineDosing.outputType;
+    ctrl["acidDosingTime_ms"] = ioConfig.phController.acidDosing.dosingTime_ms;
+    ctrl["alkalineDosingTime_ms"] = ioConfig.phController.alkalineDosing.dosingTime_ms;
+    ctrl["acidMfcFlowRate_mL_min"] = ioConfig.phController.acidDosing.mfcFlowRate_mL_min;
+    ctrl["alkalineMfcFlowRate_mL_min"] = ioConfig.phController.alkalineDosing.mfcFlowRate_mL_min;
     ctrl["acidVolumePerDose_mL"] = ioConfig.phController.acidDosing.volumePerDose_mL;
     ctrl["alkalineVolumePerDose_mL"] = ioConfig.phController.alkalineDosing.volumePerDose_mL;
     
@@ -2898,10 +2904,10 @@ void handleGetControllers() {
       if (enabled) {
         // Controller is running - use controller's process value and output
         ctrl["processValue"] = obj->value;  // Process value (pH)
-        // additionalValues: [0]=setpoint, [1]=currentOutput, [2]=acidVolume_mL, [3]=alkalineVolume_mL
-        ctrl["output"] = obj->valueCount > 1 ? obj->additionalValues[1] : 0.0f;  // Dosing state
-        ctrl["acidVolumeTotal_mL"] = obj->valueCount > 2 ? obj->additionalValues[2] : 0.0f;
-        ctrl["alkalineVolumeTotal_mL"] = obj->valueCount > 3 ? obj->additionalValues[3] : 0.0f;
+        // additionalValues: [0]=output, [1]=acidVol, [2]=alkalineVol
+        ctrl["output"] = obj->valueCount > 0 ? obj->additionalValues[0] : 0.0f;  // Dosing state (0=off, 1=acid, 2=alkaline)
+        ctrl["acidVolumeTotal_mL"] = obj->valueCount > 1 ? obj->additionalValues[1] : 0.0f;
+        ctrl["alkalineVolumeTotal_mL"] = obj->valueCount > 2 ? obj->additionalValues[2] : 0.0f;
       }
     }
     
@@ -2917,8 +2923,9 @@ void handleGetControllers() {
       }
       
       ctrl["output"] = 0;  // No dosing when disabled
-      ctrl["acidVolumeTotal_mL"] = 0.0f;
-      ctrl["alkalineVolumeTotal_mL"] = 0.0f;
+      // Still show cumulative volumes even when disabled (they persist across enable/disable)
+      ctrl["acidVolumeTotal_mL"] = obj->valueCount > 1 ? obj->additionalValues[1] : 0.0f;
+      ctrl["alkalineVolumeTotal_mL"] = obj->valueCount > 2 ? obj->additionalValues[2] : 0.0f;
     }
   }
   
@@ -3423,6 +3430,7 @@ void handleGetpHControllerConfig() {
   acid["dosingTime_ms"] = ioConfig.phController.acidDosing.dosingTime_ms;
   acid["dosingInterval_ms"] = ioConfig.phController.acidDosing.dosingInterval_ms;
   acid["volumePerDose_mL"] = ioConfig.phController.acidDosing.volumePerDose_mL;
+  acid["mfcFlowRate_mL_min"] = ioConfig.phController.acidDosing.mfcFlowRate_mL_min;
   
   // Alkaline dosing configuration
   JsonObject alkaline = doc.createNestedObject("alkalineDosing");
@@ -3433,6 +3441,7 @@ void handleGetpHControllerConfig() {
   alkaline["dosingTime_ms"] = ioConfig.phController.alkalineDosing.dosingTime_ms;
   alkaline["dosingInterval_ms"] = ioConfig.phController.alkalineDosing.dosingInterval_ms;
   alkaline["volumePerDose_mL"] = ioConfig.phController.alkalineDosing.volumePerDose_mL;
+  alkaline["mfcFlowRate_mL_min"] = ioConfig.phController.alkalineDosing.mfcFlowRate_mL_min;
   
   String response;
   serializeJson(doc, response);
@@ -3485,6 +3494,7 @@ void handleSavepHControllerConfig() {
   ioConfig.phController.acidDosing.dosingTime_ms = acid["dosingTime_ms"] | 1000;
   ioConfig.phController.acidDosing.dosingInterval_ms = acid["dosingInterval_ms"] | 60000;
   ioConfig.phController.acidDosing.volumePerDose_mL = acid["volumePerDose_mL"] | 0.5f;
+  ioConfig.phController.acidDosing.mfcFlowRate_mL_min = acid["mfcFlowRate_mL_min"] | 100.0f;
   
   // Alkaline dosing configuration
   JsonObject alkaline = doc["alkalineDosing"];
@@ -3495,6 +3505,7 @@ void handleSavepHControllerConfig() {
   ioConfig.phController.alkalineDosing.dosingTime_ms = alkaline["dosingTime_ms"] | 1000;
   ioConfig.phController.alkalineDosing.dosingInterval_ms = alkaline["dosingInterval_ms"] | 60000;
   ioConfig.phController.alkalineDosing.volumePerDose_mL = alkaline["volumePerDose_mL"] | 0.5f;
+  ioConfig.phController.alkalineDosing.mfcFlowRate_mL_min = alkaline["mfcFlowRate_mL_min"] | 100.0f;
   
   // Save configuration
   saveIOConfig();
@@ -3519,6 +3530,7 @@ void handleSavepHControllerConfig() {
   cfg.acidDosingTime_ms = ioConfig.phController.acidDosing.dosingTime_ms;
   cfg.acidDosingInterval_ms = ioConfig.phController.acidDosing.dosingInterval_ms;
   cfg.acidVolumePerDose_mL = ioConfig.phController.acidDosing.volumePerDose_mL;
+  cfg.acidMfcFlowRate_mL_min = ioConfig.phController.acidDosing.mfcFlowRate_mL_min;
   
   cfg.alkalineEnabled = ioConfig.phController.alkalineDosing.enabled;
   cfg.alkalineOutputType = ioConfig.phController.alkalineDosing.outputType;
@@ -3527,6 +3539,7 @@ void handleSavepHControllerConfig() {
   cfg.alkalineDosingTime_ms = ioConfig.phController.alkalineDosing.dosingTime_ms;
   cfg.alkalineDosingInterval_ms = ioConfig.phController.alkalineDosing.dosingInterval_ms;
   cfg.alkalineVolumePerDose_mL = ioConfig.phController.alkalineDosing.volumePerDose_mL;
+  cfg.alkalineMfcFlowRate_mL_min = ioConfig.phController.alkalineDosing.mfcFlowRate_mL_min;
   
   bool sent = ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
   
@@ -3583,50 +3596,28 @@ void handleUpdatepHSetpoint() {
   
   float setpoint = doc["setpoint"] | 7.0f;
   
-  // Update configuration
-  ioConfig.phController.setpoint = setpoint;
+  // Send runtime control command to IO MCU (does NOT recreate controller)
+  IPC_pHControllerControl_t cmd;
+  memset(&cmd, 0, sizeof(cmd));
   
-  // Save configuration
-  saveIOConfig();
+  cmd.transactionId = generateTransactionId();
+  cmd.index = 43;
+  cmd.objectType = OBJ_T_PH_CONTROL;
+  cmd.command = PH_CMD_SET_SETPOINT;
+  cmd.setpoint = setpoint;
   
-  // Send IPC config packet to IO MCU
-  IPC_ConfigpHController_t cfg;
-  memset(&cfg, 0, sizeof(cfg));
-  
-  cfg.transactionId = generateTransactionId();
-  cfg.index = 43;
-  cfg.isActive = ioConfig.phController.isActive;
-  strncpy(cfg.name, ioConfig.phController.name, sizeof(cfg.name) - 1);
-  cfg.enabled = ioConfig.phController.enabled;
-  cfg.pvSourceIndex = ioConfig.phController.pvSourceIndex;
-  cfg.setpoint = ioConfig.phController.setpoint;
-  cfg.deadband = ioConfig.phController.deadband;
-  
-  cfg.acidEnabled = ioConfig.phController.acidDosing.enabled;
-  cfg.acidOutputType = ioConfig.phController.acidDosing.outputType;
-  cfg.acidOutputIndex = ioConfig.phController.acidDosing.outputIndex;
-  cfg.acidMotorPower = ioConfig.phController.acidDosing.motorPower;
-  cfg.acidDosingTime_ms = ioConfig.phController.acidDosing.dosingTime_ms;
-  cfg.acidDosingInterval_ms = ioConfig.phController.acidDosing.dosingInterval_ms;
-  cfg.acidVolumePerDose_mL = ioConfig.phController.acidDosing.volumePerDose_mL;
-  
-  cfg.alkalineEnabled = ioConfig.phController.alkalineDosing.enabled;
-  cfg.alkalineOutputType = ioConfig.phController.alkalineDosing.outputType;
-  cfg.alkalineOutputIndex = ioConfig.phController.alkalineDosing.outputIndex;
-  cfg.alkalineMotorPower = ioConfig.phController.alkalineDosing.motorPower;
-  cfg.alkalineDosingTime_ms = ioConfig.phController.alkalineDosing.dosingTime_ms;
-  cfg.alkalineDosingInterval_ms = ioConfig.phController.alkalineDosing.dosingInterval_ms;
-  cfg.alkalineVolumePerDose_mL = ioConfig.phController.alkalineDosing.volumePerDose_mL;
-  
-  bool sent = ipc.sendPacket(IPC_MSG_CONFIG_PH_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+  bool sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
   
   if (sent) {
-    addPendingTransaction(cfg.transactionId, IPC_MSG_CONFIG_PH_CONTROLLER, IPC_MSG_CONTROL_ACK, 1, cfg.index);
-    log(LOG_INFO, false, "pH controller setpoint updated and sent to IO MCU\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Setpoint updated\"}");
+    addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    // Update in-memory config (DO NOT save to flash)
+    // This allows the API to return the correct setpoint when web UI polls
+    ioConfig.phController.setpoint = setpoint;
+    log(LOG_INFO, false, "pH setpoint updated to %.2f (txn=%d)\n", setpoint, cmd.transactionId);
+    server.send(200, "application/json", "{\"success\":true}");
   } else {
-    log(LOG_WARNING, false, "pH controller setpoint updated but failed to send to IO MCU\n");
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Setpoint updated but IO MCU update failed\"}");
+    log(LOG_WARNING, false, "Failed to send pH setpoint update\n");
+    server.send(500, "application/json", "{\"error\":\"Failed to send IPC command\"}");
   }
 }
 

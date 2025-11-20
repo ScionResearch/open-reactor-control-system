@@ -434,6 +434,16 @@ bool ControllerManager::createpHController(const IPC_ConfigpHController_t* confi
         return false;
     }
     
+    // Preserve cumulative volumes from existing controller (don't reset on reconfig)
+    float preservedAcidVolume = 0.0f;
+    float preservedAlkalineVolume = 0.0f;
+    if (phController.active && phController.controlObject != nullptr) {
+        preservedAcidVolume = phController.controlObject->acidCumulativeVolume_mL;
+        preservedAlkalineVolume = phController.controlObject->alkalineCumulativeVolume_mL;
+        Serial.printf("[CTRL MGR] Preserving volumes: acid=%.2f mL, alkaline=%.2f mL\n", 
+                     preservedAcidVolume, preservedAlkalineVolume);
+    }
+    
     // Delete existing controller if present
     if (phController.active) {
         deletepHController();
@@ -461,7 +471,8 @@ bool ControllerManager::createpHController(const IPC_ConfigpHController_t* confi
     control->acidDosingTime_ms = config->acidDosingTime_ms;
     control->acidDosingInterval_ms = config->acidDosingInterval_ms;
     control->acidVolumePerDose_mL = config->acidVolumePerDose_mL;
-    control->acidCumulativeVolume_mL = 0.0f;  // Initialize to zero
+    control->acidMfcFlowRate_mL_min = config->acidMfcFlowRate_mL_min;
+    control->acidCumulativeVolume_mL = preservedAcidVolume;  // Restore preserved volume
     control->lastAcidDoseTime = 0;
     
     // Alkaline dosing configuration
@@ -472,7 +483,8 @@ bool ControllerManager::createpHController(const IPC_ConfigpHController_t* confi
     control->alkalineDosingTime_ms = config->alkalineDosingTime_ms;
     control->alkalineDosingInterval_ms = config->alkalineDosingInterval_ms;
     control->alkalineVolumePerDose_mL = config->alkalineVolumePerDose_mL;
-    control->alkalineCumulativeVolume_mL = 0.0f;  // Initialize to zero
+    control->alkalineMfcFlowRate_mL_min = config->alkalineMfcFlowRate_mL_min;
+    control->alkalineCumulativeVolume_mL = preservedAlkalineVolume;  // Restore preserved volume
     control->lastAlkalineDoseTime = 0;
     
     // Create controller instance

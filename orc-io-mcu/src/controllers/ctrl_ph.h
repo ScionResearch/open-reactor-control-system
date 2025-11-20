@@ -108,9 +108,9 @@ private:
     
     /**
      * @brief Activate dosing output
-     * @param type 0=Digital, 1=Motor
-     * @param index Output index
-     * @param power Motor power (0-100%), ignored for digital
+     * @param type 0=Digital, 1=Motor, 2=MFC
+     * @param index Output index (21-25 digital, 27-30 motor, 50-69 MFC)
+     * @param power Motor power (0-100%), ignored for digital/MFC
      * @param duration Dose duration (milliseconds)
      * @return true if activated successfully
      */
@@ -118,8 +118,8 @@ private:
     
     /**
      * @brief Stop dosing output
-     * @param type 0=Digital, 1=Motor
-     * @param index Output index
+     * @param type 0=Digital, 1=Motor, 2=MFC
+     * @param index Output index (21-25 digital, 27-30 motor, 50-69 MFC)
      */
     void _stopOutput(uint8_t type, uint8_t index);
     

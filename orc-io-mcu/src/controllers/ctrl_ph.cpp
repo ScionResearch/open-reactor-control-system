@@ -214,6 +214,34 @@ bool pHController::_activateOutput(uint8_t type, uint8_t index, uint8_t power, u
                              index, power, duration);
             }
         }
+    } else if (type == 2) {
+        // Mass Flow Controller (MFC)
+        if (index >= 50 && index <= 69) {
+            uint8_t devIdx = index;
+            
+            // Find MFC device in object index
+            if (objIndex[devIdx].valid && objIndex[devIdx].type == OBJ_T_DEVICE_CONTROL) {
+                DeviceControl_t* dev = (DeviceControl_t*)objIndex[devIdx].obj;
+                if (dev && dev->deviceType == IPC_DEV_ALICAT_MFC) {
+                    // Get MFC instance from device manager
+                    ManagedDevice* managedDev = DeviceManager::findDeviceByControlIndex(devIdx);
+                    if (managedDev && managedDev->deviceInstance) {
+                        AlicatMFC* mfc = (AlicatMFC*)managedDev->deviceInstance;
+                        
+                        // Get flow rate from control structure
+                        float flowRate = _dosingAcid ? _control->acidMfcFlowRate_mL_min 
+                                                      : _control->alkalineMfcFlowRate_mL_min;
+                        
+                        // Write setpoint to MFC (in mL/min)
+                        mfc->writeSetpoint(flowRate, true);
+                        success = true;
+                        
+                        Serial.printf("[pH CTRL] Activated MFC %d at %.1f mL/min for %d ms\n", 
+                                     index, flowRate, duration);
+                    }
+                }
+            }
+        }
     }
     
     if (success) {
@@ -227,15 +255,37 @@ bool pHController::_activateOutput(uint8_t type, uint8_t index, uint8_t power, u
         // Update last dose time and accumulate volume
         if (_dosingAcid) {
             _control->lastAcidDoseTime = millis();
-            _control->acidCumulativeVolume_mL += _control->acidVolumePerDose_mL;
+            
+            // Calculate volume based on output type
+            float doseVolume;
+            if (_control->acidOutputType == 2) {
+                // MFC: Calculate from flow rate and time
+                doseVolume = (_control->acidMfcFlowRate_mL_min * duration) / 60000.0f;
+            } else {
+                // Digital/Motor: Use user-provided volume
+                doseVolume = _control->acidVolumePerDose_mL;
+            }
+            
+            _control->acidCumulativeVolume_mL += doseVolume;
             Serial.printf("[pH CTRL] Acid dose: +%.2f mL (total: %.2f mL)\n", 
-                         _control->acidVolumePerDose_mL, 
+                         doseVolume, 
                          _control->acidCumulativeVolume_mL);
         } else {
             _control->lastAlkalineDoseTime = millis();
-            _control->alkalineCumulativeVolume_mL += _control->alkalineVolumePerDose_mL;
+            
+            // Calculate volume based on output type
+            float doseVolume;
+            if (_control->alkalineOutputType == 2) {
+                // MFC: Calculate from flow rate and time
+                doseVolume = (_control->alkalineMfcFlowRate_mL_min * duration) / 60000.0f;
+            } else {
+                // Digital/Motor: Use user-provided volume
+                doseVolume = _control->alkalineVolumePerDose_mL;
+            }
+            
+            _control->alkalineCumulativeVolume_mL += doseVolume;
             Serial.printf("[pH CTRL] Alkaline dose: +%.2f mL (total: %.2f mL)\n", 
-                         _control->alkalineVolumePerDose_mL, 
+                         doseVolume, 
                          _control->alkalineCumulativeVolume_mL);
         }
         
@@ -263,6 +313,23 @@ void pHController::_stopOutput(uint8_t type, uint8_t index) {
             uint8_t motorNum = index - 27;
             motor_stop(motorNum);
             Serial.printf("[pH CTRL] Stopped DC motor %d\n", index);
+        }
+    } else if (type == 2) {
+        // Mass Flow Controller (MFC)
+        if (index >= 50 && index <= 69 && objIndex[index].valid) {
+            if (objIndex[index].type == OBJ_T_DEVICE_CONTROL) {
+                DeviceControl_t* dev = (DeviceControl_t*)objIndex[index].obj;
+                if (dev && dev->deviceType == IPC_DEV_ALICAT_MFC) {
+                    ManagedDevice* managedDev = DeviceManager::findDeviceByControlIndex(index);
+                    if (managedDev && managedDev->deviceInstance) {
+                        AlicatMFC* mfc = (AlicatMFC*)managedDev->deviceInstance;
+                        
+                        // Stop flow by setting setpoint to 0
+                        mfc->writeSetpoint(0.0f, true);
+                        Serial.printf("[pH CTRL] Stopped MFC %d\n", index);
+                    }
+                }
+            }
         }
     }
     

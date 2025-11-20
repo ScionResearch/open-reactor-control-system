@@ -202,12 +202,13 @@ struct DeviceSensorConfig {
  */
 struct pHDosingConfig {
     bool enabled;                    // Is this dosing direction enabled?
-    uint8_t outputType;              // 0=Digital Output, 1=DC Motor
-    uint8_t outputIndex;             // Digital output (21-25) or DC motor (27-30)
-    uint8_t motorPower;              // Power level if motor (0-100%), ignored for digital
+    uint8_t outputType;              // 0=Digital Output, 1=DC Motor, 2=MFC
+    uint8_t outputIndex;             // Digital output (21-25), DC motor (27-30), or MFC device (50-69)
+    uint8_t motorPower;              // Power level if motor (0-100%), ignored for digital/MFC
     uint16_t dosingTime_ms;          // How long to activate output (milliseconds)
     uint32_t dosingInterval_ms;      // Minimum time between doses (milliseconds)
-    float volumePerDose_mL;          // Volume dispensed per dose (mL) - for user monitoring
+    float volumePerDose_mL;          // Volume dispensed per dose (mL) - user-provided for digital/motor, calculated for MFC
+    float mfcFlowRate_mL_min;        // MFC flow rate setpoint (mL/min) - used only when outputType=2
 };
 
 /**

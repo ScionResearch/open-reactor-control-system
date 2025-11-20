@@ -5498,7 +5498,7 @@ function updateControllerCard(ctrl) {
                     : ctrl.controlMethod === 2
                     ? (ctrl.output === 0 ? 'OFF' 
                        : ctrl.output === 1 ? 'DOSING ACID' 
-                       : 'DOSING ALKALINE')
+                       : ctrl.output === 2 ? 'DOSING ALKALINE' : 'OFF')
                     : ctrl.controlMethod === 4
                     ? ctrl.output.toFixed(2) + ' mg/L'          // DO mode: show error value
                     : '--')
@@ -5562,14 +5562,27 @@ function updateControllerCard(ctrl) {
             deadbandSpan.textContent = '±' + ctrl.deadband.toFixed(2) + ctrl.unit;
         }
         
+        // Calculate dose volume based on output type
+        let acidDoseVol = ctrl.acidVolumePerDose_mL || 0;
+        if (ctrl.acidOutputType === 2) {
+            // MFC: calculate from flow rate and dose time
+            acidDoseVol = (ctrl.acidMfcFlowRate_mL_min * ctrl.acidDosingTime_ms) / 60000.0;
+        }
+        
+        let alkalineDoseVol = ctrl.alkalineVolumePerDose_mL || 0;
+        if (ctrl.alkalineOutputType === 2) {
+            // MFC: calculate from flow rate and dose time
+            alkalineDoseVol = (ctrl.alkalineMfcFlowRate_mL_min * ctrl.alkalineDosingTime_ms) / 60000.0;
+        }
+        
         const acidDoseSpan = card.querySelector(`#ctrl-acid-dose-vol-${ctrl.index}`);
         if (acidDoseSpan) {
-            acidDoseSpan.textContent = (ctrl.acidVolumePerDose_mL || 0).toFixed(2) + ' mL';
+            acidDoseSpan.textContent = acidDoseVol.toFixed(2) + ' mL';
         }
         
         const baseDoseSpan = card.querySelector(`#ctrl-base-dose-vol-${ctrl.index}`);
         if (baseDoseSpan) {
-            baseDoseSpan.textContent = (ctrl.alkalineVolumePerDose_mL || 0).toFixed(2) + ' mL';
+            baseDoseSpan.textContent = alkalineDoseVol.toFixed(2) + ' mL';
         }
     }
     
@@ -5685,7 +5698,7 @@ function createControllerCard(ctrl) {
                             : ctrl.controlMethod === 2
                             ? (ctrl.output === 0 ? 'OFF' 
                                : ctrl.output === 1 ? 'DOSING ACID' 
-                               : 'DOSING ALKALINE')                     // pH mode: show dosing state
+                               : ctrl.output === 2 ? 'DOSING ALKALINE' : 'OFF')  // pH mode: show dosing state
                             : ctrl.controlMethod === 3
                             ? (ctrl.output === 1 ? 'DOSING' : 'OFF')    // Flow mode: show dosing state
                             : ctrl.controlMethod === 4
@@ -5702,8 +5715,8 @@ function createControllerCard(ctrl) {
                 <span id="ctrl-gains-${ctrl.index}"><strong>Gains:</strong> P=${ctrl.kP.toFixed(2)}, I=${ctrl.kI.toFixed(2)}, D=${ctrl.kD.toFixed(2)}</span>
             ` : ctrl.controlMethod === 2 ? `
                 <span><strong>Deadband:</strong> <span id="ctrl-deadband-${ctrl.index}">±${ctrl.deadband.toFixed(2)}${ctrl.unit}</span></span>
-                <span><strong>Acid Dose Vol:</strong> <span id="ctrl-acid-dose-vol-${ctrl.index}">${(ctrl.acidVolumePerDose_mL || 0).toFixed(2)} mL</span></span>
-                <span><strong>Base Dose Vol:</strong> <span id="ctrl-base-dose-vol-${ctrl.index}">${(ctrl.alkalineVolumePerDose_mL || 0).toFixed(2)} mL</span></span>
+                <span id="ctrl-acid-info-${ctrl.index}"><strong>Acid Dose Vol:</strong> <span id="ctrl-acid-dose-vol-${ctrl.index}">${(ctrl.acidOutputType === 2 ? (ctrl.acidMfcFlowRate_mL_min * ctrl.acidDosingTime_ms / 60000.0) : (ctrl.acidVolumePerDose_mL || 0)).toFixed(2)} mL</span></span>
+                <span id="ctrl-base-info-${ctrl.index}"><strong>Base Dose Vol:</strong> <span id="ctrl-base-dose-vol-${ctrl.index}">${(ctrl.alkalineOutputType === 2 ? (ctrl.alkalineMfcFlowRate_mL_min * ctrl.alkalineDosingTime_ms / 60000.0) : (ctrl.alkalineVolumePerDose_mL || 0)).toFixed(2)} mL</span></span>
             ` : ctrl.controlMethod === 3 ? `
                 <span><strong>Dosing Interval:</strong> <span id="ctrl-dose-interval-${ctrl.index}">${ctrl.dosingInterval_ms ? (ctrl.dosingInterval_ms / 1000).toFixed(1) + ' s' : '--'}</span></span>
                 <span><strong>Calib Vol:</strong> ${ctrl.calibrationVolume_mL ? ctrl.calibrationVolume_mL.toFixed(2) + ' mL' : '--'}</span>
@@ -6075,6 +6088,7 @@ async function renderpHAddForm(expandedDiv, sensors, outputs, indexNum) {
                 <select id="ctrlAcidOutputType" onchange="updateAddpHOutputOptions('acid')">
                     <option value="0">Digital Output</option>
                     <option value="1">DC Motor</option>
+                    <option value="2">Mass Flow Controller</option>
                 </select>
             </div>
             
@@ -6090,6 +6104,14 @@ async function renderpHAddForm(expandedDiv, sensors, outputs, indexNum) {
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <input type="number" id="ctrlAcidMotorPower" value="50" min="1" max="100" style="flex: 1;">
                     <span>%</span>
+                </div>
+            </div>
+            
+            <div class="form-group" id="acidAddMfcFlowRateGroup" style="display: none;">
+                <label for="ctrlAcidMfcFlowRate">Flow Rate (mL/min):</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="ctrlAcidMfcFlowRate" value="100" min="0" max="10000" step="0.1" style="flex: 1;">
+                    <span>mL/min</span>
                 </div>
             </div>
             
@@ -6121,6 +6143,7 @@ async function renderpHAddForm(expandedDiv, sensors, outputs, indexNum) {
                 <select id="ctrlAlkalineOutputType" onchange="updateAddpHOutputOptions('alkaline')">
                     <option value="0">Digital Output</option>
                     <option value="1">DC Motor</option>
+                    <option value="2">Mass Flow Controller</option>
                 </select>
             </div>
             
@@ -6136,6 +6159,14 @@ async function renderpHAddForm(expandedDiv, sensors, outputs, indexNum) {
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <input type="number" id="ctrlAlkalineMotorPower" value="50" min="1" max="100" style="flex: 1;">
                     <span>%</span>
+                </div>
+            </div>
+            
+            <div class="form-group" id="alkalineAddMfcFlowRateGroup" style="display: none;">
+                <label for="ctrlAlkalineMfcFlowRate">Flow Rate (mL/min):</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="ctrlAlkalineMfcFlowRate" value="100" min="0" max="10000" step="0.1" style="flex: 1;">
+                    <span>mL/min</span>
                 </div>
             </div>
             
@@ -6298,7 +6329,7 @@ async function renderDOAddForm(expandedDiv, sensors, outputs, indexNum) {
                         const nameLower = (ds.n || '').toLowerCase();
                         return (nameLower.includes('mfc') || nameLower.includes('mass flow') || ds.t === 6) && ds.c;
                     })
-                    .map(ds => ({ index: ds.c, name: `[Ctrl ${ds.c}] ${ds.n || 'MFC'}` }));
+                    .map(ds => ({ index: ds.c, name: ds.n || `MFC Device ${ds.c}` }));
             }
         }
     } catch (error) {
@@ -6522,10 +6553,11 @@ function toggleAddDosingFields() {
     if (alkalineFields) alkalineFields.style.display = alkalineEnabled ? 'block' : 'none';
 }
 
-function updateAddpHOutputOptions(type) {
+async function updateAddpHOutputOptions(type) {
     const outputTypeSelect = document.getElementById(`ctrl${type.charAt(0).toUpperCase() + type.slice(1)}OutputType`);
     const outputSelect = document.getElementById(`ctrl${type.charAt(0).toUpperCase() + type.slice(1)}Output`);
     const motorPowerGroup = document.getElementById(`${type}AddMotorPowerGroup`);
+    const mfcFlowRateGroup = document.getElementById(`${type}AddMfcFlowRateGroup`);
     
     if (!outputTypeSelect || !outputSelect) return;
     
@@ -6538,6 +6570,11 @@ function updateAddpHOutputOptions(type) {
         motorPowerGroup.style.display = outputType === 1 ? 'block' : 'none';
     }
     
+    // Show/hide MFC flow rate field
+    if (mfcFlowRateGroup) {
+        mfcFlowRateGroup.style.display = outputType === 2 ? 'block' : 'none';
+    }
+    
     // Populate output dropdown
     outputSelect.innerHTML = '<option value="">-- Select Output --</option>';
     
@@ -6546,11 +6583,33 @@ function updateAddpHOutputOptions(type) {
         outputs.forEach(output => {
             outputSelect.innerHTML += `<option value="${output.index}">${output.name}</option>`;
         });
-    } else {
+    } else if (outputType === 1) {
         // DC motors (27-30)
         motors.forEach(motor => {
             outputSelect.innerHTML += `<option value="${motor.index}">${motor.name}</option>`;
         });
+    } else if (outputType === 2) {
+        // MFC devices (50-69) - fetch from device sensors
+        // Use control index (c) for device commands, not sensor index (i)
+        try {
+            const response = await fetch('/api/inputs');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.devices) {
+                    const mfcDevices = data.devices
+                        .filter(d => {
+                            const nameLower = (d.n || '').toLowerCase();
+                            return (nameLower.includes('mfc') || nameLower.includes('mass flow') || d.t === 6) && d.c;
+                        })
+                        .map(d => ({ index: d.c, name: d.n || `MFC Device ${d.c}` }));
+                    mfcDevices.forEach(mfc => {
+                        outputSelect.innerHTML += `<option value="${mfc.index}">${mfc.name}</option>`;
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('[pH ADD] Error loading MFC devices:', error);
+        }
     }
 }
 
@@ -6664,6 +6723,7 @@ async function createpHController(index) {
             outputType: parseInt(document.getElementById('ctrlAcidOutputType').value),
             outputIndex: parseInt(document.getElementById('ctrlAcidOutput').value),
             motorPower: parseInt(document.getElementById('ctrlAcidMotorPower').value),
+            mfcFlowRate_mL_min: parseFloat(document.getElementById('ctrlAcidMfcFlowRate')?.value || 100),
             dosingTime_ms: parseInt(document.getElementById('ctrlAcidDoseTime').value),
             dosingInterval_ms: parseInt(document.getElementById('ctrlAcidDoseInterval').value)
         },
@@ -6672,6 +6732,7 @@ async function createpHController(index) {
             outputType: parseInt(document.getElementById('ctrlAlkalineOutputType').value),
             outputIndex: parseInt(document.getElementById('ctrlAlkalineOutput').value),
             motorPower: parseInt(document.getElementById('ctrlAlkalineMotorPower').value),
+            mfcFlowRate_mL_min: parseFloat(document.getElementById('ctrlAlkalineMfcFlowRate')?.value || 100),
             dosingTime_ms: parseInt(document.getElementById('ctrlAlkalineDoseTime').value),
             dosingInterval_ms: parseInt(document.getElementById('ctrlAlkalineDoseInterval').value)
         }
@@ -7177,6 +7238,7 @@ async function renderpHConfigForm(config) {
                 <select id="phAcidOutputType" onchange="updatepHOutputOptions('acid')">
                     <option value="0" ${config.acidDosing?.outputType === 0 ? 'selected' : ''}>Digital Output</option>
                     <option value="1" ${config.acidDosing?.outputType === 1 ? 'selected' : ''}>DC Motor</option>
+                    <option value="2" ${config.acidDosing?.outputType === 2 ? 'selected' : ''}>Mass Flow Controller</option>
                 </select>
             </div>
             
@@ -7195,6 +7257,14 @@ async function renderpHConfigForm(config) {
                 </div>
             </div>
             
+            <div class="form-group" id="acidMfcFlowRateGroup" style="display: ${config.acidDosing?.outputType === 2 ? 'block' : 'none'};">
+                <label for="phAcidMfcFlowRate">Flow Rate (mL/min):</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="phAcidMfcFlowRate" value="${config.acidDosing?.mfcFlowRate_mL_min || 100}" min="0" max="10000" step="0.1" style="flex: 1;">
+                    <span>mL/min</span>
+                </div>
+            </div>
+            
             <div class="form-group">
                 <label for="phAcidDoseTime">Dose Time (ms):</label>
                 <input type="number" id="phAcidDoseTime" value="${config.acidDosing?.dosingTime_ms || 1000}" min="100" max="60000" step="100">
@@ -7205,7 +7275,7 @@ async function renderpHConfigForm(config) {
                 <input type="number" id="phAcidDoseInterval" value="${config.acidDosing?.dosingInterval_ms || 60000}" min="1000" max="3600000" step="1000">
             </div>
             
-            <div class="form-group">
+            <div class="form-group" id="acidVolumePerDoseGroup" style="display: ${config.acidDosing?.outputType === 2 ? 'none' : 'block'};">
                 <label for="phAcidVolumePerDose">Volume Per Dose (mL):</label>
                 <input type="number" id="phAcidVolumePerDose" value="${config.acidDosing?.volumePerDose_mL || 0.5}" min="0.1" max="100" step="0.1">
             </div>
@@ -7228,6 +7298,7 @@ async function renderpHConfigForm(config) {
                 <select id="phAlkalineOutputType" onchange="updatepHOutputOptions('alkaline')">
                     <option value="0" ${config.alkalineDosing?.outputType === 0 ? 'selected' : ''}>Digital Output</option>
                     <option value="1" ${config.alkalineDosing?.outputType === 1 ? 'selected' : ''}>DC Motor</option>
+                    <option value="2" ${config.alkalineDosing?.outputType === 2 ? 'selected' : ''}>Mass Flow Controller</option>
                 </select>
             </div>
             
@@ -7246,6 +7317,14 @@ async function renderpHConfigForm(config) {
                 </div>
             </div>
             
+            <div class="form-group" id="alkalineMfcFlowRateGroup" style="display: ${config.alkalineDosing?.outputType === 2 ? 'block' : 'none'};">
+                <label for="phAlkalineMfcFlowRate">Flow Rate (mL/min):</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="phAlkalineMfcFlowRate" value="${config.alkalineDosing?.mfcFlowRate_mL_min || 100}" min="0" max="10000" step="0.1" style="flex: 1;">
+                    <span>mL/min</span>
+                </div>
+            </div>
+            
             <div class="form-group">
                 <label for="phAlkalineDoseTime">Dose Time (ms):</label>
                 <input type="number" id="phAlkalineDoseTime" value="${config.alkalineDosing?.dosingTime_ms || 1000}" min="100" max="60000" step="100">
@@ -7256,7 +7335,7 @@ async function renderpHConfigForm(config) {
                 <input type="number" id="phAlkalineDoseInterval" value="${config.alkalineDosing?.dosingInterval_ms || 60000}" min="1000" max="3600000" step="1000">
             </div>
             
-            <div class="form-group">
+            <div class="form-group" id="alkalineVolumePerDoseGroup" style="display: ${config.alkalineDosing?.outputType === 2 ? 'none' : 'block'};">
                 <label for="phAlkalineVolumePerDose">Volume Per Dose (mL):</label>
                 <input type="number" id="phAlkalineVolumePerDose" value="${config.alkalineDosing?.volumePerDose_mL || 0.5}" min="0.1" max="100" step="0.1">
             </div>
@@ -7286,10 +7365,12 @@ function toggleDosingFields() {
     if (alkalineFields) alkalineFields.style.display = alkalineEnabled ? 'block' : 'none';
 }
 
-function updatepHOutputOptions(type) {
+async function updatepHOutputOptions(type) {
     const outputTypeSelect = document.getElementById(`ph${type.charAt(0).toUpperCase() + type.slice(1)}OutputType`);
     const outputSelect = document.getElementById(`ph${type.charAt(0).toUpperCase() + type.slice(1)}Output`);
     const motorPowerGroup = document.getElementById(`${type}MotorPowerGroup`);
+    const mfcFlowRateGroup = document.getElementById(`${type}MfcFlowRateGroup`);
+    const volumePerDoseGroup = document.getElementById(`${type}VolumePerDoseGroup`);
     
     if (!outputTypeSelect || !outputSelect) return;
     
@@ -7303,6 +7384,16 @@ function updatepHOutputOptions(type) {
         motorPowerGroup.style.display = outputType === 1 ? 'block' : 'none';
     }
     
+    // Show/hide MFC flow rate field
+    if (mfcFlowRateGroup) {
+        mfcFlowRateGroup.style.display = outputType === 2 ? 'block' : 'none';
+    }
+    
+    // Show/hide volume per dose field (hide for MFC since it's calculated)
+    if (volumePerDoseGroup) {
+        volumePerDoseGroup.style.display = outputType === 2 ? 'none' : 'block';
+    }
+    
     // Populate output dropdown
     outputSelect.innerHTML = '<option value="">-- Select Output --</option>';
     
@@ -7313,13 +7404,37 @@ function updatepHOutputOptions(type) {
                            (type === 'alkaline' && config.alkalineDosing?.outputIndex === output.index);
             outputSelect.innerHTML += `<option value="${output.index}" ${selected ? 'selected' : ''}>${output.name}</option>`;
         });
-    } else {
+    } else if (outputType === 1) {
         // DC motors (27-30)
         motors.forEach(motor => {
             const selected = (type === 'acid' && config.acidDosing?.outputIndex === motor.index) ||
                            (type === 'alkaline' && config.alkalineDosing?.outputIndex === motor.index);
             outputSelect.innerHTML += `<option value="${motor.index}" ${selected ? 'selected' : ''}>${motor.name}</option>`;
         });
+    } else if (outputType === 2) {
+        // MFC devices (50-69) - fetch from device sensors
+        // Use control index (c) for device commands, not sensor index (i)
+        try {
+            const response = await fetch('/api/inputs');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.devices) {
+                    const mfcDevices = data.devices
+                        .filter(d => {
+                            const nameLower = (d.n || '').toLowerCase();
+                            return (nameLower.includes('mfc') || nameLower.includes('mass flow') || d.t === 6) && d.c;
+                        })
+                        .map(d => ({ index: d.c, name: d.n || `MFC Device ${d.c}` }));
+                    mfcDevices.forEach(mfc => {
+                        const selected = (type === 'acid' && config.acidDosing?.outputIndex === mfc.index) ||
+                                       (type === 'alkaline' && config.alkalineDosing?.outputIndex === mfc.index);
+                        outputSelect.innerHTML += `<option value="${mfc.index}" ${selected ? 'selected' : ''}>${mfc.name}</option>`;
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('[pH CONFIG] Error loading MFC devices:', error);
+        }
     }
 }
 
@@ -7385,7 +7500,10 @@ async function saveControllerConfig() {
         }
         
         showToast('success', 'Success', 'Controller configuration saved');
-        await loadControllers();  // Refresh data FIRST
+        // Force full card rebuild by removing the existing card
+        const existingCard = document.querySelector(`.controller-card[data-index="${currentConfigIndex}"]`);
+        if (existingCard) existingCard.remove();
+        await loadControllers();  // Refresh data - will trigger full render since card count differs
         closeControllerConfigModal();  // Then close modal
         
     } catch (error) {
@@ -7407,6 +7525,7 @@ async function savepHControllerConfig() {
             outputType: parseInt(document.getElementById('phAcidOutputType').value),
             outputIndex: parseInt(document.getElementById('phAcidOutput').value),
             motorPower: parseInt(document.getElementById('phAcidMotorPower').value),
+            mfcFlowRate_mL_min: parseFloat(document.getElementById('phAcidMfcFlowRate')?.value || 100),
             dosingTime_ms: parseInt(document.getElementById('phAcidDoseTime').value),
             dosingInterval_ms: parseInt(document.getElementById('phAcidDoseInterval').value),
             volumePerDose_mL: parseFloat(document.getElementById('phAcidVolumePerDose').value)
@@ -7416,6 +7535,7 @@ async function savepHControllerConfig() {
             outputType: parseInt(document.getElementById('phAlkalineOutputType').value),
             outputIndex: parseInt(document.getElementById('phAlkalineOutput').value),
             motorPower: parseInt(document.getElementById('phAlkalineMotorPower').value),
+            mfcFlowRate_mL_min: parseFloat(document.getElementById('phAlkalineMfcFlowRate')?.value || 100),
             dosingTime_ms: parseInt(document.getElementById('phAlkalineDoseTime').value),
             dosingInterval_ms: parseInt(document.getElementById('phAlkalineDoseInterval').value),
             volumePerDose_mL: parseFloat(document.getElementById('phAlkalineVolumePerDose').value)
@@ -7461,7 +7581,10 @@ async function savepHControllerConfig() {
         }
         
         showToast('success', 'Success', 'pH Controller configuration saved');
-        await loadControllers();  // Refresh data FIRST
+        // Force full card rebuild by removing the existing card
+        const existingCard = document.querySelector(`.controller-card[data-index="43"]`);
+        if (existingCard) existingCard.remove();
+        await loadControllers();  // Refresh data - will trigger full render since card count differs
         closeControllerConfigModal();  // Then close modal
         
     } catch (error) {
@@ -7652,7 +7775,10 @@ async function saveFlowControllerConfig() {
         }
         
         showToast('success', 'Success', 'Flow Controller configuration saved');
-        await loadControllers();
+        // Force full card rebuild by removing the existing card
+        const existingCard = document.querySelector(`.controller-card[data-index="${currentConfigIndex}"]`);
+        if (existingCard) existingCard.remove();
+        await loadControllers();  // Refresh data - will trigger full render since card count differs
         closeControllerConfigModal();
         
     } catch (error) {
@@ -7692,7 +7818,7 @@ async function renderDOConfigForm(config) {
                         const nameLower = (ds.n || '').toLowerCase();
                         return (nameLower.includes('mfc') || nameLower.includes('mass flow') || ds.t === 6) && ds.c;
                     })
-                    .map(ds => ({ index: ds.c, name: `[Ctrl ${ds.c}] ${ds.n || 'MFC'}` }));
+                    .map(ds => ({ index: ds.c, name: ds.n || `MFC Device ${ds.c}` }));
             }
         }
     } catch (error) {
@@ -7835,6 +7961,10 @@ async function saveDOControllerConfig() {
         }
         
         showToast('success', 'Configuration Saved', 'DO controller configuration updated successfully');
+        // Force full card rebuild by removing the existing card
+        const existingCard = document.querySelector(`.controller-card[data-index="48"]`);
+        if (existingCard) existingCard.remove();
+        await loadControllers();  // Refresh data - will trigger full render since card count differs
         closeControllerConfigModal();
     } catch (error) {
         console.error('Error saving DO controller config:', error);

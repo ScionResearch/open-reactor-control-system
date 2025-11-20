@@ -721,6 +721,7 @@ struct IPC_TempControllerControl_t {
  * @brief pH Controller configuration
  * Message type: IPC_MSG_CONFIG_PH_CONTROLLER
  * Sent from SYS MCU to IO MCU to configure pH controller (index 43)
+ * Supports acid and/or alkaline dosing with digital, motor, or MFC outputs
  */
 struct IPC_ConfigpHController_t {
     uint16_t transactionId;          // Transaction ID for ACK tracking
@@ -734,23 +735,25 @@ struct IPC_ConfigpHController_t {
     
     // Acid dosing configuration
     bool acidEnabled;
-    uint8_t acidOutputType;          // 0=Digital output, 1=DC motor
-    uint8_t acidOutputIndex;         // Digital output (21-25) or DC motor (27-30)
-    uint8_t acidMotorPower;          // Motor power level (0-100%), ignored if digital
+    uint8_t acidOutputType;          // 0=Digital output, 1=DC motor, 2=MFC
+    uint8_t acidOutputIndex;         // Digital output (21-25), DC motor (27-30), or MFC device (50-69)
+    uint8_t acidMotorPower;          // Motor power level (0-100%), ignored if digital/MFC
     uint16_t acidDosingTime_ms;      // Duration to activate output (milliseconds)
     uint32_t acidDosingInterval_ms;  // Minimum time between doses (milliseconds)
-    float acidVolumePerDose_mL;      // Volume per dose in mL (user configured)
+    float acidVolumePerDose_mL;      // Volume per dose in mL (user-provided for digital/motor, calculated for MFC)
+    float acidMfcFlowRate_mL_min;    // MFC flow rate setpoint (mL/min) - used only when acidOutputType=2
     
     // Alkaline dosing configuration  
     bool alkalineEnabled;
-    uint8_t alkalineOutputType;      // 0=Digital output, 1=DC motor
-    uint8_t alkalineOutputIndex;     // Digital output (21-25) or DC motor (27-30)
-    uint8_t alkalineMotorPower;      // Motor power level (0-100%), ignored if digital
+    uint8_t alkalineOutputType;      // 0=Digital output, 1=DC motor, 2=MFC
+    uint8_t alkalineOutputIndex;     // Digital output (21-25), DC motor (27-30), or MFC device (50-69)
+    uint8_t alkalineMotorPower;      // Motor power level (0-100%), ignored if digital/MFC
     uint16_t alkalineDosingTime_ms;  // Duration to activate output (milliseconds)
     uint32_t alkalineDosingInterval_ms;  // Minimum time between doses (milliseconds)
-    float alkalineVolumePerDose_mL;  // Volume per dose in mL (user configured)
+    float alkalineVolumePerDose_mL;  // Volume per dose in mL (user-provided for digital/motor, calculated for MFC)
+    float alkalineMfcFlowRate_mL_min; // MFC flow rate setpoint (mL/min) - used only when alkalineOutputType=2
     
-    uint8_t _padding[2];             // Alignment
+    uint8_t _padding[2];             // Alignment (struct size: 93 bytes)
 } __attribute__((packed));
 
 /**

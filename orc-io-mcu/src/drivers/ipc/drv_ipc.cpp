@@ -467,7 +467,7 @@ bool ipc_sendControlAckWithTxn(uint16_t transactionId, uint16_t index, uint8_t o
     // ALWAYS defer config ACKs to avoid race condition with bulk requests
     // The deferred queue will send them when it's truly safe (counter=0 AND no new requests starting)
     
-    if (ipcDriver.deferredAckCount < 4) {
+    if (ipcDriver.deferredAckCount < 10) {
         IPC_DeferredAck_t *ack = &ipcDriver.deferredAcks[ipcDriver.deferredAckCount++];
         ack->transactionId = transactionId;
         ack->index = index;

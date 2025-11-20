@@ -302,24 +302,26 @@ struct pHControl_t {
     
     // Acid dosing configuration
     bool acidEnabled;
-    uint8_t acidOutputType;          // 0=Digital output, 1=DC motor
-    uint8_t acidOutputIndex;         // Digital output (21-25) or DC motor (27-30)
-    uint8_t acidMotorPower;          // Motor power level (0-100%), ignored if digital
+    uint8_t acidOutputType;          // 0=Digital output, 1=DC motor, 2=MFC
+    uint8_t acidOutputIndex;         // Digital output (21-25), DC motor (27-30), or MFC device (50-69)
+    uint8_t acidMotorPower;          // Motor power level (0-100%), ignored if digital/MFC
     uint16_t acidDosingTime_ms;      // Duration to activate output (milliseconds)
     uint32_t acidDosingInterval_ms;  // Minimum time between doses (milliseconds)
     uint32_t lastAcidDoseTime;       // Runtime: last dose timestamp (millis())
-    float acidVolumePerDose_mL;      // Volume per dose in mL (user configured)
+    float acidVolumePerDose_mL;      // Volume per dose in mL (user-provided for digital/motor, calculated for MFC)
+    float acidMfcFlowRate_mL_min;    // MFC flow rate setpoint (mL/min) - used only when acidOutputType=2
     float acidCumulativeVolume_mL;   // Runtime: total acid dosed in mL (RAM only)
     
     // Alkaline dosing configuration
     bool alkalineEnabled;
-    uint8_t alkalineOutputType;      // 0=Digital output, 1=DC motor
-    uint8_t alkalineOutputIndex;     // Digital output (21-25) or DC motor (27-30)
-    uint8_t alkalineMotorPower;      // Motor power level (0-100%), ignored if digital
+    uint8_t alkalineOutputType;      // 0=Digital output, 1=DC motor, 2=MFC
+    uint8_t alkalineOutputIndex;     // Digital output (21-25), DC motor (27-30), or MFC device (50-69)
+    uint8_t alkalineMotorPower;      // Motor power level (0-100%), ignored if digital/MFC
     uint16_t alkalineDosingTime_ms;  // Duration to activate output (milliseconds)
     uint32_t alkalineDosingInterval_ms;  // Minimum time between doses (milliseconds)
     uint32_t lastAlkalineDoseTime;   // Runtime: last dose timestamp (millis())
-    float alkalineVolumePerDose_mL;  // Volume per dose in mL (user configured)
+    float alkalineVolumePerDose_mL;  // Volume per dose in mL (user-provided for digital/motor, calculated for MFC)
+    float alkalineMfcFlowRate_mL_min; // MFC flow rate setpoint (mL/min) - used only when alkalineOutputType=2
     float alkalineCumulativeVolume_mL; // Runtime: total alkaline dosed in mL (RAM only)
 };
 

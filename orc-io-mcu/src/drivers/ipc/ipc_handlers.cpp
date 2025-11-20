@@ -2383,6 +2383,10 @@ void ipc_handle_config_ph_controller(const uint8_t *payload, uint16_t len) {
                 ipc_sendError(IPC_ERR_INDEX_INVALID, "Acid DC motor index must be 27-30");
                 return;
             }
+            if (cfg->acidOutputType == 2 && (cfg->acidOutputIndex < 50 || cfg->acidOutputIndex > 69)) {
+                ipc_sendError(IPC_ERR_INDEX_INVALID, "Acid MFC device index must be 50-69");
+                return;
+            }
         }
         
         // Validate alkaline dosing output indices if enabled
@@ -2393,6 +2397,10 @@ void ipc_handle_config_ph_controller(const uint8_t *payload, uint16_t len) {
             }
             if (cfg->alkalineOutputType == 1 && (cfg->alkalineOutputIndex < 27 || cfg->alkalineOutputIndex > 30)) {
                 ipc_sendError(IPC_ERR_INDEX_INVALID, "Alkaline DC motor index must be 27-30");
+                return;
+            }
+            if (cfg->alkalineOutputType == 2 && (cfg->alkalineOutputIndex < 50 || cfg->alkalineOutputIndex > 69)) {
+                ipc_sendError(IPC_ERR_INDEX_INVALID, "Alkaline MFC device index must be 50-69");
                 return;
             }
         }

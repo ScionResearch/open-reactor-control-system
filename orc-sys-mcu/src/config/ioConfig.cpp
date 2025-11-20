@@ -168,6 +168,7 @@ void setDefaultIOConfig() {
     ioConfig.phController.acidDosing.motorPower = 50;     // 50% power for motor
     ioConfig.phController.acidDosing.dosingTime_ms = 1000;      // 1 second dose
     ioConfig.phController.acidDosing.dosingInterval_ms = 60000;  // 60 seconds between doses
+    ioConfig.phController.acidDosing.mfcFlowRate_mL_min = 100.0f;  // 100 mL/min default for MFC
     
     // Alkaline dosing defaults
     ioConfig.phController.alkalineDosing.enabled = false;
@@ -176,6 +177,7 @@ void setDefaultIOConfig() {
     ioConfig.phController.alkalineDosing.motorPower = 50;     // 50% power for motor
     ioConfig.phController.alkalineDosing.dosingTime_ms = 1000;      // 1 second dose
     ioConfig.phController.alkalineDosing.dosingInterval_ms = 60000;  // 60 seconds between doses
+    ioConfig.phController.alkalineDosing.mfcFlowRate_mL_min = 100.0f;  // 100 mL/min default for MFC
     
     // ========================================================================
     // Flow Controllers (Indices 44-47: 3 feed + 1 waste)
@@ -239,7 +241,7 @@ void setDefaultIOConfig() {
         ioConfig.comPorts[i].baudRate = 9600;
         ioConfig.comPorts[i].dataBits = 8;
         ioConfig.comPorts[i].stopBits = 1.0;
-        ioConfig.comPorts[i].parity = 2;  // Even parity (standard for Modbus)
+        ioConfig.comPorts[i].parity = 0;  // No parity
         ioConfig.comPorts[i].enabled = true;
         ioConfig.comPorts[i].showOnDashboard = false;
     }
@@ -521,6 +523,7 @@ bool loadIOConfig() {
             ioConfig.phController.acidDosing.motorPower = acid["motorPower"] | 50;
             ioConfig.phController.acidDosing.dosingTime_ms = acid["dosingTime_ms"] | 1000;
             ioConfig.phController.acidDosing.dosingInterval_ms = acid["dosingInterval_ms"] | 60000;
+            ioConfig.phController.acidDosing.mfcFlowRate_mL_min = acid["mfcFlowRate_mL_min"] | 100.0f;
         }
         
         // Alkaline dosing configuration
@@ -532,6 +535,7 @@ bool loadIOConfig() {
             ioConfig.phController.alkalineDosing.motorPower = alkaline["motorPower"] | 50;
             ioConfig.phController.alkalineDosing.dosingTime_ms = alkaline["dosingTime_ms"] | 1000;
             ioConfig.phController.alkalineDosing.dosingInterval_ms = alkaline["dosingInterval_ms"] | 60000;
+            ioConfig.phController.alkalineDosing.mfcFlowRate_mL_min = alkaline["mfcFlowRate_mL_min"] | 100.0f;
         }
     }
     
@@ -878,6 +882,7 @@ void saveIOConfig() {
     acid["motorPower"] = ioConfig.phController.acidDosing.motorPower;
     acid["dosingTime_ms"] = ioConfig.phController.acidDosing.dosingTime_ms;
     acid["dosingInterval_ms"] = ioConfig.phController.acidDosing.dosingInterval_ms;
+    acid["mfcFlowRate_mL_min"] = ioConfig.phController.acidDosing.mfcFlowRate_mL_min;
     
     // Alkaline dosing configuration
     JsonObject alkaline = phCtrl.createNestedObject("alkalineDosing");
@@ -887,6 +892,7 @@ void saveIOConfig() {
     alkaline["motorPower"] = ioConfig.phController.alkalineDosing.motorPower;
     alkaline["dosingTime_ms"] = ioConfig.phController.alkalineDosing.dosingTime_ms;
     alkaline["dosingInterval_ms"] = ioConfig.phController.alkalineDosing.dosingInterval_ms;
+    alkaline["mfcFlowRate_mL_min"] = ioConfig.phController.alkalineDosing.mfcFlowRate_mL_min;
     
     // ========================================================================
     // Serialize Flow Controllers
@@ -1571,6 +1577,7 @@ void pushIOConfigToIOmcu() {
         cfg.acidMotorPower = ioConfig.phController.acidDosing.motorPower;
         cfg.acidDosingTime_ms = ioConfig.phController.acidDosing.dosingTime_ms;
         cfg.acidDosingInterval_ms = ioConfig.phController.acidDosing.dosingInterval_ms;
+        cfg.acidMfcFlowRate_mL_min = ioConfig.phController.acidDosing.mfcFlowRate_mL_min;
         
         // Alkaline dosing configuration
         cfg.alkalineEnabled = ioConfig.phController.alkalineDosing.enabled;
@@ -1579,6 +1586,7 @@ void pushIOConfigToIOmcu() {
         cfg.alkalineMotorPower = ioConfig.phController.alkalineDosing.motorPower;
         cfg.alkalineDosingTime_ms = ioConfig.phController.alkalineDosing.dosingTime_ms;
         cfg.alkalineDosingInterval_ms = ioConfig.phController.alkalineDosing.dosingInterval_ms;
+        cfg.alkalineMfcFlowRate_mL_min = ioConfig.phController.alkalineDosing.mfcFlowRate_mL_min;
         
         // Retry up to 10 times if queue is full
         bool sent = false;
