@@ -4576,25 +4576,6 @@ void handleSetDeviceSetpoint(uint16_t controlIndex) {
   }
 }
 
-void handleResetDeviceFault(uint16_t controlIndex) {
-  // Validate control index (50-69)
-  if (controlIndex < 50 || controlIndex >= 70) {
-    server.send(400, "application/json", "{\"error\":\"Invalid control index\"}");
-    return;
-  }
-  
-  // Send fault reset command via IPC
-  bool sent = sendDeviceControlCommand(controlIndex, DEV_CMD_RESET_FAULT);
-  
-  if (sent) {
-    log(LOG_INFO, false, "Reset fault for device %d\n", controlIndex);
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"Fault reset command sent\"}");
-  } else {
-    log(LOG_WARNING, false, "Failed to reset device %d fault: IPC queue full\n", controlIndex);
-    server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
-  }
-}
-
 void setupWebServer()
 {
   // Initialize LittleFS for serving web files
@@ -4940,7 +4921,6 @@ void setupWebServer()
   
   // Note: Device control endpoints are handled dynamically in onNotFound():
   //   - POST /api/device/{50-69}/setpoint    - Set device setpoint
-  //   - POST /api/device/{50-69}/fault/reset - Reset device fault
 
   // Handle dynamic routes and static files
   server.onNotFound([]() {
@@ -4960,10 +4940,7 @@ void setupWebServer()
             if (action == "setpoint") {
               handleSetDeviceSetpoint(controlIndex);
               return;
-            } else if (action == "fault/reset") {
-              handleResetDeviceFault(controlIndex);
-              return;
-            }
+            } 
           }
         }
       }

@@ -26,6 +26,11 @@ public:
     HamiltonPHProbe(ModbusDriver_t *modbusDriver, uint8_t slaveID);
     
     /**
+     * @brief Destructor - unregisters instance from callback routing
+     */
+    ~HamiltonPHProbe();
+    
+    /**
      * @brief Update the pH probe readings
      * 
      * Call this periodically (e.g., every 2000ms) to request new data from the probe.
@@ -96,17 +101,19 @@ private:
     TemperatureSensor_t _temperatureSensor;  ///< Temperature sensor data
     uint16_t _dataBuffer[10];                ///< Data buffer for Modbus transactions
     DeviceControl_t _controlObj;             ///< Device control object
+
+    bool _firstConnect;                      ///< Flag to track first successful connection for this pH probe instance
     
     // Unit tracking for each instance
     uint32_t _phUnitCode;                    ///< pH unit code (for change detection)
     uint32_t _tempUnitCode;                  ///< Temperature unit code (for change detection)
     
-    // Static callback context pointer (updated before each request)
-    static HamiltonPHProbe* _currentInstance;
+    // Static instance registry for callback routing (indexed by slave ID)
+    static HamiltonPHProbe* _instances[248];
     
     // Static callback functions for Modbus responses
-    static void phResponseHandler(bool valid, uint16_t *data);
-    static void temperatureResponseHandler(bool valid, uint16_t *data);
+    static void phResponseHandler(bool valid, uint16_t *data, uint32_t requestId);
+    static void temperatureResponseHandler(bool valid, uint16_t *data, uint32_t requestId);
     
     // Instance methods called by static callbacks
     void handlePhResponse(bool valid, uint16_t *data);

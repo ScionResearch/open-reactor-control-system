@@ -112,6 +112,11 @@ public:
     AlicatMFC(ModbusDriver_t *modbusDriver, uint8_t slaveID);
     
     /**
+     * @brief Destructor - unregisters instance from callback routing
+     */
+    ~AlicatMFC();
+    
+    /**
      * @brief Update the MFC readings
      * 
      * Call this periodically (e.g., every 2000ms) to request new data from the MFC.
@@ -240,13 +245,16 @@ private:
     float _flowConversionFactor;             ///< Conversion factor for flow units
     float _adjustedAbsDevFlow = 0.3;         ///< Adjusted acceptable absolute deviation of flow from setpoint (current unit)
     
-    // Static callback context pointer (updated before each request)
-    static AlicatMFC* _currentInstance;
+    // First connection tracking (per instance)
+    bool _firstConnect;                      ///< Flag to track first successful connection for this MFC instance
     
-    // Static callback functions for Modbus responses
-    static void mfcResponseHandler(bool valid, uint16_t *data);
-    static void mfcWriteResponseHandler(bool valid, uint16_t *data);
-    static void unitsResponseHandler(bool valid, uint16_t *data);
+    // Static instance registry for callback routing (indexed by slave ID)
+    static AlicatMFC* _instances[248];       ///< Array of MFC instances indexed by slave ID (1-247)
+    
+    // Static callback functions for Modbus responses (with requestId routing)
+    static void mfcResponseHandler(bool valid, uint16_t *data, uint32_t requestId);
+    static void mfcWriteResponseHandler(bool valid, uint16_t *data, uint32_t requestId);
+    static void unitsResponseHandler(bool valid, uint16_t *data, uint32_t requestId);
     
     // Instance methods called by static callbacks
     void handleMfcResponse(bool valid, uint16_t *data);

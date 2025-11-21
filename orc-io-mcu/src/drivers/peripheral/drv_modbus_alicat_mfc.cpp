@@ -1,7 +1,7 @@
 #include "drv_modbus_alicat_mfc.h"
 
-// Initialize static member
-AlicatMFC* AlicatMFC::_currentInstance = nullptr;
+// Initialize static instance registry
+AlicatMFC* AlicatMFC::_instances[248] = {nullptr};
 
 // Constructor
 AlicatMFC::AlicatMFC(ModbusDriver_t *modbusDriver, uint8_t slaveID)
@@ -9,7 +9,8 @@ AlicatMFC::AlicatMFC(ModbusDriver_t *modbusDriver, uint8_t slaveID)
       _maxFlowRate_mL_min(1250.0),  // Default to Alicat max (1250 mL/min)
       _fault(false), _newMessage(false), _newSetpoint(false),
       _pendingSetpoint(0.0), _writeAttempts(0), 
-      _setpointUnitCode(0), _flowUnitCode(0), _pressureUnitCode(0) {
+      _setpointUnitCode(0), _flowUnitCode(0), _pressureUnitCode(0),
+      _firstConnect(true) {  // Initialize first connect flag for this instance
     // Initialize flow sensor
     _flowSensor.flow = 0.0;
     _flowSensor.fault = false;
@@ -29,6 +30,30 @@ AlicatMFC::AlicatMFC(ModbusDriver_t *modbusDriver, uint8_t slaveID)
     
     // Initialize message
     _message[0] = '\0';
+
+    // Initialize control object
+    _controlObj.slaveID = _slaveID;
+    _controlObj.deviceType = IPC_DEV_ALICAT_MFC;
+    _controlObj.connected = false;
+    _controlObj.fault = false;
+    _controlObj.newMessage = false;
+    _controlObj.setpoint = 0.0;
+    _controlObj.actualValue = 0.0;
+    _controlObj.setpointUnit[0] = '\0';
+    _controlObj.message[0] = '\0';
+    
+    // Register this instance in the static registry for callback routing
+    if (_slaveID > 0 && _slaveID < 248) {
+        _instances[_slaveID] = this;
+    }
+}
+
+// Destructor
+AlicatMFC::~AlicatMFC() {
+    // Unregister this instance from the static registry
+    if (_slaveID > 0 && _slaveID < 248) {
+        _instances[_slaveID] = nullptr;
+    }
 }
 
 // Update method - queues Modbus request for MFC data
@@ -36,29 +61,27 @@ void AlicatMFC::update() {
     const uint8_t functionCode = 3;  // Read holding registers
     const uint16_t address = 1349;   // Starting address
     
-    // Set current instance for callbacks
-    _currentInstance = this;
-    
     // Request MFC data (16 registers starting at 1349)
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, address, _dataBuffer, 16, mfcResponseHandler)) {
+    // Use slave ID as requestId for callback routing
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, address, _dataBuffer, 16, mfcResponseHandler, _slaveID)) {
         return;  // Queue full, try again next time
     }
     
     // Request setpoint unit (1649, 1 register - uint16)
     const uint16_t setpointUnitAddress = 1649;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, setpointUnitAddress, &_unitBuffer[0], 1, unitsResponseHandler)) {
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, setpointUnitAddress, &_unitBuffer[0], 1, unitsResponseHandler, _slaveID)) {
         return;  // Queue full, try again next time
     }
     
     // Request pressure unit (1673, 1 register - uint16)
     const uint16_t pressureUnitAddress = 1673;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, pressureUnitAddress, &_unitBuffer[1], 1, unitsResponseHandler)) {
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, pressureUnitAddress, &_unitBuffer[1], 1, unitsResponseHandler, _slaveID)) {
         return;  // Queue full, try again next time
     }
     
     // Request flow unit (1721, 1 register - uint16)
     const uint16_t flowUnitAddress = 1721;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, flowUnitAddress, &_unitBuffer[2], 1, unitsResponseHandler)) {
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, flowUnitAddress, &_unitBuffer[2], 1, unitsResponseHandler, _slaveID)) {
         return;  // Queue full, try again next time
     }
 }
@@ -78,11 +101,8 @@ bool AlicatMFC::writeSetpoint(float setpoint, bool mLmin) {
     // Convert float to swapped uint16 format
     _modbusDriver->modbus.float32ToSwappedUint16(setpoint, _writeBuffer);
     
-    // Set current instance for callbacks
-    _currentInstance = this;
-    
-    // Queue the write request
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, address, _writeBuffer, 2, mfcWriteResponseHandler)) {
+    // Queue the write request - use slave ID as requestId for callback routing
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, address, _writeBuffer, 2, mfcWriteResponseHandler, _slaveID)) {
         return false;  // Queue full
     }
     
@@ -90,84 +110,105 @@ bool AlicatMFC::writeSetpoint(float setpoint, bool mLmin) {
 }
 
 // Static callback for MFC data response
-void AlicatMFC::mfcResponseHandler(bool valid, uint16_t *data) {
-    if (_currentInstance) {
-        _currentInstance->handleMfcResponse(valid, data);
+void AlicatMFC::mfcResponseHandler(bool valid, uint16_t *data, uint32_t requestId) {
+    // requestId is the slave ID - use it to route to the correct instance
+    if (requestId > 0 && requestId < 248 && _instances[requestId] != nullptr) {
+        _instances[requestId]->handleMfcResponse(valid, data);
     }
 }
 
 // Static callback for write response
-void AlicatMFC::mfcWriteResponseHandler(bool valid, uint16_t *data) {
-    if (_currentInstance) {
-        _currentInstance->handleWriteResponse(valid, data);
+void AlicatMFC::mfcWriteResponseHandler(bool valid, uint16_t *data, uint32_t requestId) {
+    // requestId is the slave ID - use it to route to the correct instance
+    if (requestId > 0 && requestId < 248 && _instances[requestId] != nullptr) {
+        _instances[requestId]->handleWriteResponse(valid, data);
     }
 }
 
 // Instance method to handle MFC data response
 void AlicatMFC::handleMfcResponse(bool valid, uint16_t *data) {
-    if (!valid) {
-        _fault = true;
-        snprintf(_message, sizeof(_message), "Invalid data from Alicat MFC (ID %d)", _slaveID);
+    if (!valid && !_fault) {
+        if (!_firstConnect) {
+            _fault = true;
+            snprintf(_message, sizeof(_message), "Invalid or no response from Alicat MFC (ID %d)", _slaveID);
+        } else {
+            snprintf(_message, sizeof(_message), "Alicat MFC (ID %d) has not yet connected", _slaveID);
+        }
         _newMessage = true;
         
         // Update control object with fault status
         _controlObj.connected = false;  // Modbus communication failed
-        _controlObj.fault = true;
+        _controlObj.fault = _fault;
         _controlObj.newMessage = true;
         strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
-        
-        return;
-    }
-    
-    /************************************** 
-     * Data from registers 1349-1364
-     *  1349: Setpoint (float)
-     *  1351: Valve Drive (float)
-     *  1353: Pressure (float)
-     *  1355: Secondary Pressure (float)
-     *  1357: Barometric Pressure (float)
-     *  1359: Temperature (float)
-     *  1361: Volumetric Flow (float)
-     *  1363: Mass Flow (float)
-    **************************************/
-    
-    // Extract data using swapped uint16 to float conversion
-    _setpoint = _modbusDriver->modbus.swappedUint16toFloat32(&data[0]);
-    _pressureSensor.pressure = _modbusDriver->modbus.swappedUint16toFloat32(&data[4]);
-    _flowSensor.flow = _modbusDriver->modbus.swappedUint16toFloat32(&data[12]);
-    
-    // Clear fault flags on successful read
-    _flowSensor.fault = false;
-    _pressureSensor.fault = false;
-    
-    // Update device control object
-    _controlObj.setpoint = _setpoint;
-    _controlObj.actualValue = _flowSensor.flow;  // Primary feedback is flow
-    strncpy(_controlObj.setpointUnit, _setpointUnit, sizeof(_controlObj.setpointUnit));
-    _controlObj.connected = true;  // Got valid Modbus response
-    _controlObj.fault = _fault;
-    _controlObj.newMessage = _newMessage;
-    strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
-    _controlObj.slaveID = _slaveID;
-    _controlObj.deviceType = IPC_DEV_ALICAT_MFC;
 
-    
-    // If we just wrote a setpoint, validate it
-    if (_newSetpoint) {
-        if (fabs(_setpoint - _pendingSetpoint) > _adjustedAbsDevFlow) {
-            _fault = true;
-            snprintf(_message, sizeof(_message), 
-                     "Setpoint write validation failed for MFC (ID %d): expected %0.4f, got %0.4f", 
-                     _slaveID, _pendingSetpoint, _setpoint);
+        // Debug logging
+        Serial.printf("[MFC] Offline: %s\n", _message);
+    } else if (valid) {
+        if (_fault || _firstConnect) {   // If we just recovered from a fault or this is the first valid response
+            _fault = false;
             _newMessage = true;
-        } else {
-            _fault = false;  // Clear fault flag on successful validation
-            snprintf(_message, sizeof(_message), 
-                     "Setpoint write successful for MFC (ID %d): setpoint is now %0.4f", 
-                     _slaveID, _setpoint);
-            _newMessage = true;
+            snprintf(_message, sizeof(_message), "Alicat MFC (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
+            writeSetpoint(_setpoint, false);
+            _firstConnect = false;
+
+            // Update control object with fault status
+            _controlObj.connected = true;  // Modbus communication failed
+            _controlObj.fault = false;
+            _controlObj.newMessage = true;
+            strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
+
+            // Debug logging
+            Serial.printf("[MFC] Recovered from fault: %s\n", _message);
+        } else _newMessage = false;
+
+        /************************************** 
+         * Data from registers 1349-1364
+         *  1349: Setpoint (float)
+         *  1351: Valve Drive (float)
+         *  1353: Pressure (float)
+         *  1355: Secondary Pressure (float)
+         *  1357: Barometric Pressure (float)
+         *  1359: Temperature (float)
+         *  1361: Volumetric Flow (float)
+         *  1363: Mass Flow (float)
+        **************************************/
+        
+        // Extract data using swapped uint16 to float conversion
+        _setpoint = _modbusDriver->modbus.swappedUint16toFloat32(&data[0]);
+        _pressureSensor.pressure = _modbusDriver->modbus.swappedUint16toFloat32(&data[4]);
+        _flowSensor.flow = _modbusDriver->modbus.swappedUint16toFloat32(&data[12]);
+        
+        // Clear fault flags on successful read
+        _flowSensor.fault = false;
+        _pressureSensor.fault = false;
+        
+        // Update device control object
+        _controlObj.setpoint = _setpoint;
+        _controlObj.actualValue = _flowSensor.flow;  // Primary feedback is flow
+        strncpy(_controlObj.setpointUnit, _setpointUnit, sizeof(_controlObj.setpointUnit));
+        _controlObj.connected = true;  // Got valid Modbus response
+
+        // If we just wrote a setpoint, validate it
+        if (_newSetpoint) {
+            if (fabs(_setpoint - _pendingSetpoint) > _adjustedAbsDevFlow) {
+                _fault = true;
+                snprintf(_message, sizeof(_message), 
+                        "Setpoint write validation failed for MFC (ID %d): expected %0.4f, got %0.4f", 
+                        _slaveID, _pendingSetpoint, _setpoint);
+                _newMessage = true;
+            } else {
+                _fault = false;  // Clear fault flag on successful validation
+                snprintf(_message, sizeof(_message), 
+                        "Setpoint write successful for MFC (ID %d): setpoint is now %0.4f", 
+                        _slaveID, _setpoint);
+                _newMessage = true;
+            }
+            _newSetpoint = false;
+            _controlObj.fault = _fault;
+            _controlObj.newMessage = true;
+            strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
         }
-        _newSetpoint = false;
     }
 }
 
@@ -195,9 +236,10 @@ void AlicatMFC::handleWriteResponse(bool valid, uint16_t *data) {
 }
 
 // Static callback for units response
-void AlicatMFC::unitsResponseHandler(bool valid, uint16_t *data) {
-    if (_currentInstance) {
-        _currentInstance->handleUnitsResponse(valid, data);
+void AlicatMFC::unitsResponseHandler(bool valid, uint16_t *data, uint32_t requestId) {
+    // requestId is the slave ID - use it to route to the correct instance
+    if (requestId > 0 && requestId < 248 && _instances[requestId] != nullptr) {
+        _instances[requestId]->handleUnitsResponse(valid, data);
     }
 }
 

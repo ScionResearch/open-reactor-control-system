@@ -4390,7 +4390,7 @@ const DRIVER_DEFINITIONS = {
     0: { name: 'Hamilton pH Probe', interface: 0, description: 'Hamilton Modbus pH/Temperature probe', hasSetpoint: false },
     1: { name: 'Hamilton DO Probe', interface: 0, description: 'Hamilton Modbus Dissolved Oxygen probe', hasSetpoint: false },
     2: { name: 'Hamilton OD Probe', interface: 0, description: 'Hamilton Modbus Optical Density probe', hasSetpoint: false },
-    3: { name: 'Alicat Mass Flow Controller', interface: 0, description: 'Alicat Modbus MFC', hasSetpoint: true },
+    3: { name: 'Alicat MFC', interface: 0, description: 'Alicat Modbus MFC', hasSetpoint: true },
     
     // Analogue IO drivers
     10: { name: 'Pressure Controller', interface: 1, description: '0-10V analogue pressure controller', hasSetpoint: true }
@@ -4721,11 +4721,6 @@ function createDeviceCard(device) {
                     <button class="output-btn output-btn-primary" 
                             onclick="sendSetpoint(${controlIndex})">
                         Set
-                    </button>
-                    <button class="output-btn output-btn-secondary" 
-                            onclick="resetFault(${controlIndex})" 
-                            title="Reset Fault">
-                        Reset Fault
                     </button>
                 </div>
             ` : ''}
@@ -5111,31 +5106,6 @@ async function sendSetpoint(controlIndex) {
         fetchDeviceControlData();
     } catch (error) {
         console.error('Error setting setpoint:', error);
-        showToast('error', 'Error', error.message);
-    }
-}
-
-async function resetFault(controlIndex) {
-    console.log(`[DEVICE] Resetting fault for control index ${controlIndex}`);
-    
-    try {
-        const response = await fetch(`/api/device/${controlIndex}/fault/reset`, {
-            method: 'POST'
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to reset fault');
-        }
-        
-        const result = await response.json();
-        showToast('success', 'Fault Reset', 'Device fault reset command sent');
-        console.log('[DEVICE] Fault reset command sent successfully');
-        
-        // Refresh data immediately
-        fetchDeviceControlData();
-    } catch (error) {
-        console.error('Error resetting fault:', error);
         showToast('error', 'Error', error.message);
     }
 }

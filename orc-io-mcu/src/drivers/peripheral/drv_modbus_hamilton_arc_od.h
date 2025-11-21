@@ -26,6 +26,11 @@ public:
     HamiltonArcOD(ModbusDriver_t *modbusDriver, uint8_t slaveID);
     
     /**
+     * @brief Destructor - unregisters instance from callback routing
+     */
+    ~HamiltonArcOD();
+    
+    /**
      * @brief Update the OD sensor readings
      * 
      * Call this periodically (e.g., every 2000ms) to request new data from the sensor.
@@ -100,13 +105,15 @@ private:
     // Unit tracking for each instance
     uint32_t _odUnitCode;                    ///< OD unit code (for change detection)
     uint32_t _tempUnitCode;                  ///< Temperature unit code (for change detection)
+
+    bool _firstConnect;                      ///< First connection flag
     
-    // Static callback context pointer (updated before each request)
-    static HamiltonArcOD* _currentInstance;
+    // Static instance registry for callback routing (indexed by slave ID)
+    static HamiltonArcOD* _instances[248];
     
     // Static callback functions for Modbus responses
-    static void odResponseHandler(bool valid, uint16_t *data);
-    static void temperatureResponseHandler(bool valid, uint16_t *data);
+    static void odResponseHandler(bool valid, uint16_t *data, uint32_t requestId);
+    static void temperatureResponseHandler(bool valid, uint16_t *data, uint32_t requestId);
     
     // Instance methods called by static callbacks
     void handleODResponse(bool valid, uint16_t *data);

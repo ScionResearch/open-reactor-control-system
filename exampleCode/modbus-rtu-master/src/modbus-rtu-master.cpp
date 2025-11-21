@@ -304,16 +304,16 @@ bool ModbusRTUMaster::pushRequest(uint8_t slaveId, uint8_t functionCode, uint16_
  * @brief Read holding registers
  */
 bool ModbusRTUMaster::readHoldingRegisters(uint8_t slaveId, uint16_t address, uint16_t* data, 
-                                          uint16_t length, ModbusResponseCallback callback) {
-    return pushRequest(slaveId, MODBUS_FC_READ_HOLDING_REGISTERS, address, data, length, callback);
+                                          uint16_t length, ModbusResponseCallback callback, uint32_t requestId) {
+    return pushRequest(slaveId, MODBUS_FC_READ_HOLDING_REGISTERS, address, data, length, callback, requestId);
 }
 
 /**
  * @brief Read input registers
  */
 bool ModbusRTUMaster::readInputRegisters(uint8_t slaveId, uint16_t address, uint16_t* data, 
-                                        uint16_t length, ModbusResponseCallback callback) {
-    return pushRequest(slaveId, MODBUS_FC_READ_INPUT_REGISTERS, address, data, length, callback);
+                                        uint16_t length, ModbusResponseCallback callback, uint32_t requestId) {
+    return pushRequest(slaveId, MODBUS_FC_READ_INPUT_REGISTERS, address, data, length, callback, requestId);
 }
 
 /**
@@ -406,31 +406,6 @@ uint16_t ModbusRTUMaster::_calculateCRC(uint8_t* buffer, uint16_t length) {
     }
     
     return crc;
-}
-
-// Data transform utilities
-
-/**
- * @brief Convert an array of uint16_t to a float (swapped order)
- * 
- */
-float ModbusRTUMaster::swappedUint16toFloat32(uint16_t *value) {
-    uint32_t temp = ((uint32_t)value[0] << 16) | (uint32_t)value[1];
-    float result;
-    memcpy(&result, &temp, sizeof(float));
-    return result;
-}
-
-
-/**
- * @brief Convert a float to a uint16_t array (swapped order)
- */
-void ModbusRTUMaster::float32ToSwappedUint16(float value, uint16_t *result) {
-
-    uint32_t temp;
-    memcpy(&temp, &value, sizeof(float));
-    result[0] = (temp >> 16) & 0xFFFF;
-    result[1] = temp & 0xFFFF;
 }
 
 /**

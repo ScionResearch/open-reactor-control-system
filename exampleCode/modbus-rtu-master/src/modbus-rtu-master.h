@@ -43,7 +43,6 @@
 
 // Response timeout in milliseconds
 #define MODBUS_DEFAULT_TIMEOUT 1000
-
 // Inter-frame silent interval (3.5 character times) - calculated at runtime
 // based on baud rate, but default to 3.5ms (3500µs) for standard baud rates
 #define MODBUS_DEFAULT_INTERFRAME_DELAY 3500
@@ -138,10 +137,11 @@ public:
      * @param data Buffer to store the read values
      * @param length Number of registers to read
      * @param callback Callback function for response
+     * @param requestId User-defined ID to match response (default: 0)
      * @return true if request was successfully queued
      */
     bool readHoldingRegisters(uint8_t slaveId, uint16_t address, uint16_t* data, 
-                            uint16_t length, ModbusResponseCallback callback);
+                            uint16_t length, ModbusResponseCallback callback, uint32_t requestId = 0);
     
     /**
      * @brief Read input registers (function code 0x04)
@@ -151,10 +151,11 @@ public:
      * @param data Buffer to store the read values
      * @param length Number of registers to read
      * @param callback Callback function for response
+     * @param requestId User-defined ID to match response (default: 0)
      * @return true if request was successfully queued
      */
     bool readInputRegisters(uint8_t slaveId, uint16_t address, uint16_t* data, 
-                          uint16_t length, ModbusResponseCallback callback);
+                          uint16_t length, ModbusResponseCallback callback, uint32_t requestId = 0);
     
     /**
      * @brief Read coils (function code 0x01)
@@ -243,21 +244,6 @@ public:
      * @brief Clear all requests in the queue
      */
     void clearQueue();
-
-    /**
-     * @brief Convert an array of two swapped uint16_t to a float32
-     * @param value Pointer to array of two uint16_t
-     * @return Converted float32 value
-     */
-
-    float swappedUint16toFloat32(uint16_t *value);
-
-    /**
-     * @brief Convert a float32 to an array of two swapped uint16_t
-     * @param value Float32 value to convert
-     * @param result Reference to array of two uint16_t to store result
-     */
-    void float32ToSwappedUint16(float value, uint16_t *result);
 
 private:
     HardwareSerial* _serial;           ///< Serial port for communication
