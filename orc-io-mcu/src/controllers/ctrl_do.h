@@ -85,4 +85,38 @@ private:
      * Ensures profile is sorted for binary search / interpolation
      */
     void _sortProfile();
+    
+    /**
+     * @brief Validate sensor and output indices
+     * @return true if indices are valid
+     */
+    bool _validateIndices();
+    
+    /**
+     * @brief Validate stirrer output (DC motor or stepper)
+     * @return true if output is valid and connected
+     */
+    bool _validateStirrerOutput();
+    
+    /**
+     * @brief Validate MFC output and connectivity
+     * @return true if MFC is valid and connected
+     */
+    bool _validateMFCOutput();
+    
+    /**
+     * @brief Stop all active outputs (emergency stop)
+     */
+    void _stopAllOutputs();
+    
+    /**
+     * @brief Set fault condition
+     * @param message Fault message
+     */
+    void _setFault(const char* message);
+    
+    /**
+     * @brief Clear fault condition
+     */
+    void _clearFault();
 };
