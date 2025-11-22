@@ -116,6 +116,7 @@ void TemperatureController::update() {
     
     // Validate indices
     if (!_validateIndices()) {
+        disable();
         return;
     }
     
@@ -368,7 +369,12 @@ float TemperatureController::_readSensor() {
     TemperatureSensor_t* sensor = (TemperatureSensor_t*)objIndex[_control->sensorIndex].obj;
     
     if (sensor->fault) {
-        _setFault("Sensor fault detected");
+        _setFault("WARNING: Temperature sensor fault detected");
+        if (_control->enabled) {
+            disable();
+            // Debug
+            Serial.println("[TempCtrl] Disabling controller due to sensor fault");
+        }
         return NAN;
     }
     
@@ -701,10 +707,8 @@ bool TemperatureController::_validateIndices() {
         return false;
     }
     
-    // Only accept digital outputs (21-25) for temperature control
-    // DAC outputs (8-9) are not suitable for heater control
     if (objIndex[_control->outputIndex].type != OBJ_T_DIGITAL_OUTPUT) {
-        _setFault("Output must be digital output (21-25)");
+        _setFault("Output index is not a digital output");
         return false;
     }
     

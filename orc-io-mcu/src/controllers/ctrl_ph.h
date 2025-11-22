@@ -127,4 +127,21 @@ private:
      * @brief Update dosing timeout (stop after duration elapsed)
      */
     void _updateDosingTimeout();
+
+    /**
+     * @brief Validate sensor and output indices
+     * @return true if indices are valid
+     */
+    bool _validateIndices();
+    
+    /**
+     * @brief Set fault condition
+     * @param message Fault message
+     */
+    void _setFault(const char* message);
+    
+    /**
+     * @brief Clear fault condition
+     */
+    void _clearFault();
 };

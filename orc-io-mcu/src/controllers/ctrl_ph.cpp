@@ -371,3 +371,49 @@ void pHController::resetAlkalineVolume() {
         Serial.println("[pH CTRL] Alkaline cumulative volume reset to 0.0 mL");
     }
 }
+
+bool pHController::_validateIndices() {
+    if (!_control) return false;
+    
+    if (_control->sensorIndex >= MAX_NUM_OBJECTS || 
+        _control->outputIndex >= MAX_NUM_OBJECTS) {
+        _setFault("Invalid object indices");
+        return false;
+    }
+    
+    if (!objIndex[_control->sensorIndex].valid || 
+        !objIndex[_control->outputIndex].valid) {
+        _setFault("Object indices not enrolled");
+        return false;
+    }
+    
+    if (objIndex[_control->sensorIndex].type != OBJ_T_PH_SENSOR) {
+        _setFault("Sensor index is not a pH sensor");
+        return false;
+    }
+    
+    if (objIndex[_control->outputIndex].type != OBJ_T_DIGITAL_OUTPUT) {
+        _setFault("Output index is not a digital output");
+        return false;
+    }
+    
+    return true;
+}
+
+void pHController::_setFault(const char* message) {
+    if (!_control) return;
+    
+    _control->fault = true;
+    _control->newMessage = true;
+    strncpy(_control->message, message, sizeof(_control->message) - 1);
+    _control->message[sizeof(_control->message) - 1] = '\0';
+    
+    Serial.printf("[TempCtrl] FAULT: %s\n", message);
+}
+
+void pHController::_clearFault() {
+    if (!_control) return;
+    
+    _control->fault = false;
+    strcpy(_control->message, "OK");
+}
