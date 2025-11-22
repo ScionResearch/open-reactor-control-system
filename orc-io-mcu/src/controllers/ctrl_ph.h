@@ -135,6 +135,19 @@ private:
     bool _validateIndices();
     
     /**
+     * @brief Validate a specific output (digital, motor, or MFC)
+     * @param type 0=Digital, 1=Motor, 2=MFC
+     * @param index Output index
+     * @return true if output is valid and connected
+     */
+    bool _validateOutput(uint8_t type, uint8_t index);
+    
+    /**
+     * @brief Stop all active outputs (emergency stop)
+     */
+    void _stopAllOutputs();
+    
+    /**
      * @brief Set fault condition
      * @param message Fault message
      */

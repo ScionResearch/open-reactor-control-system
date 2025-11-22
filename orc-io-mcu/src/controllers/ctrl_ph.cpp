@@ -35,20 +35,111 @@ pHController::~pHController() {
     Serial.println("[pH CTRL] pH controller destroyed");
 }
 
+bool pHController::_validateOutput(uint8_t type, uint8_t index) {
+    if (type == 0) {
+        // Digital output (indices 21-25)
+        if (index < 21 || index > 25) {
+            return false;
+        }
+        if (index >= MAX_NUM_OBJECTS || !objIndex[index].valid) {
+            return false;
+        }
+        if (objIndex[index].type != OBJ_T_DIGITAL_OUTPUT) {
+            return false;
+        }
+    } 
+    else if (type == 1) {
+        // DC motor (indices 27-30)
+        if (index < 27 || index > 30) {
+            return false;
+        }
+        if (index >= MAX_NUM_OBJECTS || !objIndex[index].valid) {
+            return false;
+        }
+        if (objIndex[index].type != OBJ_T_BDC_MOTOR) {
+            return false;
+        }
+    } 
+    else if (type == 2) {
+        // Mass Flow Controller (MFC) (indices 50-69)
+        if (index < 50 || index > 69) {
+            return false;
+        }
+        if (index >= MAX_NUM_OBJECTS || !objIndex[index].valid) {
+            return false;
+        }
+        if (objIndex[index].type != OBJ_T_DEVICE_CONTROL) {
+            return false;
+        }
+        
+        // Check if MFC is connected
+        DeviceControl_t* dev = (DeviceControl_t*)objIndex[index].obj;
+        if (!dev || !dev->connected) {
+            Serial.printf("[pH CTRL] MFC %d is offline\n", index);
+            return false;
+        }
+        
+        // Verify it's actually an MFC device
+        if (dev->deviceType != IPC_DEV_ALICAT_MFC) {
+            return false;
+        }
+    }
+    else {
+        // Unknown output type
+        return false;
+    }
+    
+    return true;
+}
+
+void pHController::_stopAllOutputs() {
+    if (!_control) return;
+    
+    // Stop acid output if dosing
+    if (_dosing && _dosingAcid && _control->acidEnabled) {
+        _stopOutput(_control->acidOutputType, _control->acidOutputIndex);
+    }
+    
+    // Stop alkaline output if dosing
+    if (_dosing && !_dosingAcid && _control->alkalineEnabled) {
+        _stopOutput(_control->alkalineOutputType, _control->alkalineOutputIndex);
+    }
+    
+    _dosing = false;
+    _control->currentOutput = 0;
+}
+
 void pHController::update() {
     if (!_control) return;
+    
+    // Only update if enabled
+    if (!_control->enabled) {
+        return;
+    }
+    
+    // Validate indices (sensor and outputs)
+    if (!_validateIndices()) {
+        // Validation failed - disable controller for safety
+        if (_control->enabled) {
+            _control->enabled = false;
+            _stopAllOutputs();
+            Serial.println("[pH CTRL] Disabled controller due to invalid indices");
+        }
+        return;
+    }
     
     // Read pH sensor
     float pH = _readpH();
     if (isnan(pH)) {
-        _control->fault = true;
-        snprintf(_control->message, sizeof(_control->message), "pH sensor read error");
-        _control->newMessage = true;
-        return;
+        // Sensor read failed or sensor is faulty - stop any active dosing
+        if (_dosing) {
+            _stopAllOutputs();
+        }
+        return;  // Fault already set by _readpH()
     }
     
     _control->currentpH = pH;
-    _control->fault = false;
+    _clearFault();  // Clear fault if we got a valid reading
     
     // Update dosing timeout
     _updateDosingTimeout();
@@ -82,6 +173,12 @@ bool pHController::doseAcid() {
         return false;
     }
     
+    // Validate output before manual dosing
+    if (!_validateOutput(_control->acidOutputType, _control->acidOutputIndex)) {
+        _setFault("Acid output is invalid or offline");
+        return false;
+    }
+    
     Serial.println("[pH CTRL] Manual acid dose");
     
     return _activateOutput(
@@ -108,6 +205,12 @@ bool pHController::doseAlkaline() {
         return false;
     }
     
+    // Validate output before manual dosing
+    if (!_validateOutput(_control->alkalineOutputType, _control->alkalineOutputIndex)) {
+        _setFault("Alkaline output is invalid or offline");
+        return false;
+    }
+    
     Serial.println("[pH CTRL] Manual alkaline dose");
     
     return _activateOutput(
@@ -120,22 +223,37 @@ bool pHController::doseAlkaline() {
 
 float pHController::_readpH() {
     if (!_control || _control->sensorIndex >= MAX_NUM_OBJECTS) {
+        _setFault("Invalid sensor index");
         return NAN;
     }
     
     // Get pH sensor from object index
     if (!objIndex[_control->sensorIndex].valid) {
+        _setFault("pH sensor not enrolled");
         return NAN;
     }
     
     // Check object type
     if (objIndex[_control->sensorIndex].type != OBJ_T_PH_SENSOR) {
+        _setFault("Sensor is not a pH sensor");
         return NAN;
     }
     
     // Read pH value from sensor
     PhSensor_t* sensor = (PhSensor_t*)objIndex[_control->sensorIndex].obj;
     if (!sensor) {
+        _setFault("pH sensor object is null");
+        return NAN;
+    }
+    
+    // Check for sensor fault
+    if (sensor->fault) {
+        _setFault("WARNING: pH sensor fault detected");
+        if (_control->enabled) {
+            _control->enabled = false;
+            _stopAllOutputs();
+            Serial.println("[pH CTRL] Disabling controller due to sensor fault");
+        }
         return NAN;
     }
     
@@ -150,6 +268,13 @@ void pHController::_checkDosing() {
     // Check if pH is too high (need acid)
     if (pH > (setpoint + deadband)) {
         if (_control->acidEnabled && _canDoseAcid()) {
+            // Validate acid output before attempting to dose
+            if (!_validateOutput(_control->acidOutputType, _control->acidOutputIndex)) {
+                _setFault("Acid output is invalid or offline");
+                _control->enabled = false;
+                return;
+            }
+            
             Serial.printf("[pH CTRL] pH too high (%.2f > %.2f), dosing acid\n", 
                          pH, setpoint + deadband);
             
@@ -164,6 +289,13 @@ void pHController::_checkDosing() {
     // Check if pH is too low (need alkaline)
     else if (pH < (setpoint - deadband)) {
         if (_control->alkalineEnabled && _canDoseAlkaline()) {
+            // Validate alkaline output before attempting to dose
+            if (!_validateOutput(_control->alkalineOutputType, _control->alkalineOutputIndex)) {
+                _setFault("Alkaline output is invalid or offline");
+                _control->enabled = false;
+                return;
+            }
+            
             Serial.printf("[pH CTRL] pH too low (%.2f < %.2f), dosing alkaline\n", 
                          pH, setpoint - deadband);
             
@@ -375,26 +507,36 @@ void pHController::resetAlkalineVolume() {
 bool pHController::_validateIndices() {
     if (!_control) return false;
     
-    if (_control->sensorIndex >= MAX_NUM_OBJECTS || 
-        _control->outputIndex >= MAX_NUM_OBJECTS) {
-        _setFault("Invalid object indices");
+    // Validate sensor index
+    if (_control->sensorIndex >= MAX_NUM_OBJECTS) {
+        _setFault("Invalid sensor index");
         return false;
     }
     
-    if (!objIndex[_control->sensorIndex].valid || 
-        !objIndex[_control->outputIndex].valid) {
-        _setFault("Object indices not enrolled");
+    if (!objIndex[_control->sensorIndex].valid) {
+        _setFault("pH sensor not enrolled");
         return false;
     }
     
     if (objIndex[_control->sensorIndex].type != OBJ_T_PH_SENSOR) {
-        _setFault("Sensor index is not a pH sensor");
+        _setFault("Sensor is not a pH sensor");
         return false;
     }
     
-    if (objIndex[_control->outputIndex].type != OBJ_T_DIGITAL_OUTPUT) {
-        _setFault("Output index is not a digital output");
-        return false;
+    // Validate acid output if enabled
+    if (_control->acidEnabled) {
+        if (!_validateOutput(_control->acidOutputType, _control->acidOutputIndex)) {
+            _setFault("Acid output is invalid or offline");
+            return false;
+        }
+    }
+    
+    // Validate alkaline output if enabled
+    if (_control->alkalineEnabled) {
+        if (!_validateOutput(_control->alkalineOutputType, _control->alkalineOutputIndex)) {
+            _setFault("Alkaline output is invalid or offline");
+            return false;
+        }
     }
     
     return true;
@@ -408,7 +550,7 @@ void pHController::_setFault(const char* message) {
     strncpy(_control->message, message, sizeof(_control->message) - 1);
     _control->message[sizeof(_control->message) - 1] = '\0';
     
-    Serial.printf("[TempCtrl] FAULT: %s\n", message);
+    Serial.printf("[pH CTRL] FAULT: %s\n", message);
 }
 
 void pHController::_clearFault() {
