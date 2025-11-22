@@ -46,19 +46,31 @@ HamiltonPHProbe::~HamiltonPHProbe() {
 
 // Update method - queues Modbus requests for pH and temperature
 void HamiltonPHProbe::update() {
+    if (_disconnected) {
+        if (_waitCount < 10) {
+            _waitCount++;
+            return;  // Skip this cycle to reduce request rate and reduce queue buildup due to timeouts
+        } 
+        _waitCount = 0;  // Reset wait counter
+        _modbusDriver->modbus.clearSlaveQueue(_slaveID);
+    }
+
     const uint8_t functionCode = 3;  // Read holding registers
     
     // Request pH data (register HAMILTON_PMC_1_ADDR, HAMILTON_PMC_REG_SIZE registers)
     // Use slave ID as requestId for callback routing
     uint16_t phAddress = HAMILTON_PMC_1_ADDR;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, phAddress, _dataBuffer, HAMILTON_PMC_REG_SIZE, phResponseHandler, _slaveID)) {
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, phAddress, _phBuffer, HAMILTON_PMC_REG_SIZE, phResponseHandler, _slaveID)) {
         return;  // Queue full, try again next time
     }
     
-    // Request temperature data (register HAMILTON_PMC_6_ADDR, HAMILTON_PMC_REG_SIZE registers)
-    uint16_t tempAddress = HAMILTON_PMC_6_ADDR;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, tempAddress, _dataBuffer, HAMILTON_PMC_REG_SIZE, temperatureResponseHandler, _slaveID)) {
-        return;  // Queue full, try again next time
+    // Only request temperature data if we have no errors (to reduce timeout delays)
+    if (_errCount == 0) {
+        // Request temperature data (register HAMILTON_PMC_6_ADDR, HAMILTON_PMC_REG_SIZE registers)
+        uint16_t tempAddress = HAMILTON_PMC_6_ADDR;
+        if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, tempAddress, _tempBuffer, HAMILTON_PMC_REG_SIZE, temperatureResponseHandler, _slaveID)) {
+            return;  // Queue full, try again next time
+        }
     }
 }
 
@@ -80,12 +92,26 @@ void HamiltonPHProbe::temperatureResponseHandler(bool valid, uint16_t *data, uin
 
 // Instance method to handle pH response
 void HamiltonPHProbe::handlePhResponse(bool valid, uint16_t *data) {
+    if (!valid) {
+        _errCount++;
+        if (_disconnected) return;
+        if (_errCount > 5) {
+            _disconnected = true;
+            _controlObj.fault = true;
+            _controlObj.connected = false;
+            _controlObj.newMessage = true;
+            snprintf(_phSensor.message, sizeof(_phSensor.message), "No response from Hamilton pH sensor (ID %d)", _slaveID);
+            _phSensor.newMessage = true;
+            strncpy(_controlObj.message, _phSensor.message, sizeof(_controlObj.message));
+            Serial.printf("[PH] No response from slave ID %d, marking as disconnected\n", _slaveID);
+            return;
+        }
+    }
     if (!valid && !_controlObj.fault) {
         if (!_firstConnect) {
             _controlObj.fault = true;
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "Invalid or no response from Hamilton pH probe (ID %d)", _slaveID);
             _phSensor.fault = true;
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "Invalid pH data from pH probe (ID %d)", _slaveID);
+            snprintf(_phSensor.message, sizeof(_phSensor.message), "Invalid or no response from Hamilton pH probe (ID %d)", _slaveID);
             _phSensor.newMessage = true;
         } else {
             snprintf(_phSensor.message, sizeof(_phSensor.message), "Hamilton pH probe (ID %d) has not yet connected", _slaveID);
@@ -100,6 +126,8 @@ void HamiltonPHProbe::handlePhResponse(bool valid, uint16_t *data) {
     } else if (valid) {
         if (_controlObj.fault) {
             _controlObj.fault = false;
+            _errCount = 0;
+            _disconnected = false;
             snprintf(_phSensor.message, sizeof(_phSensor.message), "Hamilton pH probe (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
             _firstConnect = false;
             _phSensor.newMessage = true;

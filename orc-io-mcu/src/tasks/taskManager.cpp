@@ -17,4 +17,4 @@ ScheduledTask *printStuff_task;
 ScheduledTask *RTDsensor_task;
 ScheduledTask *SchedulerAlive_task;
 
-ScheduledTask *TEST_TASK;
+ScheduledTask *DEBUG_TASK;

@@ -18,4 +18,6 @@ extern ScheduledTask *motor_task;
 extern ScheduledTask *printStuff_task;
 extern ScheduledTask *RTDsensor_task;
 extern ScheduledTask *SchedulerAlive_task;
-extern ScheduledTask *TEST_TASK;
+
+// Debug task for development purposes
+extern ScheduledTask *DEBUG_TASK;

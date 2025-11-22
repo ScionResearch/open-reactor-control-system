@@ -99,10 +99,14 @@ private:
     uint8_t _slaveID;                        ///< Modbus slave ID
     PhSensor_t _phSensor;                    ///< pH sensor data
     TemperatureSensor_t _temperatureSensor;  ///< Temperature sensor data
-    uint16_t _dataBuffer[10];                ///< Data buffer for Modbus transactions
+    uint16_t _phBuffer[10];                  ///< Data buffer for pH Modbus transactions
+    uint16_t _tempBuffer[10];                ///< Data buffer for temperature Modbus transactions
     DeviceControl_t _controlObj;             ///< Device control object
 
     bool _firstConnect;                      ///< Flag to track first successful connection for this pH probe instance
+    uint32_t _errCount;                      ///< Consecutive error count
+    bool _disconnected;                      ///< Disconnection flag (true when no valid consecutive responses after 5 attempts)
+    uint8_t _waitCount;                      ///< Wait counter for reduced requests when disconnected
     
     // Unit tracking for each instance
     uint32_t _phUnitCode;                    ///< pH unit code (for change detection)

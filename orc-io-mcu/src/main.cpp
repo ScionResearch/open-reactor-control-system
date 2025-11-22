@@ -1,5 +1,29 @@
 #include "sys_init.h"
 
+// Debug functions and variables can be added here --------------------------->
+
+void modbusDebugMonitor() {
+  Serial.println("Modbus Stats:");
+  // Monitor Modbus queues for debugging
+  uint8_t slaveQueued[8] = {0};
+  uint8_t totalQueued = 0;
+  for (int i = 0; i < 8; i++) {
+    slaveQueued[i] = modbusDriver[2].modbus.getSlaveQueueCount(i+1);
+    if (slaveQueued[i] > 0) {
+      Serial.printf("  Slave ID %d: %d requests queued\n", i+1, slaveQueued[i]);
+    }
+  }
+  totalQueued = modbusDriver[2].modbus.getQueueCount();
+  Serial.printf("Total requests queued: %d\n", totalQueued);
+}
+
+void debugTaskCallback() {
+  // Add calls to debug functions here
+  modbusDebugMonitor();
+}
+
+// <---------------------------------------------------------------------------
+
 void setupCSpins(void) {
   pinMode(PIN_ADC_CS, OUTPUT);
   pinMode(PIN_DAC_CS, OUTPUT);
@@ -149,6 +173,9 @@ void setup() {
   stepper_task = tasks.addTask(stepper_update, 1000, true, false);
   motor_task = tasks.addTask(motor_update, 10, true, false);
   pwrSensor_task = tasks.addTask(pwrSensor_update, 1000, true, false);
+
+  // Debug task
+  DEBUG_TASK = tasks.addTask(debugTaskCallback, 2000, true, false);
   
   Serial.println("Setup done, hardware ready, waiting for System MCU to initialise...");
   

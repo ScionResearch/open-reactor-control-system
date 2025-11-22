@@ -47,19 +47,31 @@ HamiltonArcOD::~HamiltonArcOD() {
 
 // Update method - queues Modbus requests for OD and temperature
 void HamiltonArcOD::update() {
+    if (_disconnected) {
+        if (_waitCount < 10) {
+            _waitCount++;
+            return;  // Skip this cycle to reduce request rate and reduce queue buildup due to timeouts
+        } 
+        _waitCount = 0;  // Reset wait counter
+        _modbusDriver->modbus.clearSlaveQueue(_slaveID);
+    }
+
     const uint8_t functionCode = 3;  // Read holding registers
     
     // Request OD data (register HAMILTON_PMC_1_ADDR, HAMILTON_PMC_REG_SIZE registers)
     // Use slave ID as requestId for callback routing
     uint16_t odAddress = HAMILTON_PMC_1_ADDR;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, odAddress, _dataBuffer, HAMILTON_PMC_REG_SIZE, odResponseHandler, _slaveID)) {
+    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, odAddress, _odBuffer, HAMILTON_PMC_REG_SIZE, odResponseHandler, _slaveID)) {
         return;  // Queue full, try again next time
     }
     
-    // Request temperature data (register HAMILTON_PMC_6_ADDR, HAMILTON_PMC_REG_SIZE registers)
-    uint16_t tempAddress = HAMILTON_PMC_6_ADDR;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, tempAddress, _dataBuffer, HAMILTON_PMC_REG_SIZE, temperatureResponseHandler, _slaveID)) {
-        return;  // Queue full, try again next time
+    // Only request temperature data if we have no errors (to reduce timeout delays)
+    if (_errCount == 0) {
+        // Request temperature data (register HAMILTON_PMC_6_ADDR, HAMILTON_PMC_REG_SIZE registers)
+        uint16_t tempAddress = HAMILTON_PMC_6_ADDR;
+        if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, tempAddress, _tempBuffer, HAMILTON_PMC_REG_SIZE, temperatureResponseHandler, _slaveID)) {
+            return;  // Queue full, try again next time
+        }
     }
 }
 
@@ -81,6 +93,21 @@ void HamiltonArcOD::temperatureResponseHandler(bool valid, uint16_t *data, uint3
 
 // Instance method to handle OD response
 void HamiltonArcOD::handleODResponse(bool valid, uint16_t *data) {
+    if (!valid) {
+        _errCount++;
+        if (_disconnected) return;
+        if (_errCount > 5) {
+            _disconnected = true;
+            _controlObj.fault = true;
+            _controlObj.connected = false;
+            _controlObj.newMessage = true;
+            snprintf(_odSensor.message, sizeof(_odSensor.message), "No response from Hamilton OD sensor (ID %d)", _slaveID);
+            _odSensor.newMessage = true;
+            strncpy(_controlObj.message, _odSensor.message, sizeof(_controlObj.message));
+            Serial.printf("[OD] No response from slave ID %d, marking as disconnected\n", _slaveID);
+            return;
+        }
+    }
     if (!valid && !_controlObj.fault) {
         if (!_firstConnect) {
             _controlObj.fault = true;
@@ -99,6 +126,8 @@ void HamiltonArcOD::handleODResponse(bool valid, uint16_t *data) {
     } else if (valid) {
         if (_controlObj.fault) {
             _controlObj.fault = false;
+            _errCount = 0;
+            _disconnected = false;
             snprintf(_odSensor.message, sizeof(_odSensor.message), "Hamilton Arc OD sensor (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
             _firstConnect = false;
             _odSensor.newMessage = true;

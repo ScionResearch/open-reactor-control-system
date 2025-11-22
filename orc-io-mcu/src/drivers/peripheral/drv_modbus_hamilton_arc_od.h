@@ -100,13 +100,17 @@ private:
     OpticalDensitySensor_t _odSensor;        ///< Optical density sensor data
     TemperatureSensor_t _temperatureSensor;  ///< Temperature sensor data
     DeviceControl_t _controlObj;             ///< Device control object
-    uint16_t _dataBuffer[10];                ///< Data buffer for Modbus transactions
+    uint16_t _odBuffer[10];                  ///< Data buffer for OD Modbus transactions
+    uint16_t _tempBuffer[10];                ///< Data buffer for temperature Modbus transactions
     
     // Unit tracking for each instance
     uint32_t _odUnitCode;                    ///< OD unit code (for change detection)
     uint32_t _tempUnitCode;                  ///< Temperature unit code (for change detection)
 
     bool _firstConnect;                      ///< First connection flag
+    uint32_t _errCount;                      ///< Consecutive error count
+    bool _disconnected;                      ///< Disconnection flag (true when no valid consecutive responses after 5 attempts)
+    uint8_t _waitCount;                      ///< Wait counter for reduced requests when disconnected
     
     // Static instance registry for callback routing (indexed by slave ID)
     static HamiltonArcOD* _instances[248];

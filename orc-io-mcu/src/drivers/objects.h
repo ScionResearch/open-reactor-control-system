@@ -449,6 +449,7 @@ struct SerialCom_t {
     uint8_t dataBits;        // Data bits (5, 6, 7, or 8)
     float stopBits;          // Stop bits (1, 1.5, or 2)
     uint8_t parity;          // Parity: 0=none, 1=odd, 2=even
+    uint32_t timeout_ms;     // Response timeout in milliseconds
     bool enabled;            // Port enabled
     uint8_t slaveCount;      // Number of Modbus slaves on this port
     bool fault;              // Fault flag

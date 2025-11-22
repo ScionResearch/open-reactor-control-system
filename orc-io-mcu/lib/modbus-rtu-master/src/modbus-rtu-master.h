@@ -15,7 +15,8 @@
 #include <Arduino.h>
 
 // Maximum queue size
-#define MODBUS_QUEUE_SIZE 10
+#define MODBUS_QUEUE_SIZE 50
+#define MODBUS_MAX_SLAVE_QUEUE 10       ///< Maximum requests per slave in the queue (stops queue flooding from one offline or faulty device)
 
 // Modbus function codes
 #define MODBUS_FC_READ_COILS              0x01
@@ -238,11 +239,23 @@ public:
      * @return Number of active requests in the queue
      */
     uint8_t getQueueCount();
+
+    /**
+     * @brief Get the number of items in the queue for a specific slave ID
+     * 
+     * @return Number of active requests in the queue
+     */
+    uint8_t getSlaveQueueCount(uint8_t slaveId);
     
     /**
      * @brief Clear all requests in the queue
      */
     void clearQueue();
+
+    /**
+     * @brief Clear all requests in the queue for a specific slave ID
+     */
+    void clearSlaveQueue(uint8_t slaveId);
 
     /**
      * @brief Convert an array of two swapped uint16_t to a float32
@@ -270,6 +283,7 @@ private:
     uint8_t _buffer[MODBUS_MAX_BUFFER]; ///< Buffer for message processing
     uint16_t _bufferLength;            ///< Current length of data in the buffer
     int8_t _dePin;                     ///< DE/RE pin for RS485 control (-1 if not used)
+    uint8_t _slaveQueueCount[248];   ///< Count of queued requests per slave ID (1-247)
     enum {
         IDLE,                         ///< No active transaction
         WAITING_FOR_REPLY,            ///< Waiting for a response

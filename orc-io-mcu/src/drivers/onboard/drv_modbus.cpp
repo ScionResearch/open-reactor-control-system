@@ -14,6 +14,7 @@ bool modbus_init(void) {
         modbusPort[i].dataBits = 8;         // Default 8 data bits
         modbusPort[i].stopBits = 1;         // Default 1 stop bit
         modbusPort[i].parity = 0;           // Default no parity
+        modbusPort[i].timeout_ms = 1000;    // Default 1000 ms timeout
         modbusPort[i].enabled = true;
         modbusPort[i].slaveCount = 0;       // No devices yet
         modbusPort[i].fault = false;
@@ -50,6 +51,7 @@ bool modbus_init(void) {
             sprintf(modbusPort[i].message, "Failed to init Modbus port %d", i + 1);
             return false;
         } else {
+            modbusDriver[i].modbus.setTimeout(modbusPort[i].timeout_ms);
             Serial.printf("Modbus driver %d initialized\n", i + 1);
         }
     }

@@ -100,9 +100,13 @@ private:
     DissolvedOxygenSensor_t _doSensor;       ///< Dissolved oxygen sensor data
     TemperatureSensor_t _temperatureSensor;  ///< Temperature sensor data
     DeviceControl_t _controlObj;             ///< Device control object
-    uint16_t _dataBuffer[10];                ///< Data buffer for Modbus transactions
+    uint16_t _doBuffer[10];                  ///< Data buffer for DO Modbus transactions
+    uint16_t _tempBuffer[10];                ///< Data buffer for temperature Modbus transactions
 
     bool _firstConnect;                      ///< Flag to track first successful connection for this pH probe instance
+    uint32_t _errCount;                      ///< Consecutive error count
+    bool _disconnected;                      ///< Disconnection flag (true when no valid consecutive responses after 5 attempts)
+    uint8_t _waitCount;                      ///< Wait counter for reduced requests when disconnected
     
     // Unit tracking for each instance
     uint32_t _doUnitCode;                    ///< DO unit code (for change detection)

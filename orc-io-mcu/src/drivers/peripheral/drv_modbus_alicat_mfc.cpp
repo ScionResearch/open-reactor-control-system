@@ -58,6 +58,15 @@ AlicatMFC::~AlicatMFC() {
 
 // Update method - queues Modbus request for MFC data
 void AlicatMFC::update() {
+    if (_disconnected) {
+        if (_waitCount < 10) {
+            _waitCount++;
+            return;  // Skip this cycle to reduce request rate and reduce queue buildup due to timeouts
+        } 
+        _waitCount = 0;  // Reset wait counter
+        _modbusDriver->modbus.clearSlaveQueue(_slaveID);
+    }
+
     const uint8_t functionCode = 3;  // Read holding registers
     const uint16_t address = 1349;   // Starting address
     
@@ -127,6 +136,22 @@ void AlicatMFC::mfcWriteResponseHandler(bool valid, uint16_t *data, uint32_t req
 
 // Instance method to handle MFC data response
 void AlicatMFC::handleMfcResponse(bool valid, uint16_t *data) {
+    if (!valid) {
+        _errCount++;
+        if (_disconnected) return;
+        if (_errCount > 5) {
+            _disconnected = true;
+            _fault = true;
+            _controlObj.fault = true;
+            _controlObj.connected = false;
+            _controlObj.newMessage = true;
+            snprintf(_message, sizeof(_message), "No response from Alicat MFC (ID %d)", _slaveID);
+            _newMessage = true;
+            strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
+            Serial.printf("[MFC] No response from slave ID %d, marking as disconnected\n", _slaveID);
+            return;
+        }
+    }
     if (!valid && !_fault) {
         if (!_firstConnect) {
             _fault = true;
@@ -139,6 +164,9 @@ void AlicatMFC::handleMfcResponse(bool valid, uint16_t *data) {
         // Update control object with fault status
         _controlObj.connected = false;  // Modbus communication failed
         _controlObj.fault = _fault;
+        _flowSensor.fault = _fault;
+        _pressureSensor.fault = _fault;
+        
         _controlObj.newMessage = true;
         strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
 
@@ -147,6 +175,8 @@ void AlicatMFC::handleMfcResponse(bool valid, uint16_t *data) {
     } else if (valid) {
         if (_fault || _firstConnect) {   // If we just recovered from a fault or this is the first valid response
             _fault = false;
+            _errCount = 0;
+            _disconnected = false;
             _newMessage = true;
             snprintf(_message, sizeof(_message), "Alicat MFC (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
             writeSetpoint(_setpoint, false);

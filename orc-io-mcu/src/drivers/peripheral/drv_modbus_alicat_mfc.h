@@ -228,6 +228,9 @@ private:
     bool _fault;                             ///< Fault flag
     bool _newMessage;                        ///< New message flag
     char _message[100];                      ///< Message buffer
+    uint32_t _errCount;                      ///< Consecutive error count
+    bool _disconnected;                      ///< Disconnection flag (true when no valid consecutive responses after 5 attempts)
+    uint8_t _waitCount;                      ///< Wait counter for reduced requests when disconnected
     
     uint16_t _dataBuffer[16];                ///< Data buffer for Modbus transactions
     uint16_t _writeBuffer[2];                ///< Write buffer for setpoint writes

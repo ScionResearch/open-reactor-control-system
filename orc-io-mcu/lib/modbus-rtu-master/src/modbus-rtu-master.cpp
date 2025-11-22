@@ -6,6 +6,7 @@
 ModbusRTUMaster::ModbusRTUMaster() {
     _serial = nullptr;
     _queueCount = 0;
+    memset(_slaveQueueCount, 0, sizeof(_slaveQueueCount));
     _currentRequest = 0;
     _timeout = MODBUS_DEFAULT_TIMEOUT;
     _lastActivity = 0;
@@ -109,8 +110,16 @@ void ModbusRTUMaster::manage() {
                 // (slave id, function code, at least 1 data byte, and 2 CRC bytes)
                 if (_bufferLength >= 5) {
                     // Check if we've received the expected response length
-                    //uint8_t slaveId = _buffer[0];
+                    uint8_t slaveId = _buffer[0];
                     uint8_t functionCode = _buffer[1];
+                    
+                    // Validate that the response is from the expected slave
+                    if (slaveId != _queue[_currentRequest].slaveId) {
+                        // Wrong slave ID - discard this response and keep waiting
+                        //Serial.printf("[Modbus] Slave ID mismatch: expected %d, got %d - discarding\n", _queue[_currentRequest].slaveId, slaveId);
+                        _bufferLength = 0;
+                        break;
+                    }
                     
                     // Determine the expected message length based on the function code
                     uint16_t expectedLength = 0;
@@ -154,6 +163,7 @@ void ModbusRTUMaster::manage() {
                         
                         if (receivedCrc == calculatedCrc) {
                             // Valid CRC, process the response
+                            //Serial.printf("[Modbus] Valid response from slave %d\n", slaveId);
                             _state = PROCESSING_REPLY;
                             
                             // Process based on function code
@@ -228,6 +238,11 @@ void ModbusRTUMaster::manage() {
                             // Mark the request as processed
                             _queue[_currentRequest].active = false;
                             _queueCount--;
+
+                            // Decrement the slave-specific queue count
+                            if (_queue[_currentRequest].slaveId > 0 && _queue[_currentRequest].slaveId <= 247) {
+                                _slaveQueueCount[_queue[_currentRequest].slaveId - 1]--;
+                            }
                             
                             // Ensure inter-frame delay before allowing next request
                             delayMicroseconds(_interframeDelay);
@@ -243,6 +258,7 @@ void ModbusRTUMaster::manage() {
             // Check for timeout
             if (_state == WAITING_FOR_REPLY && (millis() - _lastActivity) > _timeout) {
                 // Timeout occurred, call the callback with invalid result
+                //Serial.printf("[Modbus] Timeout waiting for slave %d (after %dms)\n", _queue[_currentRequest].slaveId, millis() - _lastActivity);
                 if (_queue[_currentRequest].callback) {
                     _queue[_currentRequest].callback(false, _queue[_currentRequest].data, _queue[_currentRequest].requestId);
                 }
@@ -250,6 +266,11 @@ void ModbusRTUMaster::manage() {
                 // Mark the request as processed
                 _queue[_currentRequest].active = false;
                 _queueCount--;
+
+                // Decrement the slave-specific queue count
+                if (_queue[_currentRequest].slaveId > 0 && _queue[_currentRequest].slaveId <= 247) {
+                    _slaveQueueCount[_queue[_currentRequest].slaveId - 1]--;
+                }
                 
                 // Ensure inter-frame delay before allowing next request
                 delayMicroseconds(_interframeDelay);
@@ -276,6 +297,13 @@ bool ModbusRTUMaster::pushRequest(uint8_t slaveId, uint8_t functionCode, uint16_
     if (_queueCount >= MODBUS_QUEUE_SIZE) {
         return false;
     }
+
+    // Check if this slave ID has too many requests queued
+    if (_slaveQueueCount[slaveId - 1] >= MODBUS_MAX_SLAVE_QUEUE) {
+        return false;
+    }
+
+    _slaveQueueCount[slaveId - 1]++;
     
     // Find an empty slot in the queue
     for (uint8_t i = 0; i < MODBUS_QUEUE_SIZE; i++) {
@@ -376,6 +404,16 @@ uint8_t ModbusRTUMaster::getQueueCount() {
 }
 
 /**
+ * @brief Get the number of items in the queue for a specific slave ID
+ */
+uint8_t ModbusRTUMaster::getSlaveQueueCount(uint8_t slaveId) {
+    if (slaveId == 0 || slaveId > 247) {
+        return 0; // Invalid slave ID
+    }
+    return _slaveQueueCount[slaveId - 1];
+}
+
+/**
  * @brief Clear all requests in the queue
  */
 void ModbusRTUMaster::clearQueue() {
@@ -384,6 +422,24 @@ void ModbusRTUMaster::clearQueue() {
     }
     _queueCount = 0;
     _state = IDLE;
+}
+
+/**
+ * @brief Clear all requests in the queue for a specific slave ID
+ */
+void ModbusRTUMaster::clearSlaveQueue(uint8_t slaveId) {
+    for (uint8_t i = 0; i < MODBUS_QUEUE_SIZE; i++) {
+        // Don't clear the current request if we're waiting for its response
+        if (i == _currentRequest && _state == WAITING_FOR_REPLY) {
+            continue;  // Skip the current active request
+        }
+        
+        if (_queue[i].active && _queue[i].slaveId == slaveId) {
+            _queue[i].active = false;
+            _slaveQueueCount[slaveId - 1]--;
+            _queueCount--;
+        }
+    }
 }
 
 /**
@@ -544,6 +600,7 @@ bool ModbusRTUMaster::_sendRequest(ModbusRequest* request) {
     delayMicroseconds(_interframeDelay);
     
     // Send the message
+    //Serial.printf("[Modbus] Sending request to slave %d, FC=0x%02X\n", request->slaveId, request->functionCode);
     _serial->write(messageBuffer, messageLength);
     _serial->flush();
     
