@@ -106,9 +106,9 @@ void output_update(void) {
             if (outputDriver.outputObj[i]->pwmDuty > 100) outputDriver.outputObj[i]->pwmDuty = 100;
             else if (outputDriver.outputObj[i]->pwmDuty < 0) outputDriver.outputObj[i]->pwmDuty = 0;
             pwmDuty[i] = outputDriver.outputObj[i]->pwmDuty;
-            uint32_t ts = micros();
+            //uint32_t ts = micros();
             analogWrite(outputDriver.pin[i], static_cast<uint8_t>(outputDriver.outputObj[i]->pwmDuty * 2.55));
-            uint32_t te = micros();
+            //uint32_t te = micros();
             //Serial.printf("Output %d: Analog write took %d us\n", i, te - ts);
         } else if (state[i] != outputDriver.outputObj[i]->state) {
             digitalWrite(outputDriver.pin[i], outputDriver.outputObj[i]->state);

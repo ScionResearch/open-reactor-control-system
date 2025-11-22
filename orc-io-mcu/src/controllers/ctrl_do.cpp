@@ -25,16 +25,27 @@ DOController::DOController(DissolvedOxygenControl_t* control)
 
 DOController::~DOController() {
     // Stop all outputs
-    if (_control) {
-        if (_control->stirrerEnabled) {
-            _applyStirrerOutput(0.0f);
-        }
-        if (_control->mfcEnabled) {
-            _applyMFCOutput(0.0f);
-        }
-    }
+    _stopAllOutputs();
     
     Serial.printf("[DO CTRL %d] DO controller destroyed\n", _control->index);
+}
+
+void DOController::_stopAllOutputs() {
+    if (!_control) return;
+    
+    // Stop stirrer output
+    if (_control->stirrerEnabled) {
+        _applyStirrerOutput(0.0f);
+    }
+    
+    // Stop MFC output
+    if (_control->mfcEnabled) {
+        _applyMFCOutput(0.0f);
+    }
+    
+    // Reset output tracking
+    _control->currentStirrerOutput = 0.0f;
+    _control->currentMFCOutput = 0.0f;
 }
 
 void DOController::update() {
@@ -47,33 +58,35 @@ void DOController::update() {
     }
     _lastUpdateTime = now;
     
+    // Only update if enabled
+    if (!_control->enabled) {
+        // Set outputs to zero when disabled
+        _stopAllOutputs();
+        return;
+    }
+    
+    // Validate indices (sensor and outputs)
+    if (!_validateIndices()) {
+        // Validation failed - disable controller for safety
+        if (_control->enabled) {
+            _control->enabled = false;
+            _stopAllOutputs();
+            Serial.printf("[DO CTRL %d] Disabled controller due to invalid indices\n", _control->index);
+        }
+        return;
+    }
+    
     // Read DO sensor
     float currentDO = _readDOSensor();
     if (isnan(currentDO)) {
-        _control->fault = true;
-        snprintf(_control->message, sizeof(_control->message), "DO sensor not found");
-        _control->newMessage = true;
-        
-        // Stop outputs if sensor lost
-        _control->currentStirrerOutput = 0.0f;
-        _control->currentMFCOutput = 0.0f;
-        if (_control->stirrerEnabled) _applyStirrerOutput(0.0f);
-        if (_control->mfcEnabled) _applyMFCOutput(0.0f);
-        return;
+        // Sensor read failed or sensor is faulty - stop outputs
+        _stopAllOutputs();
+        return;  // Fault already set by _readDOSensor()
     }
     
     _control->currentDO_mg_L = currentDO;
     _control->error_mg_L = _control->setpoint_mg_L - currentDO;
-    
-    // Only control if enabled
-    if (!_control->enabled) {
-        // Set outputs to zero when disabled
-        _control->currentStirrerOutput = 0.0f;
-        _control->currentMFCOutput = 0.0f;
-        if (_control->stirrerEnabled) _applyStirrerOutput(0.0f);
-        if (_control->mfcEnabled) _applyMFCOutput(0.0f);
-        return;
-    }
+    _clearFault();  // Clear fault if we got a valid reading
     
     // Calculate and apply outputs
     _calculateOutputs();
@@ -105,12 +118,29 @@ float DOController::_readDOSensor() {
     for (int i = 70; i < 100; i++) {
         if (objIndex[i].valid && objIndex[i].type == OBJ_T_DISSOLVED_OXYGEN_SENSOR) {
             DissolvedOxygenSensor_t* sensor = (DissolvedOxygenSensor_t*)objIndex[i].obj;
-            if (sensor) {
-                return sensor->dissolvedOxygen;
+            if (!sensor) {
+                _setFault("DO sensor object is null");
+                return NAN;
             }
+            
+            // Check for sensor fault
+            if (sensor->fault) {
+                _setFault("WARNING: DO sensor fault detected");
+                if (_control->enabled) {
+                    _control->enabled = false;
+                    _stopAllOutputs();
+                    Serial.printf("[DO CTRL %d] Disabling controller due to sensor fault\n", _control->index);
+                }
+                return NAN;
+            }
+            
+            return sensor->dissolvedOxygen;
         }
     }
-    return NAN;  // No DO sensor found
+    
+    // No DO sensor found
+    _setFault("DO sensor not found or not enrolled");
+    return NAN;
 }
 
 void DOController::_calculateOutputs() {
@@ -146,6 +176,16 @@ void DOController::_applyStirrerOutput(float output) {
     if (!_control || !_control->stirrerEnabled) return;
     
     uint8_t stirrerIndex = _control->stirrerIndex;
+    
+    // Validate stirrer output before applying
+    if (output > 0.0f && !_validateStirrerOutput()) {
+        _setFault("Stirrer output is invalid or offline");
+        if (_control->enabled) {
+            _control->enabled = false;
+            _stopAllOutputs();
+        }
+        return;
+    }
     
     if (_control->stirrerType == 0) {
         // DC Motor (indices 27-30)
@@ -187,6 +227,16 @@ void DOController::_applyMFCOutput(float output_mL_min) {
     if (!_control || !_control->mfcEnabled) return;
     
     uint8_t devIdx = _control->mfcDeviceIndex;
+    
+    // Validate MFC output before applying
+    if (output_mL_min > 0.0f && !_validateMFCOutput()) {
+        _setFault("MFC output is invalid or offline");
+        if (_control->enabled) {
+            _control->enabled = false;
+            _stopAllOutputs();
+        }
+        return;
+    }
     
     // Find MFC device in device index (50-69)
     if (devIdx >= 50 && devIdx < 70 && objIndex[devIdx].valid) {
@@ -269,4 +319,128 @@ void DOController::_sortProfile() {
             }
         }
     }
+}
+
+bool DOController::_validateIndices() {
+    if (!_control) return false;
+    
+    // Validate DO sensor exists (scans indices 70-99)
+    bool sensorFound = false;
+    for (int i = 70; i < 100; i++) {
+        if (objIndex[i].valid && objIndex[i].type == OBJ_T_DISSOLVED_OXYGEN_SENSOR) {
+            sensorFound = true;
+            break;
+        }
+    }
+    
+    if (!sensorFound) {
+        _setFault("DO sensor not enrolled");
+        return false;
+    }
+    
+    // Validate stirrer output if enabled
+    if (_control->stirrerEnabled) {
+        if (!_validateStirrerOutput()) {
+            _setFault("Stirrer output is invalid or offline");
+            return false;
+        }
+    }
+    
+    // Validate MFC output if enabled
+    if (_control->mfcEnabled) {
+        if (!_validateMFCOutput()) {
+            _setFault("MFC output is invalid or offline");
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+bool DOController::_validateStirrerOutput() {
+    if (!_control) return false;
+    
+    uint8_t stirrerIndex = _control->stirrerIndex;
+    
+    if (_control->stirrerType == 0) {
+        // DC Motor (indices 27-30)
+        if (stirrerIndex < 27 || stirrerIndex > 30) {
+            return false;
+        }
+        if (stirrerIndex >= MAX_NUM_OBJECTS || !objIndex[stirrerIndex].valid) {
+            return false;
+        }
+        if (objIndex[stirrerIndex].type != OBJ_T_BDC_MOTOR) {
+            return false;
+        }
+    } 
+    else if (_control->stirrerType == 1) {
+        // Stepper Motor (index 26)
+        if (stirrerIndex != 26) {
+            return false;
+        }
+        if (!objIndex[26].valid) {
+            return false;
+        }
+        if (objIndex[26].type != OBJ_T_STEPPER_MOTOR) {
+            return false;
+        }
+    }
+    else {
+        // Unknown stirrer type
+        return false;
+    }
+    
+    return true;
+}
+
+bool DOController::_validateMFCOutput() {
+    if (!_control) return false;
+    
+    uint8_t devIdx = _control->mfcDeviceIndex;
+    
+    // MFC device indices (50-69)
+    if (devIdx < 50 || devIdx >= 70) {
+        return false;
+    }
+    
+    if (devIdx >= MAX_NUM_OBJECTS || !objIndex[devIdx].valid) {
+        return false;
+    }
+    
+    if (objIndex[devIdx].type != OBJ_T_DEVICE_CONTROL) {
+        return false;
+    }
+    
+    // Check if MFC is connected
+    DeviceControl_t* dev = (DeviceControl_t*)objIndex[devIdx].obj;
+    if (!dev || !dev->connected) {
+        Serial.printf("[DO CTRL %d] MFC %d is offline\n", _control->index, devIdx);
+        return false;
+    }
+    
+    // Verify it's actually an MFC device
+    if (dev->deviceType != IPC_DEV_ALICAT_MFC) {
+        return false;
+    }
+    
+    return true;
+}
+
+void DOController::_setFault(const char* message) {
+    if (!_control) return;
+    
+    _control->fault = true;
+    _control->newMessage = true;
+    strncpy(_control->message, message, sizeof(_control->message) - 1);
+    _control->message[sizeof(_control->message) - 1] = '\0';
+    
+    Serial.printf("[DO CTRL %d] FAULT: %s\n", _control->index, message);
+}
+
+void DOController::_clearFault() {
+    if (!_control) return;
+    
+    _control->fault = false;
+    strcpy(_control->message, "OK");
 }
