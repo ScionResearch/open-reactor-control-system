@@ -101,21 +101,21 @@ void HamiltonArcOD::handleODResponse(bool valid, uint16_t *data) {
             _controlObj.fault = true;
             _controlObj.connected = false;
             _controlObj.newMessage = true;
-            snprintf(_odSensor.message, sizeof(_odSensor.message), "No response from Hamilton OD sensor (ID %d)", _slaveID);
+            snprintf(_odSensor.message, sizeof(_odSensor.message), "No response from Hamilton Arc OD sensor (ID %d)", _slaveID);
             _odSensor.newMessage = true;
             strncpy(_controlObj.message, _odSensor.message, sizeof(_controlObj.message));
-            Serial.printf("[OD] No response from slave ID %d, marking as disconnected\n", _slaveID);
             return;
         }
     }
     if (!valid && !_controlObj.fault) {
         if (!_firstConnect) {
             _controlObj.fault = true;
+            _odSensor.fault = true;
             snprintf(_odSensor.message, sizeof(_odSensor.message), "Invalid or no response from Hamilton Arc OD sensor (ID %d)", _slaveID);
+            _odSensor.newMessage = true;
         } else {
             snprintf(_odSensor.message, sizeof(_odSensor.message), "Hamilton Arc OD sensor (ID %d) has not yet connected", _slaveID);
         }
-        _odSensor.newMessage = true;
         
         // Update control object with fault status
         _controlObj.connected = false;

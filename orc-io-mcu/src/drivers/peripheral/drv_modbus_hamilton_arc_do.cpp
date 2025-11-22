@@ -61,7 +61,6 @@ void HamiltonArcDO::update() {
     // Use slave ID as requestId for callback routing
     uint16_t doAddress = HAMILTON_PMC_1_ADDR;
     if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, doAddress, _doBuffer, HAMILTON_PMC_REG_SIZE, doResponseHandler, _slaveID)) {
-        Serial.printf("[DO] Failed to queue DO request for slave ID %d\n", _slaveID);
         return;  // Queue full, try again next time
     }
     
@@ -70,7 +69,6 @@ void HamiltonArcDO::update() {
         // Request temperature data (register HAMILTON_PMC_6_ADDR, HAMILTON_PMC_REG_SIZE registers)
         uint16_t tempAddress = HAMILTON_PMC_6_ADDR;
         if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, tempAddress, _tempBuffer, HAMILTON_PMC_REG_SIZE, temperatureResponseHandler, _slaveID)) {
-            Serial.printf("[DO] Failed to queue temperature request for slave ID %d\n", _slaveID);
             return;  // Queue full, try again next time
         }
     }
@@ -102,40 +100,33 @@ void HamiltonArcDO::handleDOResponse(bool valid, uint16_t *data) {
             _controlObj.fault = true;
             _controlObj.connected = false;
             _controlObj.newMessage = true;
-            snprintf(_doSensor.message, sizeof(_doSensor.message), "No response from Hamilton DO sensor (ID %d)", _slaveID);
+            snprintf(_doSensor.message, sizeof(_doSensor.message), "No response from Hamilton Arc DO sensor (ID %d)", _slaveID);
             _doSensor.newMessage = true;
             strncpy(_controlObj.message, _doSensor.message, sizeof(_controlObj.message));
-            // Debug logging
-            Serial.printf("[DO] No response from slave ID %d, marking as disconnected\n", _slaveID);
             return;
         }
     }
     if (!valid && !_controlObj.fault) {
         if (!_firstConnect) {
             _controlObj.fault = true;
-            snprintf(_doSensor.message, sizeof(_doSensor.message), "Invalid or no response from Hamilton DO sensor (ID %d)", _slaveID);
+            _doSensor.fault = true;
+            snprintf(_doSensor.message, sizeof(_doSensor.message), "Invalid or no response from Hamilton Arc DO sensor (ID %d)", _slaveID);
+            _doSensor.newMessage = true;
         } else {
-            snprintf(_doSensor.message, sizeof(_doSensor.message), "Hamilton DO sensor (ID %d) has not yet connected", _slaveID);
+            snprintf(_doSensor.message, sizeof(_doSensor.message), "Hamilton Arc DO sensor (ID %d) has not yet connected", _slaveID);
         }
-        _doSensor.newMessage = true;
         
         // Update control object with fault status
         _controlObj.connected = false;
         _controlObj.newMessage = true;
         strncpy(_controlObj.message, _doSensor.message, sizeof(_controlObj.message));
-
-        // Debug logging
-        Serial.printf("[DO] Offline: %s\n", _doSensor.message);
-        
         return;
     } else if (valid) {
         if (_controlObj.fault) {
             _controlObj.fault = false;
             _errCount = 0;
-            // Debug logging
-            if (_disconnected) Serial.printf("[DO] Slave ID %d started responding, marking as connected\n", _slaveID);
             _disconnected = false;
-            snprintf(_doSensor.message, sizeof(_doSensor.message), "Hamilton DO sensor (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
+            snprintf(_doSensor.message, sizeof(_doSensor.message), "Hamilton Arc DO sensor (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
             _firstConnect = false;
             _doSensor.newMessage = true;
             
@@ -143,9 +134,6 @@ void HamiltonArcDO::handleDOResponse(bool valid, uint16_t *data) {
             _controlObj.connected = true;
             _controlObj.newMessage = true;
             strncpy(_controlObj.message, _doSensor.message, sizeof(_controlObj.message));
-
-            // Debug logging
-            Serial.printf("[DO] Online: %s\n", _doSensor.message);
         }
     
         // Check for unit change (first 2 registers contain unit code as uint32_t)

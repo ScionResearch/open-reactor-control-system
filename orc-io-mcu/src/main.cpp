@@ -19,7 +19,7 @@ void modbusDebugMonitor() {
 
 void debugTaskCallback() {
   // Add calls to debug functions here
-  modbusDebugMonitor();
+  //modbusDebugMonitor();
 }
 
 // <---------------------------------------------------------------------------

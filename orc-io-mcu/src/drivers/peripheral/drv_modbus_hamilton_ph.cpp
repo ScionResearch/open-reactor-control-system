@@ -100,10 +100,9 @@ void HamiltonPHProbe::handlePhResponse(bool valid, uint16_t *data) {
             _controlObj.fault = true;
             _controlObj.connected = false;
             _controlObj.newMessage = true;
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "No response from Hamilton pH sensor (ID %d)", _slaveID);
+            snprintf(_phSensor.message, sizeof(_phSensor.message), "No response from Hamilton Arc pH sensor (ID %d)", _slaveID);
             _phSensor.newMessage = true;
             strncpy(_controlObj.message, _phSensor.message, sizeof(_controlObj.message));
-            Serial.printf("[PH] No response from slave ID %d, marking as disconnected\n", _slaveID);
             return;
         }
     }
@@ -111,10 +110,10 @@ void HamiltonPHProbe::handlePhResponse(bool valid, uint16_t *data) {
         if (!_firstConnect) {
             _controlObj.fault = true;
             _phSensor.fault = true;
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "Invalid or no response from Hamilton pH probe (ID %d)", _slaveID);
+            snprintf(_phSensor.message, sizeof(_phSensor.message), "Invalid or no response from Hamilton Arc pH sensor (ID %d)", _slaveID);
             _phSensor.newMessage = true;
         } else {
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "Hamilton pH probe (ID %d) has not yet connected", _slaveID);
+            snprintf(_phSensor.message, sizeof(_phSensor.message), "Hamilton Arc pH sensor (ID %d) has not yet connected", _slaveID);
         }
         
         // Update control object with fault status
@@ -128,7 +127,7 @@ void HamiltonPHProbe::handlePhResponse(bool valid, uint16_t *data) {
             _controlObj.fault = false;
             _errCount = 0;
             _disconnected = false;
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "Hamilton pH probe (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
+            snprintf(_phSensor.message, sizeof(_phSensor.message), "Hamilton Arc pH sensor (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
             _firstConnect = false;
             _phSensor.newMessage = true;
             
@@ -176,7 +175,7 @@ void HamiltonPHProbe::handleTemperatureResponse(bool valid, uint16_t *data) {
     if (!valid) {
         _temperatureSensor.fault = true;
         snprintf(_temperatureSensor.message, sizeof(_temperatureSensor.message), 
-                 "Invalid temperature data from pH probe (ID %d)", _slaveID);
+                 "Invalid temperature data from Hamilton Arc pH sensor (ID %d)", _slaveID);
         _temperatureSensor.newMessage = true;
         return;
     }
