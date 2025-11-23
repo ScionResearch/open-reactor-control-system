@@ -72,10 +72,15 @@ bool pHController::_validateOutput(uint8_t type, uint8_t index) {
             return false;
         }
         
-        // Check if MFC is connected
+        // Check if MFC is connected and not faulted
         DeviceControl_t* dev = (DeviceControl_t*)objIndex[index].obj;
-        if (!dev || !dev->connected) {
-            Serial.printf("[pH CTRL] MFC %d is offline\n", index);
+        if (!dev) {
+            return false;
+        }
+        if (dev->fault) {
+            return false;
+        }
+        if (!dev->connected) {
             return false;
         }
         
@@ -112,8 +117,18 @@ void pHController::_stopAllOutputs() {
 void pHController::update() {
     if (!_control) return;
     
-    // Only update if enabled
+    // Check fault state even when disabled to allow auto-recovery
     if (!_control->enabled) {
+        // Validate indices to see if fault condition has cleared
+        if (_validateIndices()) {
+            // Read sensor to check if it's working
+            float pH = _readpH();
+            if (!isnan(pH)) {
+                // Conditions are good - clear fault but stay disabled
+                _control->currentpH = pH;
+                _clearFault();
+            }
+        }
         return;
     }
     
@@ -248,11 +263,22 @@ float pHController::_readpH() {
     
     // Check for sensor fault
     if (sensor->fault) {
-        _setFault("WARNING: pH sensor fault detected");
+        _setFault("ERROR - pH sensor fault detected");
         if (_control->enabled) {
             _control->enabled = false;
             _stopAllOutputs();
             Serial.println("[pH CTRL] Disabling controller due to sensor fault");
+        }
+        return NAN;
+    }
+    
+    // Check if sensor value is valid (NaN means not yet connected)
+    if (isnan(sensor->ph)) {
+        _setFault("ERROR - pH sensor not connected");
+        if (_control->enabled) {
+            _control->enabled = false;
+            _stopAllOutputs();
+            Serial.println("[pH CTRL] Disabling controller - sensor not connected");
         }
         return NAN;
     }
@@ -526,7 +552,17 @@ bool pHController::_validateIndices() {
     // Validate acid output if enabled
     if (_control->acidEnabled) {
         if (!_validateOutput(_control->acidOutputType, _control->acidOutputIndex)) {
-            _setFault("Acid output is invalid or offline");
+            // Check if it's an MFC to provide more specific error
+            if (_control->acidOutputType == 2 && _control->acidOutputIndex >= 50 && _control->acidOutputIndex < 70) {
+                DeviceControl_t* dev = (DeviceControl_t*)objIndex[_control->acidOutputIndex].obj;
+                if (dev && dev->fault) {
+                    _setFault("ERROR - Acid MFC device fault detected");
+                } else {
+                    _setFault("ERROR - Acid MFC device not connected");
+                }
+            } else {
+                _setFault("ERROR - Acid output is invalid or offline");
+            }
             return false;
         }
     }
@@ -534,7 +570,17 @@ bool pHController::_validateIndices() {
     // Validate alkaline output if enabled
     if (_control->alkalineEnabled) {
         if (!_validateOutput(_control->alkalineOutputType, _control->alkalineOutputIndex)) {
-            _setFault("Alkaline output is invalid or offline");
+            // Check if it's an MFC to provide more specific error
+            if (_control->alkalineOutputType == 2 && _control->alkalineOutputIndex >= 50 && _control->alkalineOutputIndex < 70) {
+                DeviceControl_t* dev = (DeviceControl_t*)objIndex[_control->alkalineOutputIndex].obj;
+                if (dev && dev->fault) {
+                    _setFault("ERROR - Alkaline MFC device fault detected");
+                } else {
+                    _setFault("ERROR - Alkaline MFC device not connected");
+                }
+            } else {
+                _setFault("ERROR - Alkaline output is invalid or offline");
+            }
             return false;
         }
     }
@@ -549,8 +595,6 @@ void pHController::_setFault(const char* message) {
     _control->newMessage = true;
     strncpy(_control->message, message, sizeof(_control->message) - 1);
     _control->message[sizeof(_control->message) - 1] = '\0';
-    
-    Serial.printf("[pH CTRL] FAULT: %s\n", message);
 }
 
 void pHController::_clearFault() {

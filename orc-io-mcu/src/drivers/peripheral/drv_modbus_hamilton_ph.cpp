@@ -7,14 +7,14 @@ HamiltonPHProbe* HamiltonPHProbe::_instances[248] = {nullptr};
 HamiltonPHProbe::HamiltonPHProbe(ModbusDriver_t *modbusDriver, uint8_t slaveID) 
     : _modbusDriver(modbusDriver), _slaveID(slaveID), _phUnitCode(0), _tempUnitCode(0) {
     // Initialize sensor objects
-    _phSensor.ph = 0.0;
+    _phSensor.ph = NAN;  // Initialize as NaN until first valid reading
     _phSensor.fault = false;
     _phSensor.newMessage = false;
     strcpy(_phSensor.unit, "--");
     _phSensor.message[0] = '\0';
     
     // Initialise temperature sensor object
-    _temperatureSensor.temperature = 0.0;
+    _temperatureSensor.temperature = NAN;  // Initialize as NaN until first valid reading
     _temperatureSensor.fault = false;
     _temperatureSensor.newMessage = false;
     strcpy(_temperatureSensor.unit, "--");

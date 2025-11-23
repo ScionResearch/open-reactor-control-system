@@ -110,7 +110,20 @@ bool TemperatureController::assignOutput(uint16_t outputIndex) {
 // ============================================================================
 
 void TemperatureController::update() {
-    if (!_control || !_control->enabled) {
+    if (!_control) return;
+    
+    // Check fault state even when disabled to allow auto-recovery
+    if (!_control->enabled) {
+        // Validate indices to see if fault condition has cleared
+        if (_validateIndices()) {
+            // Read sensor to check if it's working
+            float temp = _readSensor();
+            if (!isnan(temp)) {
+                // Conditions are good - clear fault but stay disabled
+                _control->currentTemp = temp;
+                _clearFault();
+            }
+        }
         return;
     }
     
@@ -369,11 +382,22 @@ float TemperatureController::_readSensor() {
     TemperatureSensor_t* sensor = (TemperatureSensor_t*)objIndex[_control->sensorIndex].obj;
     
     if (sensor->fault) {
-        _setFault("WARNING: Temperature sensor fault detected");
+        _setFault("ERROR - Temperature sensor fault detected");
         if (_control->enabled) {
             disable();
             // Debug
             Serial.println("[TempCtrl] Disabling controller due to sensor fault");
+        }
+        return NAN;
+    }
+    
+    // Check if sensor value is valid (NaN means not yet connected)
+    if (isnan(sensor->temperature)) {
+        _setFault("ERROR - Temperature sensor not connected");
+        if (_control->enabled) {
+            disable();
+            // Debug
+            Serial.println("[TempCtrl] Disabling controller - sensor not connected");
         }
         return NAN;
     }
@@ -722,8 +746,6 @@ void TemperatureController::_setFault(const char* message) {
     _control->newMessage = true;
     strncpy(_control->message, message, sizeof(_control->message) - 1);
     _control->message[sizeof(_control->message) - 1] = '\0';
-    
-    Serial.printf("[TempCtrl] FAULT: %s\n", message);
 }
 
 void TemperatureController::_clearFault() {

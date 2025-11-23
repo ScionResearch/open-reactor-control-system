@@ -7,14 +7,14 @@ HamiltonArcOD* HamiltonArcOD::_instances[248] = {nullptr};
 HamiltonArcOD::HamiltonArcOD(ModbusDriver_t *modbusDriver, uint8_t slaveID) 
     : _modbusDriver(modbusDriver), _slaveID(slaveID), _odUnitCode(0), _tempUnitCode(0) {
     // Initialize optical density sensor object
-    _odSensor.opticalDensity = 0.0;
+    _odSensor.opticalDensity = NAN;  // Initialize as NaN until first valid reading
     _odSensor.fault = false;
     _odSensor.newMessage = false;
     strcpy(_odSensor.unit, "--");
     _odSensor.message[0] = '\0';
     
     // Initialize temperature sensor object
-    _temperatureSensor.temperature = 0.0;
+    _temperatureSensor.temperature = NAN;  // Initialize as NaN until first valid reading
     _temperatureSensor.fault = false;
     _temperatureSensor.newMessage = false;
     strcpy(_temperatureSensor.unit, "--");

@@ -2822,7 +2822,7 @@ void handleGetControllers() {
     
     if (obj && obj->valid && obj->lastUpdate > 0) {
       // Controller object exists - check if enabled
-      enabled = (obj->flags & 0x04) ? true : false;  // Bit 2 (IPC_SENSOR_FLAG_RUNNING) for enabled
+      enabled = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
       ctrl["enabled"] = enabled;
       ctrl["fault"] = (obj->flags & IPC_SENSOR_FLAG_FAULT) ? true : false;
       ctrl["message"] = obj->message;

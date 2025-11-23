@@ -7,14 +7,14 @@ HamiltonArcDO* HamiltonArcDO::_instances[248] = {nullptr};
 HamiltonArcDO::HamiltonArcDO(ModbusDriver_t *modbusDriver, uint8_t slaveID) 
     : _modbusDriver(modbusDriver), _slaveID(slaveID), _doUnitCode(0), _tempUnitCode(0) {
     // Initialise dissolved oxygen sensor object
-    _doSensor.dissolvedOxygen = 0.0;
+    _doSensor.dissolvedOxygen = NAN;  // Initialize as NaN until first valid reading
     _doSensor.fault = false;
     _doSensor.newMessage = false;
     strcpy(_doSensor.unit, "--");
     _doSensor.message[0] = '\0';
     
     // Initialise temperature sensor object
-    _temperatureSensor.temperature = 0.0;
+    _temperatureSensor.temperature = NAN;  // Initialize as NaN until first valid reading
     _temperatureSensor.fault = false;
     _temperatureSensor.newMessage = false;
     strcpy(_temperatureSensor.unit, "--");

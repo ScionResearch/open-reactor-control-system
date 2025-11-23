@@ -12,7 +12,7 @@ AlicatMFC::AlicatMFC(ModbusDriver_t *modbusDriver, uint8_t slaveID)
       _setpointUnitCode(0), _flowUnitCode(0), _pressureUnitCode(0),
       _firstConnect(true) {  // Initialize first connect flag for this instance
     // Initialize flow sensor
-    _flowSensor.flow = 0.0;
+    _flowSensor.flow = NAN;  // Initialize as NaN until first valid reading
     _flowSensor.fault = false;
     _flowSensor.newMessage = false;
     strcpy(_flowSensor.unit, "--");  // Default unit, will be updated from device
@@ -83,22 +83,25 @@ void AlicatMFC::update() {
         return;  // Queue full, try again next time
     }
     
-    // Request setpoint unit (1649, 1 register - uint16)
-    const uint16_t setpointUnitAddress = 1649;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, setpointUnitAddress, &_unitBuffer[0], 1, unitsResponseHandler, _slaveID)) {
-        return;  // Queue full, try again next time
-    }
-    
-    // Request pressure unit (1673, 1 register - uint16)
-    const uint16_t pressureUnitAddress = 1673;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, pressureUnitAddress, &_unitBuffer[1], 1, unitsResponseHandler, _slaveID)) {
-        return;  // Queue full, try again next time
-    }
-    
-    // Request flow unit (1721, 1 register - uint16)
-    const uint16_t flowUnitAddress = 1721;
-    if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, flowUnitAddress, &_unitBuffer[2], 1, unitsResponseHandler, _slaveID)) {
-        return;  // Queue full, try again next time
+    // Only request other registers if not in fault state to reduce queue flooding
+    if (_errCount == 0) {
+        // Request setpoint unit (1649, 1 register - uint16)
+        const uint16_t setpointUnitAddress = 1649;
+        if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, setpointUnitAddress, &_unitBuffer[0], 1, unitsResponseHandler, _slaveID)) {
+            return;  // Queue full, try again next time
+        }
+        
+        // Request pressure unit (1673, 1 register - uint16)
+        const uint16_t pressureUnitAddress = 1673;
+        if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, pressureUnitAddress, &_unitBuffer[1], 1, unitsResponseHandler, _slaveID)) {
+            return;  // Queue full, try again next time
+        }
+        
+        // Request flow unit (1721, 1 register - uint16)
+        const uint16_t flowUnitAddress = 1721;
+        if (!_modbusDriver->modbus.pushRequest(_slaveID, functionCode, flowUnitAddress, &_unitBuffer[2], 1, unitsResponseHandler, _slaveID)) {
+            return;  // Queue full, try again next time
+        }
     }
 }
 

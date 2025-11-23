@@ -246,7 +246,7 @@ private:
     // Unit tracking for each instance
     uint16_t _setpointUnitCode;              ///< Setpoint unit code (for change detection)
     uint16_t _flowUnitCode;                  ///< Flow unit code (for change detection)
-    uint16_t _pressureUnitCode = 0;          ///< Pressure unit code (for change detection)
+    uint16_t _pressureUnitCode;              ///< Pressure unit code (for change detection)
     uint16_t _unitBuffer[3];                 ///< Buffer for unit read requests (3 units x 1 reg each)
     float _flowConversionFactor;             ///< Conversion factor for flow units
     float _adjustedAbsDevFlow = 0.3;         ///< Adjusted acceptable absolute deviation of flow from setpoint (current unit)

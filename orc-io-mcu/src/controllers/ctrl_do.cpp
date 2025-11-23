@@ -47,12 +47,123 @@ void DOController::update() {
     }
     _lastUpdateTime = now;
     
+    // Check fault state even when disabled to allow auto-recovery
+    if (!_control->enabled) {
+        // Set outputs to zero when disabled
+        _control->currentStirrerOutput = 0.0f;
+        _control->currentMFCOutput = 0.0f;
+        if (_control->stirrerEnabled) _applyStirrerOutput(0.0f);
+        if (_control->mfcEnabled) _applyMFCOutput(0.0f);
+        
+        // Read sensor to check if it's working
+        float currentDO = _readDOSensor();
+        if (!isnan(currentDO)) {
+            // Sensor is good - update values
+            _control->currentDO_mg_L = currentDO;
+            _control->error_mg_L = _control->setpoint_mg_L - currentDO;
+            
+            // Also check MFC if enabled
+            bool mfcOk = true;
+            const char* mfcError = nullptr;
+            if (_control->mfcEnabled) {
+                uint8_t mfcIndex = _control->mfcDeviceIndex;
+                if (mfcIndex >= 50 && mfcIndex < 70 && objIndex[mfcIndex].valid) {
+                    DeviceControl_t* mfcDevice = (DeviceControl_t*)objIndex[mfcIndex].obj;
+                    if (mfcDevice) {
+                        if (mfcDevice->fault) {
+                            mfcOk = false;
+                            mfcError = "ERROR - Mass Flow Controller device fault detected";
+                        } else if (!mfcDevice->connected) {
+                            mfcOk = false;
+                            mfcError = "ERROR - Mass Flow Controller device not connected";
+                        }
+                    }
+                }
+            }
+            
+            // Clear fault only if both sensor and MFC (if enabled) are OK
+            if (mfcOk && _control->fault) {
+                _control->fault = false;
+                strcpy(_control->message, "Controller Ready");
+                _control->newMessage = true;
+            } else if (!mfcOk && mfcError) {
+                _control->fault = true;
+                strcpy(_control->message, mfcError);
+                _control->newMessage = true;
+            }
+        } else {
+            // Sensor read failed - check if it's a fault or just not connected yet
+            bool sensorFault = false;
+            for (int i = 70; i < 100; i++) {
+                if (objIndex[i].valid && objIndex[i].type == OBJ_T_DISSOLVED_OXYGEN_SENSOR) {
+                    DissolvedOxygenSensor_t* sensor = (DissolvedOxygenSensor_t*)objIndex[i].obj;
+                    if (sensor && sensor->fault) {
+                        sensorFault = true;
+                    }
+                    break;
+                }
+            }
+            
+            // Also check MFC if enabled (even if sensor is bad, we want to report MFC issues)
+            bool mfcFault = false;
+            bool mfcNotConnected = false;
+            if (_control->mfcEnabled) {
+                uint8_t mfcIndex = _control->mfcDeviceIndex;
+                if (mfcIndex >= 50 && mfcIndex < 70 && objIndex[mfcIndex].valid) {
+                    DeviceControl_t* mfcDevice = (DeviceControl_t*)objIndex[mfcIndex].obj;
+                    if (mfcDevice) {
+                        if (mfcDevice->fault) {
+                            mfcFault = true;
+                        } else if (!mfcDevice->connected) {
+                            mfcNotConnected = true;
+                        }
+                    }
+                }
+            }
+            
+            // Set fault state with appropriate message - prioritize MFC issues if present
+            _control->fault = true;
+            if (mfcFault) {
+                snprintf(_control->message, sizeof(_control->message), "ERROR - Mass Flow Controller device fault detected");
+            } else if (mfcNotConnected) {
+                snprintf(_control->message, sizeof(_control->message), "ERROR - Mass Flow Controller device not connected");
+            } else if (sensorFault) {
+                snprintf(_control->message, sizeof(_control->message), "ERROR - Dissolved Oxygen sensor fault detected");
+            } else {
+                snprintf(_control->message, sizeof(_control->message), "ERROR - Dissolved Oxygen sensor not connected");
+            }
+            _control->newMessage = true;
+        }
+        return;
+    }
+    
     // Read DO sensor
     float currentDO = _readDOSensor();
     if (isnan(currentDO)) {
-        _control->fault = true;
-        snprintf(_control->message, sizeof(_control->message), "DO sensor not found");
-        _control->newMessage = true;
+        // Sensor read failed - check if it's a fault or just not connected yet
+        bool sensorFault = false;
+        for (int i = 70; i < 100; i++) {
+            if (objIndex[i].valid && objIndex[i].type == OBJ_T_DISSOLVED_OXYGEN_SENSOR) {
+                DissolvedOxygenSensor_t* sensor = (DissolvedOxygenSensor_t*)objIndex[i].obj;
+                if (sensor && sensor->fault) {
+                    sensorFault = true;
+                }
+                break;
+            }
+        }
+        
+        // Disable controller and stop outputs
+        if (_control->enabled) {
+            _control->enabled = false;
+            _control->fault = true;
+            if (sensorFault) {
+                snprintf(_control->message, sizeof(_control->message), "ERROR - Dissolved Oxygen sensor fault detected");
+            } else {
+                snprintf(_control->message, sizeof(_control->message), "ERROR - Dissolved Oxygen sensor not connected");
+            }
+            _control->newMessage = true;
+            Serial.printf("[DO CTRL %d] Disabled controller: %s\n", _control->index, _control->message);
+        }
         
         // Stop outputs if sensor lost
         _control->currentStirrerOutput = 0.0f;
@@ -65,17 +176,7 @@ void DOController::update() {
     _control->currentDO_mg_L = currentDO;
     _control->error_mg_L = _control->setpoint_mg_L - currentDO;
     
-    // Only control if enabled
-    if (!_control->enabled) {
-        // Set outputs to zero when disabled
-        _control->currentStirrerOutput = 0.0f;
-        _control->currentMFCOutput = 0.0f;
-        if (_control->stirrerEnabled) _applyStirrerOutput(0.0f);
-        if (_control->mfcEnabled) _applyMFCOutput(0.0f);
-        return;
-    }
-    
-    // Calculate and apply outputs
+    // Calculate and apply outputs (will set/clear fault as appropriate)
     _calculateOutputs();
 }
 
@@ -106,6 +207,20 @@ float DOController::_readDOSensor() {
         if (objIndex[i].valid && objIndex[i].type == OBJ_T_DISSOLVED_OXYGEN_SENSOR) {
             DissolvedOxygenSensor_t* sensor = (DissolvedOxygenSensor_t*)objIndex[i].obj;
             if (sensor) {
+                // Check for sensor fault
+                if (sensor->fault) {
+                    if (_control->enabled) {
+                        Serial.printf("[DO CTRL %d] DO sensor fault detected\n", _control->index);
+                    }
+                    return NAN;
+                }
+                // Check if sensor value is valid (NaN means not yet connected)
+                if (isnan(sensor->dissolvedOxygen)) {
+                    if (_control->enabled) {
+                        Serial.printf("[DO CTRL %d] DO sensor not yet connected\n", _control->index);
+                    }
+                    return NAN;
+                }
                 return sensor->dissolvedOxygen;
             }
         }
@@ -134,12 +249,43 @@ void DOController::_calculateOutputs() {
     }
     
     if (_control->mfcEnabled) {
+        // Check if MFC device is valid and connected before applying output
+        uint8_t mfcIndex = _control->mfcDeviceIndex;
+        if (mfcIndex >= 50 && mfcIndex < 70 && objIndex[mfcIndex].valid) {
+            DeviceControl_t* mfcDevice = (DeviceControl_t*)objIndex[mfcIndex].obj;
+            if (mfcDevice) {
+                // Check for MFC fault or not connected
+                if (mfcDevice->fault || !mfcDevice->connected) {
+                    // MFC is faulted or not connected - disable controller
+                    if (_control->enabled) {
+                        _control->enabled = false;
+                        Serial.printf("[DO CTRL %d] Disabling due to MFC issue\n", _control->index);
+                    }
+                    _control->fault = true;
+                    if (mfcDevice->fault) {
+                        snprintf(_control->message, sizeof(_control->message), "ERROR - Mass Flow Controller device fault detected");
+                    } else {
+                        snprintf(_control->message, sizeof(_control->message), "ERROR - Mass Flow Controller device not connected");
+                    }
+                    _control->newMessage = true;
+                    _control->currentMFCOutput = 0.0f;
+                    _applyMFCOutput(0.0f);
+                    return;
+                }
+            }
+        }
+        
         float mfcOutput = _interpolateProfile(error, false);
         _control->currentMFCOutput = mfcOutput;
         _applyMFCOutput(mfcOutput);
     }
     
-    _control->fault = false;
+    // All checks passed - clear fault
+    if (_control->fault) {
+        _control->fault = false;
+        strcpy(_control->message, "OK");
+        _control->newMessage = true;
+    }
 }
 
 void DOController::_applyStirrerOutput(float output) {
