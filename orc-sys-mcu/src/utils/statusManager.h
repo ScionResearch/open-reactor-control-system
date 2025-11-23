@@ -63,7 +63,9 @@ struct StatusVariables
     bool V20OK;
     bool V5OK;
     bool sdCardOK;
-    bool ipcOK;
+    bool ipcOK;           // Legacy: Overall IPC status
+    bool ipcConnected;    // IPC handshake complete and connection active
+    bool ipcTimeout;      // Transaction timeout detected (warning)
     bool rtcOK;
 
     // Modbus status variables

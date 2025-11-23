@@ -107,10 +107,15 @@ void manageStatus(void)
   
   // Check for status change and update other LED colours accordingly
   if (status.updated) {
-    // System status LED colours
-    if (!status.ipcOK || !status.rtcOK) {
+    // System status LED colours - prioritize IPC status
+    if (!status.ipcConnected) {
+      // IPC connection lost (handshake incomplete) - CRITICAL
       status.LEDcolour[LED_SYSTEM_STATUS] = LED_STATUS_ERROR;
+    } else if (status.ipcTimeout || !status.rtcOK) {
+      // IPC timeout detected or RTC error - WARNING
+      status.LEDcolour[LED_SYSTEM_STATUS] = LED_STATUS_WARNING;
     } else if (!status.psuOK || !status.V20OK || !status.V5OK || !status.sdCardOK) {
+      // Power supply issues - WARNING
       status.LEDcolour[LED_SYSTEM_STATUS] = LED_STATUS_WARNING;
     } else {
       status.LEDcolour[LED_SYSTEM_STATUS] = LED_STATUS_OK;

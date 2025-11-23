@@ -50,7 +50,13 @@ void manageTerminal(void)
           log(LOG_INFO, false, "24V supply %0.1fV status: %s\n", status.Vpsu, status.psuOK ? "OK" : "OUT OF RANGE");
           log(LOG_INFO, false, "20V supply %0.1fV status: %s\n", status.V20, status.V20OK ? "OK" : "OUT OF RANGE");
           log(LOG_INFO, false, "5V supply %0.1fV status: %s\n", status.V5, status.V5OK ? "OK" : "OUT OF RANGE");
-          log(LOG_INFO, false, "IPC status: %s\n", status.ipcOK ? "OK" : "ERROR");
+          if (!status.ipcConnected) {
+            log(LOG_INFO, false, "IPC status: CONNECTION LOST\n");
+          } else if (status.ipcTimeout) {
+            log(LOG_INFO, false, "IPC status: TIMEOUT WARNING\n");
+          } else {
+            log(LOG_INFO, false, "IPC status: OK\n");
+          }
           log(LOG_INFO, false, "RTC status: %s\n", status.rtcOK ? "OK" : "ERROR");
           if (!status.modbusConfigured) {
             log(LOG_INFO, false, "Modbus status: NO DEVICES CONFIGURED\n");

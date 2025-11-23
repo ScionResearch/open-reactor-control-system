@@ -126,6 +126,14 @@ void cleanupStalledTransactions() {
                 pendingTransactions[i].receivedResponseCount,
                 pendingTransactions[i].expectedResponseCount);
             
+            // Set timeout flag for LED status
+            if (!statusLocked) {
+                statusLocked = true;
+                status.ipcTimeout = true;
+                status.updated = true;
+                statusLocked = false;
+            }
+            
             // Remove timed out transaction
             completePendingTransaction(pendingTransactions[i].transactionId);
             // Don't increment i - array was shifted down
@@ -146,6 +154,16 @@ void init_ipcManager(void) {
   objectCache.clear();
   log(LOG_INFO, false, "Object cache cleared\n");
   
+  // Initialize IPC status flags
+  if (!statusLocked) {
+    statusLocked = true;
+    status.ipcOK = false;
+    status.ipcConnected = false;
+    status.ipcTimeout = false;
+    status.updated = true;
+    statusLocked = false;
+  }
+  
   ipc.begin(2000000); // 2 Mbps
   
   // Register message handlers
@@ -156,11 +174,6 @@ void init_ipcManager(void) {
   log(LOG_INFO, false, "IPC master waiting for IO MCU HELLO broadcast\n");
   
   log(LOG_INFO, false, "Inter-processor communication setup complete\n");
-  if (statusLocked) return;
-  statusLocked = true;
-  status.ipcOK = true;
-  status.updated = true;
-  statusLocked = false;
 }
 
 /**
@@ -244,6 +257,16 @@ void manageIPC(void) {
         log(LOG_WARNING, true, "IPC: Connection timeout detected, resetting to disconnected state\n");
         ipcReady = false;
         objectCache.clear();
+        
+        // Update status flags - connection lost
+        if (!statusLocked) {
+          statusLocked = true;
+          status.ipcOK = false;
+          status.ipcConnected = false;
+          status.ipcTimeout = false;  // This is connection loss, not timeout
+          status.updated = true;
+          statusLocked = false;
+        }
         // SYS MCU will wait for next IO MCU HELLO broadcast
       }
     }
@@ -289,6 +312,16 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
     // If all expected responses received, complete the transaction
     if (txn->receivedResponseCount >= txn->expectedResponseCount) {
       completePendingTransaction(sensorData->transactionId);
+      
+      // Clear timeout flag if this was the last pending transaction
+      if (pendingTxnCount == 0 && status.ipcTimeout) {
+        if (!statusLocked) {
+          statusLocked = true;
+          status.ipcTimeout = false;
+          status.updated = true;
+          statusLocked = false;
+        }
+      }
     }
   }
   
@@ -377,6 +410,17 @@ void handleHello(uint8_t messageType, const uint8_t *payload, uint16_t length) {
   
   // Enable sensor polling now that handshake and config push are complete
   ipcReady = true;
+  
+  // Update status flags - connection restored
+  if (!statusLocked) {
+    statusLocked = true;
+    status.ipcOK = true;
+    status.ipcConnected = true;
+    status.ipcTimeout = false;  // Clear any timeout
+    status.updated = true;
+    statusLocked = false;
+  }
+  
   log(LOG_INFO, false, "IPC: Handshake complete, connection established\n");
 }
 
@@ -412,6 +456,17 @@ void handleHelloAck(uint8_t messageType, const uint8_t *payload, uint16_t length
   
   // Enable sensor polling now that IPC is ready
   ipcReady = true;
+  
+  // Update status flags - connection restored
+  if (!statusLocked) {
+    statusLocked = true;
+    status.ipcOK = true;
+    status.ipcConnected = true;
+    status.ipcTimeout = false;  // Clear any timeout
+    status.updated = true;
+    statusLocked = false;
+  }
+  
   log(LOG_INFO, false, "IPC: Sensor polling enabled - system fully operational\n");
 }
 

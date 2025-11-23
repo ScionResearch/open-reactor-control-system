@@ -420,6 +420,8 @@ void handleGetAllStatus() {
   internal["v5OK"] = status.V5OK;
   internal["sdCardOK"] = status.sdCardOK;
   internal["ipcOK"] = status.ipcOK;
+  internal["ipcConnected"] = status.ipcConnected;
+  internal["ipcTimeout"] = status.ipcTimeout;
   internal["rtcOK"] = status.rtcOK;
   internal["mqttConnected"] = status.mqttConnected;
 
@@ -510,8 +512,13 @@ void handleSystemStatus() {
   rtc["time"] = getISO8601Timestamp(100);
 
   // Subsystem status
-  doc["ipc"] = status.ipcOK;
   doc["mqtt"] = status.mqttConnected;
+  
+  // IPC status with detailed state
+  JsonObject ipc = doc.createNestedObject("ipc");
+  ipc["ok"] = status.ipcOK;           // Legacy overall status
+  ipc["connected"] = status.ipcConnected;
+  ipc["timeout"] = status.ipcTimeout;
   
   // Modbus status with detailed state
   JsonObject modbus = doc.createNestedObject("modbus");
