@@ -29,6 +29,13 @@ HamiltonPHProbe::HamiltonPHProbe(ModbusDriver_t *modbusDriver, uint8_t slaveID)
     _controlObj.actualValue = 0.0;
     _controlObj.setpointUnit[0] = '\0';
     _controlObj.message[0] = '\0';
+
+    // Local vars to keep track of connection state
+    _firstConnect = true;   // Mark as first connection
+    _err = false;
+    _errCount = 0;          // Initialize error count
+    _waitCount = 0;         // Initialize wait count
+    _maxErrors = 5;         // Maximum consecutive errors before marking as disconnected(fault)
     
     // Register this instance in the static registry for callback routing
     if (_slaveID > 0 && _slaveID < 248) {
@@ -46,7 +53,7 @@ HamiltonPHProbe::~HamiltonPHProbe() {
 
 // Update method - queues Modbus requests for pH and temperature
 void HamiltonPHProbe::update() {
-    if (_disconnected) {
+    if (_controlObj.fault) {
         if (_waitCount < 10) {
             _waitCount++;
             return;  // Skip this cycle to reduce request rate and reduce queue buildup due to timeouts
@@ -92,80 +99,72 @@ void HamiltonPHProbe::temperatureResponseHandler(bool valid, uint16_t *data, uin
 
 // Instance method to handle pH response
 void HamiltonPHProbe::handlePhResponse(bool valid, uint16_t *data) {
-    if (!valid) {
-        _errCount++;
-        if (_disconnected) return;
-        if (_errCount > 5) {
-            _disconnected = true;
-            _controlObj.fault = true;
-            _controlObj.connected = false;
-            _controlObj.newMessage = true;
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "No response from Hamilton Arc pH sensor (ID %d)", _slaveID);
-            _phSensor.newMessage = true;
-            strncpy(_controlObj.message, _phSensor.message, sizeof(_controlObj.message));
-            return;
-        }
+    // Invalid response, already in fault state - return early
+    if (!valid && _controlObj.fault) return;
+
+    // Invalid response, not yet connected and not yet flagged for error - flag error and set control object state
+    if (!valid && !_err && _firstConnect) {
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc pH sensor (ID %d) has not yet connected", _slaveID);
+        _controlObj.newMessage = true;
+        _err = true;
+        return;
     }
-    if (!valid && !_controlObj.fault) {
-        if (!_firstConnect) {
-            _controlObj.fault = true;
-            _phSensor.fault = true;
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "Invalid or no response from Hamilton Arc pH sensor (ID %d)", _slaveID);
-            _phSensor.newMessage = true;
-        } else {
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "Hamilton Arc pH sensor (ID %d) has not yet connected", _slaveID);
-        }
-        
-        // Update control object with fault status
+
+    // Invalid response, not yet connected - return early
+    if(!valid && _firstConnect) return;
+
+    // Invalid response - update error counter, message and return
+    if(!valid && _errCount < _maxErrors) {
+        _err = true;
+        _errCount++;
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc pH sensor (ID %d) timeout, consecutive errors: %lu", _slaveID, _errCount);
+        _controlObj.newMessage = true;
+        return;
+    }
+
+    // Invalid response, error count > max errors
+    if (!valid) {
+        // Set fault state in control object
+        _controlObj.fault = true;
         _controlObj.connected = false;
         _controlObj.newMessage = true;
-        strncpy(_controlObj.message, _phSensor.message, sizeof(_controlObj.message));
-        
+        // Set fault state in pH object
+        _phSensor.fault = true;
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc pH sensor (ID %d) offline", _slaveID);
+        _controlObj.newMessage = true;
         return;
-    } else if (valid) {
-        if (_controlObj.fault) {
-            _controlObj.fault = false;
-            _errCount = 0;
-            _disconnected = false;
-            snprintf(_phSensor.message, sizeof(_phSensor.message), "Hamilton Arc pH sensor (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
-            _firstConnect = false;
-            _phSensor.newMessage = true;
-            
-            // Update control object with fault status
-            _controlObj.connected = true;
-            _controlObj.newMessage = true;
-            strncpy(_controlObj.message, _phSensor.message, sizeof(_controlObj.message));
-        }
-    
-        // Check for unit change (first 2 registers contain unit code as uint32_t)
-        uint32_t newUnitCode;
-        memcpy(&newUnitCode, &data[0], sizeof(uint32_t));
-        if (newUnitCode != _phUnitCode) {
-            _phUnitCode = newUnitCode;
-            const char* unitStr = getHamiltonUnit(_phUnitCode);
-            strncpy(_phSensor.unit, unitStr, sizeof(_phSensor.unit) - 1);
-            _phSensor.unit[sizeof(_phSensor.unit) - 1] = '\0';  // Ensure null termination
-        }
-        
-        // Extract float from registers (data[2] and data[3] contain the float)
-        float pH;
-        memcpy(&pH, &data[2], sizeof(float));
-        _phSensor.ph = pH;
-        _phSensor.fault = false;
-        
-        // Update device control object
-        _controlObj.setpoint = 0.0f;  // No setpoint for sensor-only device (future pH control will use this)
-        _controlObj.actualValue = _phSensor.ph;  // Current pH reading
-        strncpy(_controlObj.setpointUnit, _phSensor.unit, sizeof(_controlObj.setpointUnit));
-        _controlObj.connected = true;  // Got valid Modbus response
-        _controlObj.fault = _phSensor.fault || _temperatureSensor.fault;
-        _controlObj.newMessage = _phSensor.newMessage || _temperatureSensor.newMessage;
-        if (_phSensor.newMessage) {
-            strncpy(_controlObj.message, _phSensor.message, sizeof(_controlObj.message));
-        } else if (_temperatureSensor.newMessage) {
-            strncpy(_controlObj.message, _temperatureSensor.message, sizeof(_controlObj.message));
-        }
     }
+
+    // Valid response, previous state was error or fault or not yet connected
+    if (valid && (_err || _controlObj.fault || _firstConnect)) {
+        _controlObj.fault = false;
+        _controlObj.connected = true;
+        _phSensor.fault = false;
+        _errCount = 0;
+        _err = false;
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc pH sensor (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
+        _controlObj.newMessage = true;
+        _firstConnect = false;
+    }
+    
+    // Check for unit change (first 2 registers contain unit code as uint32_t)
+    uint32_t newUnitCode;
+    memcpy(&newUnitCode, &data[0], sizeof(uint32_t));
+    if (newUnitCode != _phUnitCode) {
+        _phUnitCode = newUnitCode;
+        const char* unitStr = getHamiltonUnit(_phUnitCode);
+        strncpy(_phSensor.unit, unitStr, sizeof(_phSensor.unit) - 1);
+        _phSensor.unit[sizeof(_phSensor.unit) - 1] = '\0';  // Ensure null termination
+    }
+    
+    // Extract float from registers (data[2] and data[3] contain the float)
+    float pH;
+    memcpy(&pH, &data[2], sizeof(float));
+    _phSensor.ph = pH;
+    
+    // Update device control object
+    _controlObj.actualValue = _phSensor.ph;  // Current pH reading
+    strncpy(_controlObj.setpointUnit, _phSensor.unit, sizeof(_controlObj.setpointUnit));
 }
 
 // Instance method to handle temperature response

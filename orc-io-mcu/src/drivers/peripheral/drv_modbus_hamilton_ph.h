@@ -104,9 +104,10 @@ private:
     DeviceControl_t _controlObj;             ///< Device control object
 
     bool _firstConnect;                      ///< Flag to track first successful connection for this pH probe instance
+    bool _err;                               ///< Flag to indicate the last response was invalid
     uint32_t _errCount;                      ///< Consecutive error count
-    bool _disconnected;                      ///< Disconnection flag (true when no valid consecutive responses after 5 attempts)
     uint8_t _waitCount;                      ///< Wait counter for reduced requests when disconnected
+    uint8_t _maxErrors;                      ///< Maximum consecutive errors before marking as disconnected
     
     // Unit tracking for each instance
     uint32_t _phUnitCode;                    ///< pH unit code (for change detection)

@@ -1545,7 +1545,7 @@ void handleGetDevices() {
     
     if (controlObj && controlObj->valid && controlObj->lastUpdate > 0) {
       // Device has valid control data
-      device["connected"] = !(controlObj->flags & IPC_SENSOR_FLAG_FAULT);  // Connected if no fault
+      device["connected"] = (controlObj->flags & IPC_SENSOR_FLAG_CONNECTED) ? true : false;
       device["fault"] = (controlObj->flags & IPC_SENSOR_FLAG_FAULT) ? true : false;
       device["setpoint"] = controlObj->value;  // Control object value is the setpoint
       device["unit"] = controlObj->unit;

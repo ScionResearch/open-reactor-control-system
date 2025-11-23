@@ -840,7 +840,7 @@ bool ipc_sendSensorData(uint16_t index, uint16_t transactionId) {
             }
             
             if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
-            if (!ctrl->connected) data.flags |= IPC_SENSOR_FLAG_FAULT;  // Treat disconnected as fault
+            if (ctrl->connected) data.flags |= IPC_SENSOR_FLAG_CONNECTED;
             if (ctrl->newMessage) {
                 data.flags |= IPC_SENSOR_FLAG_NEW_MSG;
                 strncpy(data.message, ctrl->message, sizeof(data.message) - 1);

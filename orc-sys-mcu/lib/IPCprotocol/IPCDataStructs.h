@@ -594,9 +594,10 @@ struct IPC_ConfigWrite_t {
 
 // Flag bit definitions for IPC_SensorData_t
 #define IPC_SENSOR_FLAG_FAULT       (1 << 0)
-#define IPC_SENSOR_FLAG_NEW_MSG     (1 << 1)
-#define IPC_SENSOR_FLAG_RUNNING     (1 << 2)  // For motors: indicates running state
-#define IPC_SENSOR_FLAG_DIRECTION   (1 << 3)  // For motors: direction (1=forward, 0=reverse)
+#define IPC_SENSOR_FLAG_CONNECTED   (1 << 1)
+#define IPC_SENSOR_FLAG_NEW_MSG     (1 << 2)
+#define IPC_SENSOR_FLAG_RUNNING     (1 << 3)  // For motors: indicates running state
+#define IPC_SENSOR_FLAG_DIRECTION   (1 << 4)  // For motors: direction (1=forward, 0=reverse)
 
 // Flag bit definitions for IPC_IndexEntry_t
 #define IPC_INDEX_FLAG_VALID        (1 << 0)
