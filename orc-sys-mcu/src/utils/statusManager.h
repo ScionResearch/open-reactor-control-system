@@ -67,8 +67,9 @@ struct StatusVariables
     bool rtcOK;
 
     // Modbus status variables
-    bool modbusConnected;
-    bool modbusBusy;
+    bool modbusConfigured;  // At least one device is configured on one of the ports
+    bool modbusConnected;   // All configured devices have connected
+    bool modbusFault;       // A modbus device is in Fault state
 
     // Webserver status variables
     bool webserverUp;

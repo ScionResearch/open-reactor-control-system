@@ -52,7 +52,15 @@ void manageTerminal(void)
           log(LOG_INFO, false, "5V supply %0.1fV status: %s\n", status.V5, status.V5OK ? "OK" : "OUT OF RANGE");
           log(LOG_INFO, false, "IPC status: %s\n", status.ipcOK ? "OK" : "ERROR");
           log(LOG_INFO, false, "RTC status: %s\n", status.rtcOK ? "OK" : "ERROR");
-          log(LOG_INFO, false, "Modbus status: %s\n", status.modbusConnected ? "CONNECTED" : "DOWN");
+          if (!status.modbusConfigured) {
+            log(LOG_INFO, false, "Modbus status: NO DEVICES CONFIGURED\n");
+          } else if (status.modbusFault) {
+            log(LOG_INFO, false, "Modbus status: FAULT\n");
+          } else if (status.modbusConnected) {
+            log(LOG_INFO, false, "Modbus status: ALL DEVICES CONNECTED\n");
+          } else {
+            log(LOG_INFO, false, "Modbus status: WAITING FOR CONNECTION\n");
+          }
           log(LOG_INFO, false, "Webserver status: %s\n", status.webserverUp ? "OK" : "DOWN");
           log(LOG_INFO, false, "MQTT status: %s\n", status.mqttConnected ? "CONNECTED" : "DOWN");
           statusLocked = false;

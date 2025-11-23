@@ -512,7 +512,12 @@ void handleSystemStatus() {
   // Subsystem status
   doc["ipc"] = status.ipcOK;
   doc["mqtt"] = status.mqttConnected;
-  doc["modbus"] = status.modbusConnected;
+  
+  // Modbus status with detailed state
+  JsonObject modbus = doc.createNestedObject("modbus");
+  modbus["configured"] = status.modbusConfigured;
+  modbus["connected"] = status.modbusConnected;
+  modbus["fault"] = status.modbusFault;
 
   // SD card info
   JsonObject sd = doc.createNestedObject("sd");

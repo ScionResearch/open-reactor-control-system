@@ -112,8 +112,9 @@ float get5vOK();
 float getSdCardOK();
 float getIpcOK();
 float getRtcOK();
+float getModbusConfigured();
 float getModbusConnected();
-float getModbusBusy();
+float getModbusFault();
 float getWebserverUp();
 float getWebserverBusy();
 float getMqttConnected();
@@ -129,8 +130,9 @@ MqttTopicEntry mqttTopics[] = {
     {"status/sdcard_ok", getSdCardOK, "SD card OK status (1=OK, 0=Fault)"},
     {"status/ipc_ok", getIpcOK, "IPC OK status (1=OK, 0=Fault)"},
     {"status/rtc_ok", getRtcOK, "RTC OK status (1=OK, 0=Fault)"},
-    {"status/modbus_connected", getModbusConnected, "Modbus connected (1=Connected, 0=Not)"},
-    {"status/modbus_busy", getModbusBusy, "Modbus busy (1=Busy, 0=Idle)"},
+    {"status/modbus_configured", getModbusConfigured, "Modbus configured (1=Devices configured, 0=None)"},
+    {"status/modbus_connected", getModbusConnected, "Modbus connected (1=All connected, 0=Not)"},
+    {"status/modbus_fault", getModbusFault, "Modbus fault (1=Fault, 0=OK)"},
     {"status/webserver_up", getWebserverUp, "Webserver up (1=Up, 0=Down)"},
     {"status/webserver_busy", getWebserverBusy, "Webserver busy (1=Busy, 0=Idle)"},
     {"status/mqtt_connected", getMqttConnected, "MQTT connected (1=Connected, 0=Not)"},
@@ -149,8 +151,9 @@ float get5vOK() { return status.V5OK ? 1.0f : 0.0f; }
 float getSdCardOK() { return status.sdCardOK ? 1.0f : 0.0f; }
 float getIpcOK() { return status.ipcOK ? 1.0f : 0.0f; }
 float getRtcOK() { return status.rtcOK ? 1.0f : 0.0f; }
+float getModbusConfigured() { return status.modbusConfigured ? 1.0f : 0.0f; }
 float getModbusConnected() { return status.modbusConnected ? 1.0f : 0.0f; }
-float getModbusBusy() { return status.modbusBusy ? 1.0f : 0.0f; }
+float getModbusFault() { return status.modbusFault ? 1.0f : 0.0f; }
 float getWebserverUp() { return status.webserverUp ? 1.0f : 0.0f; }
 float getWebserverBusy() { return status.webserverBusy ? 1.0f : 0.0f; }
 float getMqttConnected() { return status.mqttConnected ? 1.0f : 0.0f; }
