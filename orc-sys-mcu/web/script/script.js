@@ -2156,7 +2156,7 @@ function renderDeviceSensors(deviceData) {
                     <span class="input-name">${sensor.n || `Device Sensor ${sensor.i}`}</span>
                     <span class="sensor-type-badge">${getTypeName(sensor.t)}</span>
                     <span class="input-value-inline">
-                        <span class="value-large">${sensor.v.toFixed(2)}</span>
+                        <span class="value-large">${(sensor.v != null && !isNaN(sensor.v)) ? sensor.v.toFixed(2) : '--'}</span>
                         <span class="value-unit">${sensor.u}</span>
                     </span>
                 </div>
@@ -4467,7 +4467,7 @@ function updateDeviceControlStatus(devices) {
         // Update connected status (only for non-analogue devices)
         const statusDiv = card.querySelector('.device-status');
         if (statusDiv && device.interfaceType !== 1) {  // Skip analogue devices
-            const isConnected = device.connected == false;  // Default to false if not specified
+            const isConnected = device.connected === true;  // Only true if explicitly connected
             statusDiv.className = `device-status ${isConnected ? 'status-online' : 'status-offline'}`;
             statusDiv.textContent = isConnected ? 'Connected' : 'Disconnected';
             
@@ -4500,9 +4500,22 @@ function updateDeviceControlStatus(devices) {
             actualValue.textContent = `${device.actualValue.toFixed(2)} ${device.unit || ''}`;
         }
         
-        if (message && device.message) {
-            message.textContent = device.message;
-            message.style.display = device.message ? 'block' : 'none';
+        if (message) {
+            if (device.message) {
+                message.textContent = device.message;
+                message.style.display = 'block';
+                
+                // Update message class based on device state
+                if (device.fault) {
+                    message.className = 'device-message device-message-fault';
+                } else if (device.connected) {
+                    message.className = 'device-message device-message-connected';
+                } else {
+                    message.className = 'device-message device-message-disconnected';
+                }
+            } else {
+                message.style.display = 'none';
+            }
         }
     });
 }
@@ -4725,7 +4738,7 @@ function createDeviceCard(device) {
                 </div>
             ` : ''}
             
-            <div class="device-message" style="display: none;"></div>
+            <div class="device-message device-message-disconnected" style="display: none;"></div>
         </div>
     `;
     
@@ -5605,15 +5618,23 @@ function updateControllerCard(ctrl) {
         }
     }
     
-    // Update message (always present, just toggle visibility to prevent height changes)
+    // Update message with appropriate styling based on controller state
     const infoMessage = card.querySelector(`#ctrl-message-${ctrl.index}`);
     if (infoMessage) {
         if (ctrl.message) {
             infoMessage.textContent = ctrl.message;
-            infoMessage.style.visibility = 'visible';
+            infoMessage.style.display = 'block';
+            
+            // Update message class based on state
+            if (ctrl.fault) {
+                infoMessage.className = 'controller-message controller-message-fault';
+            } else if (ctrl.enabled) {
+                infoMessage.className = 'controller-message controller-message-enabled';
+            } else {
+                infoMessage.className = 'controller-message controller-message-disabled';
+            }
         } else {
-            infoMessage.innerHTML = '&nbsp;';  // Non-breaking space to maintain height
-            infoMessage.style.visibility = 'hidden';
+            infoMessage.style.display = 'none';
         }
     }
 }
@@ -5732,8 +5753,6 @@ function createControllerCard(ctrl) {
         </div>
         ` : ''}
         
-        ${ctrl.message ? `<div class="info-message">${ctrl.message}</div>` : ''}
-        
         <div class="controller-setpoint-control">
             <label>Setpoint:</label>
             <input type="number" 
@@ -5801,8 +5820,10 @@ function createControllerCard(ctrl) {
             ` : ''}
         </div>
         
-        <div class="info-message" id="ctrl-message-${ctrl.index}" style="visibility: ${ctrl.message ? 'visible' : 'hidden'}; min-height: 1.2em;">
-            ${ctrl.message || '&nbsp;'}
+        <div class="controller-message ${ctrl.fault ? 'controller-message-fault' : ctrl.enabled ? 'controller-message-enabled' : 'controller-message-disabled'}" 
+             id="ctrl-message-${ctrl.index}" 
+             style="display: ${ctrl.message ? 'block' : 'none'};">
+            ${ctrl.message || ''}
         </div>
     `;
     
@@ -8055,6 +8076,13 @@ async function updateControllerSetpoint(index) {
 }
 
 async function enableController(index) {
+    // Check if controller is in fault state
+    const ctrl = controllersData.find(c => c.index === index);
+    if (ctrl && ctrl.fault) {
+        showToast('error', 'Cannot Enable', `Controller is in fault state: ${ctrl.message || 'Unknown fault'}`);
+        return;
+    }
+    
     // Determine endpoint based on controller type
     let endpoint;
     if (index === 43) {

@@ -129,8 +129,9 @@ void HamiltonArcDO::handleDOResponse(bool valid, uint16_t *data) {
         _controlObj.fault = true;
         _controlObj.connected = false;
         _controlObj.newMessage = true;
-        // Set fault state in DO object
+        // Set fault state in DO sensor objects
         _doSensor.fault = true;
+        _temperatureSensor.fault = true;
         snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc DO sensor (ID %d) offline", _slaveID);
         _controlObj.newMessage = true;
         return;

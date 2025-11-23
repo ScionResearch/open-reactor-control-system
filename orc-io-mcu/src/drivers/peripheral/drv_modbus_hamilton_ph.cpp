@@ -129,8 +129,9 @@ void HamiltonPHProbe::handlePhResponse(bool valid, uint16_t *data) {
         _controlObj.fault = true;
         _controlObj.connected = false;
         _controlObj.newMessage = true;
-        // Set fault state in pH object
+        // Set fault state in pH sensor objects
         _phSensor.fault = true;
+        _temperatureSensor.fault = true;
         snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc pH sensor (ID %d) offline", _slaveID);
         _controlObj.newMessage = true;
         return;
