@@ -41,6 +41,13 @@ AlicatMFC::AlicatMFC(ModbusDriver_t *modbusDriver, uint8_t slaveID)
     _controlObj.actualValue = 0.0;
     _controlObj.setpointUnit[0] = '\0';
     _controlObj.message[0] = '\0';
+
+    // Local vars to keep track of connection state
+    _firstConnect = true;   // Mark as first connection
+    _err = false;
+    _errCount = 0;          // Initialize error count
+    _waitCount = 0;         // Initialize wait count
+    _maxErrors = 5;         // Maximum consecutive errors before marking as disconnected(fault)
     
     // Register this instance in the static registry for callback routing
     if (_slaveID > 0 && _slaveID < 248) {
@@ -58,7 +65,7 @@ AlicatMFC::~AlicatMFC() {
 
 // Update method - queues Modbus request for MFC data
 void AlicatMFC::update() {
-    if (_disconnected) {
+    if (_controlObj.fault) {
         if (_waitCount < 10) {
             _waitCount++;
             return;  // Skip this cycle to reduce request rate and reduce queue buildup due to timeouts
@@ -136,109 +143,104 @@ void AlicatMFC::mfcWriteResponseHandler(bool valid, uint16_t *data, uint32_t req
 
 // Instance method to handle MFC data response
 void AlicatMFC::handleMfcResponse(bool valid, uint16_t *data) {
-    if (!valid) {
-        _errCount++;
-        if (_disconnected) return;
-        if (_errCount > 5) {
-            _disconnected = true;
-            _fault = true;
-            _controlObj.fault = true;
-            _controlObj.connected = false;
-            _controlObj.newMessage = true;
-            snprintf(_message, sizeof(_message), "No response from Alicat MFC (ID %d)", _slaveID);
-            _newMessage = true;
-            strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
-            Serial.printf("[MFC] No response from slave ID %d, marking as disconnected\n", _slaveID);
-            return;
-        }
-    }
-    if (!valid && !_fault) {
-        if (!_firstConnect) {
-            _fault = true;
-            snprintf(_message, sizeof(_message), "Invalid or no response from Alicat MFC (ID %d)", _slaveID);
-        } else {
-            snprintf(_message, sizeof(_message), "Alicat MFC (ID %d) has not yet connected", _slaveID);
-        }
-        _newMessage = true;
-        
-        // Update control object with fault status
-        _controlObj.connected = false;  // Modbus communication failed
-        _controlObj.fault = _fault;
-        _flowSensor.fault = _fault;
-        _pressureSensor.fault = _fault;
-        
+    // Invalid response, already in fault state - return early
+    if (!valid && _controlObj.fault) return;
+
+    // Invalid response, not yet connected and not yet flagged for error - flag error and set control object state
+    if (!valid && !_err && _firstConnect) {
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Alicat MFC (ID %d) has not yet connected", _slaveID);
         _controlObj.newMessage = true;
-        strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
+        _err = true;
+        return;
+    }
 
-        // Debug logging
-        Serial.printf("[MFC] Offline: %s\n", _message);
-    } else if (valid) {
-        if (_fault || _firstConnect) {   // If we just recovered from a fault or this is the first valid response
-            _fault = false;
-            _errCount = 0;
-            _disconnected = false;
-            _newMessage = true;
-            snprintf(_message, sizeof(_message), "Alicat MFC (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
-            writeSetpoint(_setpoint, false);
-            _firstConnect = false;
+    // Invalid response, not yet connected - return early
+    if(!valid && _firstConnect) return;
 
-            // Update control object with fault status
-            _controlObj.connected = true;  // Modbus communication failed
-            _controlObj.fault = false;
-            _controlObj.newMessage = true;
-            strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
+    // Invalid response - update error counter, message and return
+    if(!valid && _errCount < _maxErrors) {
+        _err = true;
+        _errCount++;
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Alicat MFC (ID %d) timeout, consecutive errors: %lu", _slaveID, _errCount);
+        _controlObj.newMessage = true;
+        return;
+    }
 
-            // Debug logging
-            Serial.printf("[MFC] Recovered from fault: %s\n", _message);
-        } else _newMessage = false;
+    // Invalid response, error count > max errors
+    if (!valid) {
+        // Set fault state in control object
+        _controlObj.fault = true;
+        _controlObj.connected = false;
+        _controlObj.newMessage = true;
+        // Set fault state in sensor objects
+        _flowSensor.fault = true;
+        _pressureSensor.fault = true;
+        _fault = true;
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Alicat MFC (ID %d) offline", _slaveID);
+        _controlObj.newMessage = true;
+        return;
+    }
 
-        /************************************** 
-         * Data from registers 1349-1364
-         *  1349: Setpoint (float)
-         *  1351: Valve Drive (float)
-         *  1353: Pressure (float)
-         *  1355: Secondary Pressure (float)
-         *  1357: Barometric Pressure (float)
-         *  1359: Temperature (float)
-         *  1361: Volumetric Flow (float)
-         *  1363: Mass Flow (float)
-        **************************************/
-        
-        // Extract data using swapped uint16 to float conversion
-        _setpoint = _modbusDriver->modbus.swappedUint16toFloat32(&data[0]);
-        _pressureSensor.pressure = _modbusDriver->modbus.swappedUint16toFloat32(&data[4]);
-        _flowSensor.flow = _modbusDriver->modbus.swappedUint16toFloat32(&data[12]);
-        
-        // Clear fault flags on successful read
+    // Valid response, previous state was error or fault or not yet connected
+    if (valid && (_err || _controlObj.fault || _firstConnect)) {
+        _controlObj.fault = false;
+        _controlObj.connected = true;
         _flowSensor.fault = false;
         _pressureSensor.fault = false;
-        
-        // Update device control object
-        _controlObj.setpoint = _setpoint;
-        _controlObj.actualValue = _flowSensor.flow;  // Primary feedback is flow
-        strncpy(_controlObj.setpointUnit, _setpointUnit, sizeof(_controlObj.setpointUnit));
-        _controlObj.connected = true;  // Got valid Modbus response
+        _fault = false;
+        _errCount = 0;
+        _err = false;
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Alicat MFC (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
+        _controlObj.newMessage = true;
+        _newMessage = true;
+        writeSetpoint(_setpoint, false);
+        _firstConnect = false;
+    } else {
+        _newMessage = false;
+    }
+    
+    /************************************** 
+     * Data from registers 1349-1364
+     *  1349: Setpoint (float)
+     *  1351: Valve Drive (float)
+     *  1353: Pressure (float)
+     *  1355: Secondary Pressure (float)
+     *  1357: Barometric Pressure (float)
+     *  1359: Temperature (float)
+     *  1361: Volumetric Flow (float)
+     *  1363: Mass Flow (float)
+    **************************************/
+    
+    // Extract data using swapped uint16 to float conversion
+    _setpoint = _modbusDriver->modbus.swappedUint16toFloat32(&data[0]);
+    _pressureSensor.pressure = _modbusDriver->modbus.swappedUint16toFloat32(&data[4]);
+    _flowSensor.flow = _modbusDriver->modbus.swappedUint16toFloat32(&data[12]);
+    
+    // Update device control object
+    _controlObj.setpoint = _setpoint;
+    _controlObj.actualValue = _flowSensor.flow;  // Primary feedback is flow
+    strncpy(_controlObj.setpointUnit, _setpointUnit, sizeof(_controlObj.setpointUnit));
 
-        // If we just wrote a setpoint, validate it
-        if (_newSetpoint) {
-            if (fabs(_setpoint - _pendingSetpoint) > _adjustedAbsDevFlow) {
-                _fault = true;
-                snprintf(_message, sizeof(_message), 
-                        "Setpoint write validation failed for MFC (ID %d): expected %0.4f, got %0.4f", 
-                        _slaveID, _pendingSetpoint, _setpoint);
-                _newMessage = true;
-            } else {
-                _fault = false;  // Clear fault flag on successful validation
-                snprintf(_message, sizeof(_message), 
-                        "Setpoint write successful for MFC (ID %d): setpoint is now %0.4f", 
-                        _slaveID, _setpoint);
-                _newMessage = true;
-            }
-            _newSetpoint = false;
-            _controlObj.fault = _fault;
-            _controlObj.newMessage = true;
-            strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
+    // If we just wrote a setpoint, validate it
+    if (_newSetpoint) {
+        if (fabs(_setpoint - _pendingSetpoint) > _adjustedAbsDevFlow) {
+            _fault = true;
+            _controlObj.fault = true;
+            snprintf(_message, sizeof(_message), 
+                    "Setpoint write validation failed for MFC (ID %d): expected %0.4f, got %0.4f", 
+                    _slaveID, _pendingSetpoint, _setpoint);
+            _newMessage = true;
+        } else {
+            _fault = false;  // Clear fault flag on successful validation
+            _controlObj.fault = false;
+            snprintf(_message, sizeof(_message), 
+                    "Setpoint write successful for MFC (ID %d): setpoint is now %0.4f", 
+                    _slaveID, _setpoint);
+            _newMessage = true;
         }
+        _newSetpoint = false;
+        _controlObj.newMessage = true;
+        strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
     }
 }
 

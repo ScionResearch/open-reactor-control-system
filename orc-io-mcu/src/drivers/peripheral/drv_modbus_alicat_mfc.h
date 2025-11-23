@@ -228,9 +228,12 @@ private:
     bool _fault;                             ///< Fault flag
     bool _newMessage;                        ///< New message flag
     char _message[100];                      ///< Message buffer
+    
+    bool _firstConnect;                      ///< Flag to track first successful connection for this MFC instance
+    bool _err;                               ///< Flag to indicate the last response was invalid
     uint32_t _errCount;                      ///< Consecutive error count
-    bool _disconnected;                      ///< Disconnection flag (true when no valid consecutive responses after 5 attempts)
     uint8_t _waitCount;                      ///< Wait counter for reduced requests when disconnected
+    uint8_t _maxErrors;                      ///< Maximum consecutive errors before marking as disconnected
     
     uint16_t _dataBuffer[16];                ///< Data buffer for Modbus transactions
     uint16_t _writeBuffer[2];                ///< Write buffer for setpoint writes
@@ -243,13 +246,10 @@ private:
     // Unit tracking for each instance
     uint16_t _setpointUnitCode;              ///< Setpoint unit code (for change detection)
     uint16_t _flowUnitCode;                  ///< Flow unit code (for change detection)
-    uint16_t _pressureUnitCode;              ///< Pressure unit code (for change detection)
+    uint16_t _pressureUnitCode = 0;          ///< Pressure unit code (for change detection)
     uint16_t _unitBuffer[3];                 ///< Buffer for unit read requests (3 units x 1 reg each)
     float _flowConversionFactor;             ///< Conversion factor for flow units
     float _adjustedAbsDevFlow = 0.3;         ///< Adjusted acceptable absolute deviation of flow from setpoint (current unit)
-    
-    // First connection tracking (per instance)
-    bool _firstConnect;                      ///< Flag to track first successful connection for this MFC instance
     
     // Static instance registry for callback routing (indexed by slave ID)
     static AlicatMFC* _instances[248];       ///< Array of MFC instances indexed by slave ID (1-247)

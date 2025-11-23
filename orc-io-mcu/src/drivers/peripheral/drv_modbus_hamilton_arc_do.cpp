@@ -1,19 +1,19 @@
 #include "drv_modbus_hamilton_arc_do.h"
 
-// Initialize static instance registry
+// Initialise static instance registry
 HamiltonArcDO* HamiltonArcDO::_instances[248] = {nullptr};
 
 // Constructor
 HamiltonArcDO::HamiltonArcDO(ModbusDriver_t *modbusDriver, uint8_t slaveID) 
     : _modbusDriver(modbusDriver), _slaveID(slaveID), _doUnitCode(0), _tempUnitCode(0) {
-    // Initialize dissolved oxygen sensor object
+    // Initialise dissolved oxygen sensor object
     _doSensor.dissolvedOxygen = 0.0;
     _doSensor.fault = false;
     _doSensor.newMessage = false;
     strcpy(_doSensor.unit, "--");
     _doSensor.message[0] = '\0';
     
-    // Initialize temperature sensor object
+    // Initialise temperature sensor object
     _temperatureSensor.temperature = 0.0;
     _temperatureSensor.fault = false;
     _temperatureSensor.newMessage = false;
@@ -30,6 +30,13 @@ HamiltonArcDO::HamiltonArcDO(ModbusDriver_t *modbusDriver, uint8_t slaveID)
     _controlObj.actualValue = 0.0;
     _controlObj.setpointUnit[0] = '\0';
     _controlObj.message[0] = '\0';
+
+    // Local vars to keep track of connection state
+    _firstConnect = true;   // Mark as first connection
+    _err = false;
+    _errCount = 0;          // Initialise error count
+    _waitCount = 0;         // Initialise wait count
+    _maxErrors = 5;         // Maximum consecutive errors before marking as disconnected(fault)
     
     // Register this instance in the static registry for callback routing
     if (_slaveID > 0 && _slaveID < 248) {
@@ -47,7 +54,7 @@ HamiltonArcDO::~HamiltonArcDO() {
 
 // Update method - queues Modbus requests for DO and temperature
 void HamiltonArcDO::update() {
-    if (_disconnected) {
+    if (_controlObj.fault) {
         if (_waitCount < 10) {
             _waitCount++;
             return;  // Skip this cycle to reduce request rate and reduce queue buildup due to timeouts
@@ -57,6 +64,7 @@ void HamiltonArcDO::update() {
     }
 
     const uint8_t functionCode = 3;  // Read holding registers    
+
     // Request DO data (register HAMILTON_PMC_1_ADDR, HAMILTON_PMC_REG_SIZE registers)
     // Use slave ID as requestId for callback routing
     uint16_t doAddress = HAMILTON_PMC_1_ADDR;
@@ -92,83 +100,78 @@ void HamiltonArcDO::temperatureResponseHandler(bool valid, uint16_t *data, uint3
 
 // Instance method to handle DO response
 void HamiltonArcDO::handleDOResponse(bool valid, uint16_t *data) {
-    if (!valid) {
-        _errCount++;
-        if (_disconnected) return;
-        if (_errCount > 5) {
-            _disconnected = true;
-            _controlObj.fault = true;
-            _controlObj.connected = false;
-            _controlObj.newMessage = true;
-            snprintf(_doSensor.message, sizeof(_doSensor.message), "No response from Hamilton Arc DO sensor (ID %d)", _slaveID);
-            _doSensor.newMessage = true;
-            strncpy(_controlObj.message, _doSensor.message, sizeof(_controlObj.message));
-            return;
-        }
+    // Invalid response, already in fault state - return early
+    if (!valid && _controlObj.fault) return;
+
+    // Invalid response, not yet connected and not yet flagged for error - flag error and set control object state
+    if (!valid && !_err && _firstConnect) {
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc DO sensor (ID %d) has not yet connected", _slaveID);
+        _controlObj.newMessage = true;
+        _err = true;
+        return;
     }
-    if (!valid && !_controlObj.fault) {
-        if (!_firstConnect) {
-            _controlObj.fault = true;
-            _doSensor.fault = true;
-            snprintf(_doSensor.message, sizeof(_doSensor.message), "Invalid or no response from Hamilton Arc DO sensor (ID %d)", _slaveID);
-            _doSensor.newMessage = true;
-        } else {
-            snprintf(_doSensor.message, sizeof(_doSensor.message), "Hamilton Arc DO sensor (ID %d) has not yet connected", _slaveID);
-        }
-        
-        // Update control object with fault status
+
+    // Invalid response, not yet connected - return early
+    if(!valid && _firstConnect) return;
+
+    // Invalid response - update error counter, message and return
+    if(!valid && _errCount < _maxErrors) {
+        _err = true;
+        _errCount++;
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc DO sensor (ID %d) timeout, consecutive errors: %lu", _slaveID, _errCount);
+        _controlObj.newMessage = true;
+        return;
+    }
+
+    // Invalid response, error count > max errors
+    if (!valid) {
+        // Set fault state in control object
+        _controlObj.fault = true;
         _controlObj.connected = false;
         _controlObj.newMessage = true;
-        strncpy(_controlObj.message, _doSensor.message, sizeof(_controlObj.message));
+        // Set fault state in DO object
+        _doSensor.fault = true;
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc DO sensor (ID %d) offline", _slaveID);
+        _controlObj.newMessage = true;
         return;
-    } else if (valid) {
-        if (_controlObj.fault) {
-            _controlObj.fault = false;
-            _errCount = 0;
-            _disconnected = false;
-            snprintf(_doSensor.message, sizeof(_doSensor.message), "Hamilton Arc DO sensor (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
-            _firstConnect = false;
-            _doSensor.newMessage = true;
-            
-            // Update control object with fault status
-            _controlObj.connected = true;
-            _controlObj.newMessage = true;
-            strncpy(_controlObj.message, _doSensor.message, sizeof(_controlObj.message));
-        }
-    
-        // Check for unit change (first 2 registers contain unit code as uint32_t)
-        uint32_t newUnitCode;
-        memcpy(&newUnitCode, &data[0], sizeof(uint32_t));
-        if (newUnitCode != _doUnitCode) {
-            _doUnitCode = newUnitCode;
-            const char* unitStr = getHamiltonUnit(_doUnitCode);
-            strncpy(_doSensor.unit, unitStr, sizeof(_doSensor.unit) - 1);
-            _doSensor.unit[sizeof(_doSensor.unit) - 1] = '\0';  // Ensure null termination
-        }
-        
-        // Extract float from registers (data[2] and data[3] contain the float)
-        float dissolvedOxygen;
-        memcpy(&dissolvedOxygen, &data[2], sizeof(float));
-        _doSensor.dissolvedOxygen = dissolvedOxygen;
-        _doSensor.fault = false;
-        
-        // Update device control object
-        _controlObj.setpoint = 0.0f;  // No setpoint for sensor-only device (future pH control will use this)
-        _controlObj.actualValue = _doSensor.dissolvedOxygen;  // Current pH reading
-        strncpy(_controlObj.setpointUnit, _doSensor.unit, sizeof(_controlObj.setpointUnit));
-        _controlObj.connected = true;  // Got valid Modbus response
-        _controlObj.fault = _doSensor.fault || _temperatureSensor.fault;
-        _controlObj.newMessage = _doSensor.newMessage || _temperatureSensor.newMessage;
-        if (_doSensor.newMessage) {
-            strncpy(_controlObj.message, _doSensor.message, sizeof(_controlObj.message));
-        } else if (_temperatureSensor.newMessage) {
-            strncpy(_controlObj.message, _temperatureSensor.message, sizeof(_controlObj.message));
-        }
     }
+
+    // Valid response, previous state was error or fault or not yet connected
+    if (valid && (_err || _controlObj.fault || _firstConnect)) {
+        _controlObj.fault = false;
+        _controlObj.connected = true;
+        _doSensor.fault = false;
+        _errCount = 0;
+        _err = false;
+        snprintf(_controlObj.message, sizeof(_controlObj.message), "Hamilton Arc DO sensor (ID %d) communication %s", _slaveID, _firstConnect ? "established" : "restored");
+        _controlObj.newMessage = true;
+        _firstConnect = false;
+    }
+    
+    // Check for unit change (first 2 registers contain unit code as uint32_t)
+    uint32_t newUnitCode;
+    memcpy(&newUnitCode, &data[0], sizeof(uint32_t));
+    if (newUnitCode != _doUnitCode) {
+        _doUnitCode = newUnitCode;
+        const char* unitStr = getHamiltonUnit(_doUnitCode);
+        strncpy(_doSensor.unit, unitStr, sizeof(_doSensor.unit) - 1);
+        _doSensor.unit[sizeof(_doSensor.unit) - 1] = '\0';  // Ensure null termination
+    }
+    
+    // Extract float from registers (data[2] and data[3] contain the float)
+    float DO;
+    memcpy(&DO, &data[2], sizeof(float));
+    _doSensor.dissolvedOxygen = DO;
+    
+    // Update device control object
+    _controlObj.actualValue = _doSensor.dissolvedOxygen;  // Current DO reading
+    strncpy(_controlObj.setpointUnit, _doSensor.unit, sizeof(_controlObj.setpointUnit));
 }
 
 // Instance method to handle temperature response
 void HamiltonArcDO::handleTemperatureResponse(bool valid, uint16_t *data) {
+    if (_firstConnect) return;  // Do nothing if main measurment has not yet completed first connection
+    
     if (!valid) {
         _temperatureSensor.fault = true;
         snprintf(_temperatureSensor.message, sizeof(_temperatureSensor.message), 

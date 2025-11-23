@@ -4467,7 +4467,7 @@ function updateDeviceControlStatus(devices) {
         // Update connected status (only for non-analogue devices)
         const statusDiv = card.querySelector('.device-status');
         if (statusDiv && device.interfaceType !== 1) {  // Skip analogue devices
-            const isConnected = device.connected !== false;  // Default to true if not specified
+            const isConnected = device.connected == false;  // Default to false if not specified
             statusDiv.className = `device-status ${isConnected ? 'status-online' : 'status-offline'}`;
             statusDiv.textContent = isConnected ? 'Connected' : 'Disconnected';
             

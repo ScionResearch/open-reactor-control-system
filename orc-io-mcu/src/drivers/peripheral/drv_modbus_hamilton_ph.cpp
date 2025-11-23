@@ -13,6 +13,7 @@ HamiltonPHProbe::HamiltonPHProbe(ModbusDriver_t *modbusDriver, uint8_t slaveID)
     strcpy(_phSensor.unit, "--");
     _phSensor.message[0] = '\0';
     
+    // Initialise temperature sensor object
     _temperatureSensor.temperature = 0.0;
     _temperatureSensor.fault = false;
     _temperatureSensor.newMessage = false;
