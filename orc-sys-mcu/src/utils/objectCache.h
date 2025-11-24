@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include "../lib/IPCprotocol/IPCProtocol.h"
 
-#define MAX_CACHED_OBJECTS 80
+#define MAX_CACHED_OBJECTS 90  // Support indices 0-89 (sensors, actuators, controllers, devices)
 #define CACHE_STALE_TIME_MS 5000  // 5 seconds
 
 /**

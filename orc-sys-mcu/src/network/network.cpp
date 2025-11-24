@@ -1,15 +1,4 @@
 #include "network.h"
-#include "mqttManager.h"
-#include "../sys_init.h"
-#include "../utils/statusManager.h"
-#include "../utils/timeManager.h"
-#include "../utils/ipcManager.h"
-#include "../storage/sdManager.h"
-#include "../controls/controlManager.h"
-#include "../utils/objectCache.h"
-#include "../config/ioConfig.h"
-
-#include <ArduinoJson.h>
 
 // Global variables
 NetworkConfig networkConfig;

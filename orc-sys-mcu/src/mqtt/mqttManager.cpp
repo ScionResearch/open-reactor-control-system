@@ -8,18 +8,7 @@
  *  - Remain responsive on Core 0 alongside the Web server
  */
 
-#include "../utils/timeManager.h" // getISO8601Timestamp
-#include "../utils/logger.h"
 #include "mqttManager.h"
-#include "MqttTopicRegistry.h"
-#include "network.h" // for NetworkConfig and networkConfig
-#include "../utils/statusManager.h" // for status and statusLocked
-#include <Arduino.h>
-#include <ArduinoJson.h>
-#include <PubSubClient.h>
-#include <cstring>   // for strlen
-#include <cstdint>   // for uint8_t
-#include <cstdio>    // for snprintf
 
 // Global MQTT client - using WiFiClient for lwIP w5500
 // Use Wiznet lwIP TCP client under the hood via lwIPClient compatible type
@@ -30,11 +19,21 @@ static unsigned long lastMqttReconnectAttempt = 0;
 static unsigned long lastMqttPublishTime = 0;
 static bool lwtConfigured = false;
 static char deviceTopicPrefix[64] = {0}; // e.g., "orcs/dev/AA:BB:CC:DD:EE:FF"
+static bool clientConfigured = false; // Track if client parameters have been set
 
 // Forward declaration
 static void reconnect();
 static void mqttPublishAllSensorData();
+static void mqttPublishIPCSensors();
 static void ensureTopicPrefix();
+static void mqttCallback(char* topic, byte* payload, unsigned int length);
+
+// MQTT callback function (required by PubSubClient even if we don't subscribe to anything)
+static void mqttCallback(char* topic, byte* payload, unsigned int length) {
+    // Currently we only publish, but this callback is required by the library
+    // Future: Handle incoming commands here
+    log(LOG_INFO, false, "MQTT message received on topic: %s\n", topic);
+}
 
 // Apply current config and attempt reconnect (call after API changes)
 void mqttApplyConfigAndReconnect() {
@@ -63,33 +62,48 @@ static void reconnect() {
     if (strlen(networkConfig.mqttBroker) == 0) {
         return;
     }
-    log(LOG_INFO, true, "Attempting MQTT connection to %s...", networkConfig.mqttBroker);
+    
+    log(LOG_INFO, true, "Attempting MQTT connection to %s:%d...", networkConfig.mqttBroker, networkConfig.mqttPort);
+    
     char clientId[24];
     uint8_t mac[6];
     eth.macAddress(mac);
     snprintf(clientId, sizeof(clientId), "ORCS-%02X%02X%02X", mac[3], mac[4], mac[5]);
+    
+    log(LOG_INFO, false, "MQTT Client ID: %s\n", clientId);
+    
+    // Try simple connection first without LWT to debug
     bool connected = false;
-    // Configure client parameters (once)
-    mqttClient.setBufferSize(1024); // Safety for JSON
-    mqttClient.setKeepAlive(30);
-    mqttClient.setSocketTimeout(15);
-    // Standard connect (with or without creds). Re-apply LWT via overload.
-    ensureTopicPrefix();
-    char lwtTopic[128];
-    snprintf(lwtTopic, sizeof(lwtTopic), "%s/status/online", deviceTopicPrefix);
     if (strlen(networkConfig.mqttUsername) > 0) {
-        connected = mqttClient.connect(clientId, networkConfig.mqttUsername, networkConfig.mqttPassword, lwtTopic, 0, false, "false");
+        log(LOG_INFO, false, "MQTT connecting with username: %s\n", networkConfig.mqttUsername);
+        connected = mqttClient.connect(clientId, networkConfig.mqttUsername, networkConfig.mqttPassword);
     } else {
-        connected = mqttClient.connect(clientId, lwtTopic, 0, false, "false");
+        log(LOG_INFO, false, "MQTT connecting without credentials\n");
+        connected = mqttClient.connect(clientId);
     }
+    
     if (connected) {
-        log(LOG_INFO, true, "MQTT connected successfully!\n");
-        // Publish online retained true
-        mqttClient.publish(lwtTopic, "true", true);
+        log(LOG_INFO, true, "MQTT connected successfully! Client state: %d\n", mqttClient.state());
+        // Don't publish anything immediately after connecting - let the connection stabilize
+        // The LWT will handle offline status automatically
         // TODO: Add subscriptions for commands here in the future
         // mqttClient.subscribe("orcs/system/command");
     } else {
-        log(LOG_WARNING, true, "MQTT connection failed, rc=%d. Will retry in %d seconds.\n", mqttClient.state(), MQTT_RECONNECT_INTERVAL / 1000);
+        int state = mqttClient.state();
+        const char* stateStr = "Unknown";
+        switch(state) {
+            case -4: stateStr = "MQTT_CONNECTION_TIMEOUT"; break;
+            case -3: stateStr = "MQTT_CONNECTION_LOST"; break;
+            case -2: stateStr = "MQTT_CONNECT_FAILED (TCP)"; break;
+            case -1: stateStr = "MQTT_DISCONNECTED"; break;
+            case 1: stateStr = "MQTT_CONNECT_BAD_PROTOCOL"; break;
+            case 2: stateStr = "MQTT_CONNECT_BAD_CLIENT_ID"; break;
+            case 3: stateStr = "MQTT_CONNECT_UNAVAILABLE"; break;
+            case 4: stateStr = "MQTT_CONNECT_BAD_CREDENTIALS"; break;
+            case 5: stateStr = "MQTT_CONNECT_UNAUTHORIZED"; break;
+        }
+        log(LOG_WARNING, true, "MQTT connection failed, rc=%d (%s). Will retry in %d seconds.\n", 
+            state, stateStr, MQTT_RECONNECT_INTERVAL / 1000);
     }
 }
 
@@ -167,9 +181,17 @@ float getMqttBusy() { return status.mqttBusy ? 1.0f : 0.0f; }
 
 
 void init_mqttManager() {
+    // Configure client parameters ONCE during initialization
+    mqttClient.setBufferSize(512);  // Reduced from 1024 - we're not publishing large payloads now
+    mqttClient.setKeepAlive(30);    // 30 seconds - balance between responsiveness and overhead
+    mqttClient.setSocketTimeout(10); // 10 seconds - enough time for DNS resolution
+    mqttClient.setCallback(mqttCallback); // Set callback (required by PubSubClient)
+    clientConfigured = true;
+    
     if (strlen(networkConfig.mqttBroker) > 0) {
         mqttClient.setServer(networkConfig.mqttBroker, networkConfig.mqttPort);
         log(LOG_INFO, false, "MQTT Manager initialized for broker %s:%d\n", networkConfig.mqttBroker, networkConfig.mqttPort);
+        log(LOG_INFO, false, "MQTT config: keepAlive=30s, bufferSize=512, socketTimeout=10s\n");
     } else {
         log(LOG_INFO, false, "MQTT broker not configured. MQTT Manager will remain idle.\n");
     }
@@ -188,8 +210,12 @@ void manageMqtt() {
         return;
     }
 
+    // Always call loop() to maintain connection, even when checking connection status
+    mqttClient.loop();
+
     if (!mqttClient.connected()) {
         if (status.mqttConnected) { // Update status if we just disconnected
+            log(LOG_WARNING, true, "MQTT disconnected unexpectedly (state=%d)\n", mqttClient.state());
             if (!statusLocked) {
                 statusLocked = true;
                 status.mqttConnected = false;
@@ -211,14 +237,13 @@ void manageMqtt() {
                 statusLocked = false;
             }
         }
-    // Process MQTT messages and keep-alives
-        mqttClient.loop();
 
-    // Check if it's time to publish data
-    uint32_t publishInterval = (networkConfig.mqttPublishIntervalMs > 0) ? networkConfig.mqttPublishIntervalMs : MQTT_PUBLISH_INTERVAL;
-    if (millis() - lastMqttPublishTime > publishInterval) {
+        // Publish sensor data periodically
+        uint32_t publishInterval = (networkConfig.mqttPublishIntervalMs > 0) ? networkConfig.mqttPublishIntervalMs : MQTT_PUBLISH_INTERVAL;
+        if (millis() - lastMqttPublishTime > publishInterval) {
             lastMqttPublishTime = millis();
-            mqttPublishAllSensorData();
+            mqttPublishAllSensorData();  // System status sensors
+            mqttPublishIPCSensors();     // IPC sensors from object cache
         }
     }
 }
@@ -295,6 +320,201 @@ static void mqttPublishAllSensorData() {
     mqttClient.publish(consolidatedTopic, jsonString.c_str());
 
     log(LOG_INFO, false, "Published MQTT sensor data with ISO8601 timestamps\n");
+}
+
+/**
+ * @brief Publishes IPC sensor data from object cache
+ * 
+ * Iterates through the object cache and publishes valid sensor readings
+ * to their respective MQTT topics. Rate-limited to prevent flooding.
+ */
+static void mqttPublishIPCSensors() {
+    // Debug
+    uint32_t ts = millis();
+    if (!mqttClient.connected()) {
+        return;
+    }
+
+    ensureTopicPrefix();
+    String timestamp = getISO8601Timestamp();
+    if (timestamp.length() == 0) {
+        timestamp = "1970-01-01T00:00:00Z";
+    }
+
+    uint16_t publishCount = 0;
+    const uint16_t MAX_PUBLISHES_PER_CYCLE = 90; // Limit to prevent flooding (controllers + sensors + devices)
+
+    // Iterate through all cached objects (0-89)
+    for (uint8_t i = 0; i < MAX_CACHED_OBJECTS && publishCount < MAX_PUBLISHES_PER_CYCLE; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        
+        // Skip invalid or stale objects
+        if (!obj || !obj->valid || objectCache.isStale(i)) {
+            continue;
+        }
+
+        // Map object type to topic path
+        const char* topicPath = nullptr;
+        switch (obj->objectType) {
+            // Input sensors
+            case OBJ_T_TEMPERATURE_SENSOR:
+                topicPath = "sensors/temperature";
+                break;
+            case OBJ_T_PH_SENSOR:
+                topicPath = "sensors/ph";
+                break;
+            case OBJ_T_DISSOLVED_OXYGEN_SENSOR:
+                topicPath = "sensors/do";
+                break;
+            case OBJ_T_OPTICAL_DENSITY_SENSOR:
+                topicPath = "sensors/od";
+                break;
+            case OBJ_T_FLOW_SENSOR:
+                topicPath = "sensors/flow";
+                break;
+            case OBJ_T_PRESSURE_SENSOR:
+                topicPath = "sensors/pressure";
+                break;
+            case OBJ_T_POWER_SENSOR:
+                topicPath = "sensors/power";
+                break;
+            case OBJ_T_ENERGY_SENSOR:
+                topicPath = "sensors/energy";
+                break;
+            case OBJ_T_ANALOG_INPUT:
+                topicPath = "sensors/analog";
+                break;
+            case OBJ_T_DIGITAL_INPUT:
+                topicPath = "sensors/digital";
+                break;
+            
+            // Outputs
+            case OBJ_T_DIGITAL_OUTPUT:
+                topicPath = "actuators/digital";
+                break;
+            case OBJ_T_ANALOG_OUTPUT:
+                topicPath = "actuators/analog";
+                break;
+            
+            // Motors
+            case OBJ_T_STEPPER_MOTOR:
+                topicPath = "actuators/stepper";
+                break;
+            case OBJ_T_BDC_MOTOR:
+                topicPath = "actuators/dcmotor";
+                break;
+            
+            // Controllers (indices 40-49)
+            case OBJ_T_TEMPERATURE_CONTROL:
+                topicPath = "controllers/temperature";
+                break;
+            case OBJ_T_PH_CONTROL:
+                topicPath = "controllers/ph";
+                break;
+            case OBJ_T_FLOW_CONTROL:
+                topicPath = "controllers/flow";
+                break;
+            case OBJ_T_DISSOLVED_OXYGEN_CONTROL:
+                topicPath = "controllers/do";
+                break;
+            case OBJ_T_OPTICAL_DENSITY_CONTROL:
+                topicPath = "controllers/od";
+                break;
+            case OBJ_T_GAS_FLOW_CONTROL:
+                topicPath = "controllers/gasflow";
+                break;
+            case OBJ_T_STIRRER_CONTROL:
+                topicPath = "controllers/stirrer";
+                break;
+            case OBJ_T_PUMP_CONTROL:
+                topicPath = "controllers/pump";
+                break;
+            case OBJ_T_DEVICE_CONTROL:
+                topicPath = "controllers/device";
+                break;
+            
+            // External device sensors (indices 70-89)
+            case OBJ_T_HAMILTON_PH_PROBE:
+                topicPath = "devices/hamilton_ph";
+                break;
+            case OBJ_T_HAMILTON_DO_PROBE:
+                topicPath = "devices/hamilton_do";
+                break;
+            case OBJ_T_HAMILTON_OD_PROBE:
+                topicPath = "devices/hamilton_od";
+                break;
+            case OBJ_T_ALICAT_MFC:
+                topicPath = "devices/alicat_mfc";
+                break;
+            
+            default:
+                // Skip unmapped types
+                continue;
+        }
+
+        // Construct topic
+        char fullTopic[192];
+        snprintf(fullTopic, sizeof(fullTopic), "%s/%s/%d", deviceTopicPrefix, topicPath, obj->index);
+
+        // Create JSON payload
+        StaticJsonDocument<256> doc;
+        doc["timestamp"] = timestamp;
+        doc["value"] = obj->value;
+        doc["unit"] = obj->unit;
+        doc["name"] = obj->name;
+        
+        // Add flags
+        if (obj->flags & IPC_SENSOR_FLAG_FAULT) {
+            doc["fault"] = true;
+        }
+        if (obj->flags & IPC_SENSOR_FLAG_RUNNING) {
+            doc["running"] = true;
+        }
+        if (obj->flags & IPC_SENSOR_FLAG_DIRECTION) {
+            doc["direction"] = "forward";
+        } else if (obj->objectType == OBJ_T_STEPPER_MOTOR || obj->objectType == OBJ_T_BDC_MOTOR) {
+            doc["direction"] = "reverse";
+        }
+        
+        // For controllers, primary value is process value, additional values are setpoint & output
+        bool isController = (obj->objectType >= OBJ_T_TEMPERATURE_CONTROL && obj->objectType <= OBJ_T_DEVICE_CONTROL);
+        if (isController && obj->valueCount >= 2) {
+            doc["processValue"] = obj->value;
+            doc["setpoint"] = obj->additionalValues[0];
+            doc["output"] = obj->additionalValues[1];
+            // Remove generic "value" field for controllers
+            doc.remove("value");
+        }
+        
+        // Add message if present
+        if ((obj->flags & IPC_SENSOR_FLAG_NEW_MSG) && strlen(obj->message) > 0) {
+            doc["message"] = obj->message;
+        }
+
+        // Add additional values if present (e.g., energy monitor) - skip for controllers (already added above)
+        if (obj->valueCount > 0 && !isController) {
+            JsonArray additionalValues = doc.createNestedArray("additionalValues");
+            JsonArray additionalUnits = doc.createNestedArray("additionalUnits");
+            for (uint8_t j = 0; j < obj->valueCount && j < 4; j++) {
+                additionalValues.add(obj->additionalValues[j]);
+                additionalUnits.add(obj->additionalUnits[j]);
+            }
+        }
+
+        // Serialize and publish
+        char payload[256];
+        serializeJson(doc, payload, sizeof(payload));
+        
+        if (mqttClient.publish(fullTopic, payload)) {
+            publishCount++;
+        }
+    }
+    // Debug
+    uint32_t te = millis();
+
+    if (publishCount > 0) {
+        log(LOG_INFO, false, "Published %d IPC sensor readings to MQTT in %dms\n", publishCount, te-ts);
+    }
 }
 
     /**
@@ -449,7 +669,8 @@ static void mqttPublishAllSensorData() {
                 topicPath = "sensors/analog";
                 break;
             default:
-                log(LOG_WARNING, false, "MQTT: No topic mapping for object type %d\n", data->objectType);
+                // Silently ignore unmapped types (DACs, GPIOs, motors, etc.)
+                // These are not sensors and don't need MQTT publishing
                 return;
         }
 
@@ -493,10 +714,8 @@ static void mqttPublishAllSensorData() {
         char payload[256];
         serializeJson(doc, payload, sizeof(payload));
 
-        // Publish the message
-        if (mqttClient.publish(fullTopic, payload)) {
-            log(LOG_INFO, false, "MQTT Published [%s]: %s\n", fullTopic, payload);
-        } else {
+        // Publish the message (suppress per-message logging to reduce spam)
+        if (!mqttClient.publish(fullTopic, payload)) {
             log(LOG_WARNING, true, "MQTT publish failed for topic: %s\n", fullTopic);
         }
     }

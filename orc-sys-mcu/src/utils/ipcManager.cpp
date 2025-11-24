@@ -1,8 +1,4 @@
 #include "ipcManager.h"
-#include "network/mqttManager.h" // For publishSensorData
-#include "statusManager.h" // For status struct
-#include "objectCache.h" // For caching sensor data
-#include "config/ioConfig.h" // For IO configuration push
 
 // Global IPC ready flag - moved to top to fix declaration error
 bool ipcReady = false;  // Only start polling after handshake and config push complete
@@ -342,8 +338,9 @@ void handleSensorData(uint8_t messageType, const uint8_t *payload, uint16_t leng
   // Update object cache
   objectCache.updateObject(sensorData);
   
-  // Forward to MQTT
-  publishSensorDataIPC(sensorData);
+  // NOTE: MQTT publishing is handled by periodic mqttPublishAllSensorData() in mqttManager
+  // Publishing on every IPC update (78 objects/sec) floods the system
+  // publishSensorDataIPC(sensorData);  // DISABLED - too aggressive
   
   // TODO: Update status struct based on object type
   // This will be implemented when the status manager is updated for the new IPC protocol

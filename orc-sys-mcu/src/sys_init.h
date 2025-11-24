@@ -9,6 +9,7 @@
 #include <NTPClient.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#include <PubSubClient.h>
 #include <SPI.h>
 #include "Adafruit_NeoPixel.h"
 #include "MCP79410.h"
@@ -18,15 +19,18 @@
 // Include program files
 #include "hardware/pins.h"
 
-#include "network/network.h"
-#include "network/mqttManager.h"
+#include "config/ioConfig.h"
 
-#include "utils/logger.h"
-#include "utils/statusManager.h"
-#include "utils/timeManager.h"
-#include "utils/powerManager.h"
-#include "utils/terminalManager.h"
+#include "network/network.h"
+#include "mqtt/mqttManager.h"
+
 #include "utils/ipcManager.h"
+#include "utils/logger.h"
+#include "utils/objectCache.h"
+#include "utils/powerManager.h"
+#include "utils/statusManager.h"
+#include "utils/terminalManager.h"
+#include "utils/timeManager.h"
 
 
 #include "storage/sdManager.h"

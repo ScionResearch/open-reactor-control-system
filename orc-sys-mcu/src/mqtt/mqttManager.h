@@ -1,15 +1,15 @@
 #pragma once
 
 #include "../sys_init.h"
-#include <PubSubClient.h>
+#include "MqttTopicRegistry.h"
 
 // Default intervals (can be overridden via NetworkConfig.mqttPublishIntervalMs)
 #ifndef MQTT_PUBLISH_INTERVAL
-#define MQTT_PUBLISH_INTERVAL 10000 // Publish data every 10 seconds
+#define MQTT_PUBLISH_INTERVAL 5000 // Publish data every 5 seconds (conservative for system stability)
 #endif
 
 #ifndef MQTT_RECONNECT_INTERVAL
-#define MQTT_RECONNECT_INTERVAL 5000 // Attempt to reconnect every 5 seconds
+#define MQTT_RECONNECT_INTERVAL 15000 // Attempt to reconnect every 15 seconds (reduced spam)
 #endif
 
 /**
