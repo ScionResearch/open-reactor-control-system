@@ -8,7 +8,7 @@
 
 // Hamilton units array - array of string pointers (static to avoid multiple definition)
 static const char* hamiltonUnits[32] = {
-    "none", "K", "°C", "°F", "%-vol", "%-sat", "ug/l ppb", "mg/l ppm", "g/l",
+    "none", "K", "°C", "°F", "%-vol", "%-sat", "ug/l ppb", "mg/l", "g/l",
     "uS/cm", "mS/cm", "1/cm", "pH", "mV/pH", "kOhm", "MOhm",
     "pA", "nA", "uA", "mA", "uV", "mV", "V", "mbar", "Pa", "Ohm", "%/°C", "°",
     "", "", "", "SPECIAL"

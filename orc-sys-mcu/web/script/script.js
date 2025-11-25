@@ -66,8 +66,98 @@ function getConfigIconSVG() {
     return `<svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>`;
 }
 
+// ============================================================================
+// CENTRALIZED POLLING MANAGER
+// ============================================================================
+// Optimized for resource-constrained embedded web server (RP2040 + W5500)
+// - Only polls data needed for the currently active tab
+// - Error tolerance: waits for 3 consecutive failures before showing errors
+// - Centralized polling control to prevent duplicate requests
+
+const PollingManager = {
+    activeTab: null,
+    intervals: new Map(),
+    errorCounts: new Map(),  // Track consecutive errors per endpoint
+    cachedData: new Map(),   // Cache last successful data per endpoint
+    ERROR_THRESHOLD: 3,      // Show error after this many consecutive failures
+    
+    // Set active tab and stop all other polling
+    setActiveTab(tabName) {
+        this.activeTab = tabName;
+        console.log(`[PollingManager] Active tab: ${tabName}`);
+    },
+    
+    // Start an interval for a specific tab/endpoint
+    startPolling(key, callback, intervalMs) {
+        this.stopPolling(key);
+        callback(); // Immediate first call
+        const id = setInterval(() => {
+            if (this.shouldPoll(key)) {
+                callback();
+            }
+        }, intervalMs);
+        this.intervals.set(key, id);
+    },
+    
+    // Stop polling for a specific key
+    stopPolling(key) {
+        const id = this.intervals.get(key);
+        if (id) {
+            clearInterval(id);
+            this.intervals.delete(key);
+        }
+    },
+    
+    // Stop all polling
+    stopAllPolling() {
+        for (const [key, id] of this.intervals) {
+            clearInterval(id);
+        }
+        this.intervals.clear();
+    },
+    
+    // Check if we should continue polling (tab still active)
+    shouldPoll(key) {
+        // Extract tab name from key (e.g., 'inputs-api' -> 'inputs')
+        const tabName = key.split('-')[0];
+        return this.activeTab === tabName;
+    },
+    
+    // Record a successful fetch - reset error count, cache data
+    recordSuccess(endpoint, data) {
+        this.errorCounts.set(endpoint, 0);
+        this.cachedData.set(endpoint, data);
+    },
+    
+    // Record a failed fetch - increment error count
+    recordError(endpoint) {
+        const count = (this.errorCounts.get(endpoint) || 0) + 1;
+        this.errorCounts.set(endpoint, count);
+        return count;
+    },
+    
+    // Check if we should show error UI (enough consecutive failures)
+    shouldShowError(endpoint) {
+        return (this.errorCounts.get(endpoint) || 0) >= this.ERROR_THRESHOLD;
+    },
+    
+    // Get cached data for an endpoint (use during transient errors)
+    getCachedData(endpoint) {
+        return this.cachedData.get(endpoint);
+    },
+    
+    // Get current error count for an endpoint
+    getErrorCount(endpoint) {
+        return this.errorCounts.get(endpoint) || 0;
+    }
+};
+
 // Tab switching function
 function openTab(evt, tabName) {
+    // Stop all polling from previous tab to save bandwidth
+    PollingManager.stopAllPolling();
+    PollingManager.setActiveTab(tabName);
+    
     // Get all tab content elements and hide them
     var tabcontent = document.getElementsByClassName("tab-content");
     for (var i = 0; i < tabcontent.length; i++) {
@@ -84,9 +174,9 @@ function openTab(evt, tabName) {
     document.getElementById(tabName).classList.add("active");
     evt.currentTarget.classList.add("active");
     
-    // Initialize specific page content if needed
+    // Initialize specific page content if needed - each tab manages its own polling
     if (tabName === 'system') {
-        updateSystemStatus();
+        initSystemTab();
     } else if (tabName === 'filemanager') {
         initFileManager();
     } else if (tabName === 'control') {
@@ -98,15 +188,12 @@ function openTab(evt, tabName) {
     } else if (tabName === 'comports') {
         initComPortsTab();
     } else if (tabName === 'devices') {
-        // Initialize devices tab with control object polling
         if (typeof initDevicesTab === 'function') {
             initDevicesTab();
         }
     } else if (tabName === 'sensors') {
-        // Initialize sensors tab with continuous polling
         initSensorsTab();
     } else if (tabName === 'controllers') {
-        // Initialize controllers tab with continuous polling
         if (typeof initControllersTab === 'function') {
             initControllersTab();
         }
@@ -144,38 +231,68 @@ const initFileManager = () => {
     }
     sdStatusInterval = setInterval(checkSDCardStatus, 3000); // Check every 3 seconds
     
-    // Function to check SD card status
+    // SD card status error tolerance
+    let sdErrorCount = 0;
+    let lastValidSDStatus = null;
+    const SD_ERROR_THRESHOLD = 3;
+    
+    // Function to check SD card status with error tolerance
     function checkSDCardStatus() {
         if (!fileManagerActive) return;
         
         fetch('/api/system/status')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch status');
+                return response.json();
+            })
             .then(data => {
-                if (!data.sd.inserted) {
-                    // SD card is physically not inserted
-                    sdStatusElement.innerHTML = '<div class="status-error">SD Card not inserted</div>';
-                    fileListContainer.innerHTML = '<div class="error-message">SD Card is not inserted. Please insert an SD card to view files.</div>';
-                    // Disable the file manager functionality when SD card is not available
-                    pathNavigator.innerHTML = '';
-                } else {
-                    // SD card is physically present - show basic info regardless of ready status
-                    if (data.sd.ready && data.sd.capacityGB) {
-                        sdStatusElement.innerHTML = `<div class="status-good">SD Card Ready - ${data.sd.freeSpaceGB.toFixed(2)} GB free of ${data.sd.capacityGB.toFixed(2)} GB</div>`;
-                    } else {
-                        sdStatusElement.innerHTML = '<div class="status-info">SD Card inserted</div>';
-                    }
-                    
-                    // Only reload directory contents if the file manager shows the "not inserted" error message
-                    const errorMsg = fileListContainer.querySelector('.error-message');
-                    if (errorMsg && errorMsg.textContent.includes('not inserted')) {
-                        loadDirectory(currentPath);
-                    }
+                // Validate response has expected structure
+                if (!data || !data.sd) {
+                    throw new Error('Invalid response: missing sd property');
                 }
+                
+                // Reset error count and cache valid data
+                sdErrorCount = 0;
+                lastValidSDStatus = data.sd;
+                
+                updateSDCardUI(data.sd);
             })
             .catch(error => {
                 console.error('Error checking SD status:', error);
-                // Don't update the UI on fetch errors to avoid flickering
+                sdErrorCount++;
+                
+                // Use cached data if available and under error threshold
+                if (sdErrorCount < SD_ERROR_THRESHOLD && lastValidSDStatus) {
+                    console.log(`[SD] Using cached status (error ${sdErrorCount}/${SD_ERROR_THRESHOLD})`);
+                    // Don't update UI - keep showing last valid state
+                } else if (sdErrorCount >= SD_ERROR_THRESHOLD) {
+                    // Too many consecutive errors - show error state
+                    sdStatusElement.innerHTML = '<div class="status-error">Unable to get SD status</div>';
+                }
             });
+    }
+    
+    // Separate UI update function for cleaner code
+    function updateSDCardUI(sd) {
+        if (!sd.inserted) {
+            // SD card is physically not inserted
+            sdStatusElement.innerHTML = '<div class="status-error">SD Card not inserted</div>';
+            fileListContainer.innerHTML = '<div class="error-message">SD Card is not inserted. Please insert an SD card to view files.</div>';
+            pathNavigator.innerHTML = '';
+        } else {
+            // SD card is physically present - show basic info regardless of ready status
+            if (sd.ready && sd.capacityGB) {
+                sdStatusElement.innerHTML = `<div class="status-good">SD Card Ready - ${sd.freeSpaceGB.toFixed(2)} GB free of ${sd.capacityGB.toFixed(2)} GB</div>`;
+            } else {
+                sdStatusElement.innerHTML = '<div class="status-info">SD Card inserted</div>';
+            }
+            
+            // Only reload directory contents if the file manager shows the "not inserted" error message
+            const errorMsg = fileListContainer.querySelector('.error-message');
+            if (errorMsg && errorMsg.textContent.includes('not inserted')) {
+                loadDirectory(currentPath);
+            }
+        }
     }
     
     // Function to load directory contents with retry
@@ -413,13 +530,26 @@ const initFileManager = () => {
             });
     }
     
-    // Override the initial checkSDCardStatus call to use the improved function
+    // Override the initial checkSDCardStatus call to use the improved function with error tolerance
+    // Uses the same sdErrorCount, lastValidSDStatus, and SD_ERROR_THRESHOLD from outer scope
     checkSDCardStatus = () => {
         if (!fileManagerActive) return;
         
         fetch('/api/system/status')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch status');
+                return response.json();
+            })
             .then(data => {
+                // Validate response has expected structure
+                if (!data || !data.sd) {
+                    throw new Error('Invalid response: missing sd property');
+                }
+                
+                // Reset error count and cache valid data
+                sdErrorCount = 0;
+                lastValidSDStatus = data.sd;
+                
                 if (!data.sd.inserted) {
                     // SD card is physically not inserted
                     sdStatusElement.innerHTML = '<div class="status-error">SD Card not inserted</div>';
@@ -448,6 +578,16 @@ const initFileManager = () => {
             })
             .catch(error => {
                 console.error('Error checking SD status:', error);
+                sdErrorCount++;
+                
+                // Use cached data if available and under error threshold
+                if (sdErrorCount < SD_ERROR_THRESHOLD && lastValidSDStatus) {
+                    console.log(`[SD] Using cached status (error ${sdErrorCount}/${SD_ERROR_THRESHOLD})`);
+                    // Don't update UI - keep showing last valid state
+                } else if (sdErrorCount >= SD_ERROR_THRESHOLD) {
+                    // Too many consecutive errors - show error state
+                    sdStatusElement.innerHTML = '<div class="status-error">Unable to get SD status</div>';
+                }
             });
     };
     
@@ -820,22 +960,7 @@ async function loadControlSettings() {
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', async () => {
-    // Load settings sequentially to avoid overwhelming single-threaded server
-    await loadInitialSettings();  // Load initial NTP and timezone settings
-    await loadNetworkSettings();  // Load initial network settings
-    await loadMqttSettings();     // Load initial MQTT settings
-    loadControlSettings();  // Load initial control settings (no API call)
-    updateLiveClock();
-    updateSensorData();
-    updateNetworkInfo();
-    
-    // Initialize system status if system tab is active initially
-    const systemTab = document.querySelector('#system');
-    if (systemTab && systemTab.classList.contains('active')) {
-        updateSystemStatus();
-    }
-    
-    // Set up event listeners
+    // Set up event listeners FIRST (before loading data that may trigger events)
     const ntpCheckbox = document.getElementById('enableNTP');
     if (ntpCheckbox) {
         ntpCheckbox.addEventListener('change', updateInputStates);
@@ -844,21 +969,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Set up save button handler
     const saveButton = document.getElementById('saveTimeBtn');
     if (saveButton) {
-        saveButton.addEventListener('click', saveTimeSettings);
+        saveButton.addEventListener('click', (e) => {
+            e.preventDefault();  // Prevent any default button behavior
+            saveTimeSettings();
+        });
+        console.log('[Settings] Time save button handler attached');
+    } else {
+        console.warn('[Settings] saveTimeBtn not found in DOM');
     }
 
     // Set up IP configuration mode handler
     const ipConfig = document.getElementById('ipConfig');
+    const updateStaticFields = () => {
+        const staticFields = document.getElementById('staticSettings');
+        if (staticFields && ipConfig) {
+            staticFields.style.display = ipConfig.value === 'static' ? 'block' : 'none';
+        }
+    };
     if (ipConfig) {
-        const updateStaticFields = () => {
-            const staticFields = document.getElementById('staticSettings');
-            if (staticFields) {
-                staticFields.style.display = ipConfig.value === 'static' ? 'block' : 'none';
-            }
-        };
         ipConfig.addEventListener('change', updateStaticFields);
-        // Set initial state
-        updateStaticFields();
+    }
+    
+    // Load settings sequentially to avoid overwhelming single-threaded server
+    // Event listeners are already attached, so change events will be handled
+    await loadInitialSettings();  // Load initial NTP and timezone settings
+    await loadNetworkSettings();  // Load initial network settings
+    await loadMqttSettings();     // Load initial MQTT settings
+    loadControlSettings();  // Load initial control settings (no API call)
+    updateLiveClock();
+    // NOTE: updateSensorData and updateNetworkInfo removed - now tab-specific via PollingManager
+    
+    // Set initial state for static fields after network settings loaded
+    updateStaticFields();
+    
+    // Initialize system status if system tab is active initially
+    const systemTab = document.querySelector('#system');
+    if (systemTab && systemTab.classList.contains('active')) {
+        updateSystemStatus();
     }
     
     // Set up control save buttons
@@ -987,17 +1134,12 @@ async function saveTimeSettings() {
     }
 }
 
-// Update intervals
+// Update intervals - ONLY clock runs globally, other polling is tab-specific
 setInterval(updateLiveClock, 1000);    // Update clock every second
-setInterval(updateSensorData, 5000);   // Update sensor data every 5 seconds (reduced frequency)
-setInterval(updateNetworkInfo, 10000); // Update network info every 10 seconds (reduced frequency)
 
-// Missing functions that are referenced but not defined
-function updateNetworkInfo() {
-    // This function is called but not defined - adding a placeholder
-    // In a real implementation, this would update network information
-    console.log('Network info update called');
-}
+// NOTE: Removed global setInterval for updateSensorData and updateNetworkInfo
+// These are now handled by tab-specific polling via PollingManager to reduce
+// unnecessary network traffic on the resource-constrained embedded server
 
 function updateTrend(elementId, newValue, oldValue) {
     // This function is called but not defined - adding a placeholder
@@ -1200,22 +1342,11 @@ function hideSDDetails() {
     document.getElementById('sdSensorSizeContainer').style.display = 'none';
 }
 
-// Update system status when the system tab is active
-function updateStatusIfSystemTabActive() {
-    if (document.querySelector('#system').classList.contains('active')) {
-        updateSystemStatus();
-    }
+// Initialize system tab with polling
+function initSystemTab() {
+    // Use PollingManager for system status updates
+    PollingManager.startPolling('system-status', updateSystemStatus, 5000);
 }
-
-// Add system status update to the periodic updates
-setInterval(updateStatusIfSystemTabActive, 5000); // Reduced frequency to every 5 seconds
-
-// When switching to the system tab, update the status immediately
-document.querySelectorAll('nav a[data-page="system"]').forEach(link => {
-    link.addEventListener('click', () => {
-        updateSystemStatus();
-    });
-});
 
 // Toast notification functions
 function showToast(type, title, message, duration = 3000) {
@@ -1901,63 +2032,27 @@ function startControlPolling() {
 // INPUTS TAB - Hardware Inputs Monitoring
 // ============================================================================
 
-let inputsRefreshInterval = null;
-let sensorsRefreshInterval = null;
-
 function initInputsTab() {
-    // Stop any existing interval
-    if (inputsRefreshInterval) {
-        clearInterval(inputsRefreshInterval);
-    }
-    
-    // Load inputs immediately
-    fetchAndRenderInputs();
-    
-    // Start polling every 2 seconds while tab is active
-    inputsRefreshInterval = setInterval(() => {
-        if (document.getElementById('inputs').classList.contains('active')) {
-            fetchAndRenderInputs();
-        } else {
-            // Stop polling if tab is not active
-            clearInterval(inputsRefreshInterval);
-            inputsRefreshInterval = null;
-        }
-    }, 2000);
+    // Use PollingManager - polls every 2 seconds while inputs tab is active
+    PollingManager.startPolling('inputs-api', fetchAndRenderInputs, 2000);
 }
 
 function initSensorsTab() {
-    // Stop any existing interval
-    if (sensorsRefreshInterval) {
-        clearInterval(sensorsRefreshInterval);
-    }
-    
-    // Load sensors immediately
-    fetchAndRenderInputs();
-    
-    // Start polling every 2 seconds while tab is active
-    sensorsRefreshInterval = setInterval(() => {
-        if (document.getElementById('sensors').classList.contains('active')) {
-            fetchAndRenderInputs();
-        } else {
-            // Stop polling if tab is not active
-            clearInterval(sensorsRefreshInterval);
-            sensorsRefreshInterval = null;
-        }
-    }, 2000);
+    // Sensors tab uses same data as inputs tab - use PollingManager
+    PollingManager.startPolling('sensors-api', fetchAndRenderInputs, 2000);
 }
 
 async function fetchAndRenderInputs() {
+    const ENDPOINT = '/api/inputs';
+    
     try {
-        const response = await fetch('/api/inputs');
+        const response = await fetch(ENDPOINT);
         if (!response.ok) throw new Error('Failed to fetch inputs');
         
         const data = await response.json();
-        console.log('Inputs data received:', data);
-        console.log('  ADC:', data.adc ? data.adc.length : 0, 'entries');
-        console.log('  RTD:', data.rtd ? data.rtd.length : 0, 'entries');
-        console.log('  GPIO:', data.gpio ? data.gpio.length : 0, 'entries');
-        console.log('  Energy:', data.energy ? data.energy.length : 0, 'entries');
-        console.log('  Devices:', data.devices ? data.devices.length : 0, 'entries');
+        
+        // Record success and cache data
+        PollingManager.recordSuccess(ENDPOINT, data);
         
         // Render each section
         renderADCInputs(data.adc || []);
@@ -1968,11 +2063,29 @@ async function fetchAndRenderInputs() {
         
     } catch (error) {
         console.error('Error fetching inputs:', error);
-        showInputError('adc-list');
-        showInputError('rtd-list');
-        showInputError('gpio-list');
-        showInputError('energy-list');
-        showInputError('device-sensors-list');
+        
+        // Record error and check if we should show error UI
+        const errorCount = PollingManager.recordError(ENDPOINT);
+        
+        if (PollingManager.shouldShowError(ENDPOINT)) {
+            // Enough consecutive errors - show error UI
+            showInputError('adc-list');
+            showInputError('rtd-list');
+            showInputError('gpio-list');
+            showInputError('energy-list');
+            showInputError('device-sensors-list');
+        } else {
+            // Transient error - use cached data if available
+            const cachedData = PollingManager.getCachedData(ENDPOINT);
+            if (cachedData) {
+                console.log(`[Inputs] Using cached data (error ${errorCount}/${PollingManager.ERROR_THRESHOLD})`);
+                renderADCInputs(cachedData.adc || []);
+                renderRTDInputs(cachedData.rtd || []);
+                renderGPIOInputs(cachedData.gpio || []);
+                renderEnergySensors(cachedData.energy || []);
+                renderDeviceSensors(cachedData.devices || []);
+            }
+        }
     }
 }
 
@@ -2987,7 +3100,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // OUTPUTS TAB - Hardware Outputs Monitoring & Control
 // ============================================================================
 
-let outputsRefreshInterval = null;
+// Note: outputsRefreshInterval removed - now using PollingManager
 let activeControls = new Set(); // Track controls being manipulated
 let lastOutputModes = new Map(); // Track output modes to detect changes
 let pendingCommands = new Map(); // Track pending commands {index: setValue}
@@ -2996,33 +3109,21 @@ let dcMotorSlidersFocused = new Map(); // Track which DC motor sliders have focu
 let dacSlidersFocused = new Map(); // Track which DAC sliders have focus {index: boolean}
 
 function initOutputsTab() {
-    // Stop any existing interval
-    if (outputsRefreshInterval) {
-        clearInterval(outputsRefreshInterval);
-    }
-    
-    // Load outputs immediately
-    fetchAndRenderOutputs();
-    
-    // Start polling every 2 seconds while tab is active
-    outputsRefreshInterval = setInterval(() => {
-        if (document.getElementById('outputs').classList.contains('active')) {
-            fetchAndRenderOutputs();
-        } else {
-            // Stop polling if tab is not active
-            clearInterval(outputsRefreshInterval);
-            outputsRefreshInterval = null;
-        }
-    }, 2000);
+    // Use PollingManager - polls every 2 seconds while outputs tab is active
+    PollingManager.startPolling('outputs-api', fetchAndRenderOutputs, 2000);
 }
 
 async function fetchAndRenderOutputs() {
+    const ENDPOINT = '/api/outputs';
+    
     try {
-        const response = await fetch('/api/outputs');
+        const response = await fetch(ENDPOINT);
         if (!response.ok) throw new Error('Failed to fetch outputs');
         
         const data = await response.json();
-        console.log('Outputs data received:', data);
+        
+        // Record success and cache data
+        PollingManager.recordSuccess(ENDPOINT, data);
         
         // Render each section
         renderDACOutputs(data.dacOutputs || []);
@@ -3032,10 +3133,27 @@ async function fetchAndRenderOutputs() {
         
     } catch (error) {
         console.error('Error fetching outputs:', error);
-        showOutputError('dac-outputs-list');
-        showOutputError('digital-outputs-list');
-        showOutputError('stepper-motor-list');
-        showOutputError('dc-motors-list');
+        
+        // Record error and check if we should show error UI
+        const errorCount = PollingManager.recordError(ENDPOINT);
+        
+        if (PollingManager.shouldShowError(ENDPOINT)) {
+            // Enough consecutive errors - show error UI
+            showOutputError('dac-outputs-list');
+            showOutputError('digital-outputs-list');
+            showOutputError('stepper-motor-list');
+            showOutputError('dc-motors-list');
+        } else {
+            // Transient error - use cached data if available
+            const cachedData = PollingManager.getCachedData(ENDPOINT);
+            if (cachedData) {
+                console.log(`[Outputs] Using cached data (error ${errorCount}/${PollingManager.ERROR_THRESHOLD})`);
+                renderDACOutputs(cachedData.dacOutputs || []);
+                renderDigitalOutputs(cachedData.digitalOutputs || []);
+                renderStepperMotor(cachedData.stepperMotor);
+                renderDCMotors(cachedData.dcMotors || []);
+            }
+        }
     }
 }
 
@@ -4156,43 +4274,43 @@ async function saveDCMotorConfig() {
 // COM PORTS TAB - Serial Communication Port Configuration
 // ============================================================================
 
-let comportsRefreshInterval = null;
-
 function initComPortsTab() {
-    // Stop any existing interval
-    if (comportsRefreshInterval) {
-        clearInterval(comportsRefreshInterval);
-    }
-    
-    // Load COM ports immediately
-    fetchAndRenderComPorts();
-    
-    // Start polling every 2 seconds while tab is active
-    comportsRefreshInterval = setInterval(() => {
-        if (document.getElementById('comports').classList.contains('active')) {
-            fetchAndRenderComPorts();
-        } else {
-            // Stop polling if tab is not active
-            clearInterval(comportsRefreshInterval);
-            comportsRefreshInterval = null;
-        }
-    }, 2000);
+    // Use PollingManager - polls every 2 seconds while comports tab is active
+    PollingManager.startPolling('comports-api', fetchAndRenderComPorts, 2000);
 }
 
 async function fetchAndRenderComPorts() {
+    const ENDPOINT = '/api/comports';
+    
     try {
-        const response = await fetch('/api/comports');
+        const response = await fetch(ENDPOINT);
         if (!response.ok) throw new Error('Failed to fetch COM ports');
         
         const data = await response.json();
-        console.log('COM ports data received:', data);
+        
+        // Record success and cache data
+        PollingManager.recordSuccess(ENDPOINT, data);
         
         // Render COM ports
         renderComPorts(data.ports || []);
         
     } catch (error) {
         console.error('Error fetching COM ports:', error);
-        showComPortError();
+        
+        // Record error and check if we should show error UI
+        const errorCount = PollingManager.recordError(ENDPOINT);
+        
+        if (PollingManager.shouldShowError(ENDPOINT)) {
+            // Enough consecutive errors - show error UI
+            showComPortError();
+        } else {
+            // Transient error - use cached data if available
+            const cachedData = PollingManager.getCachedData(ENDPOINT);
+            if (cachedData) {
+                console.log(`[ComPorts] Using cached data (error ${errorCount}/${PollingManager.ERROR_THRESHOLD})`);
+                renderComPorts(cachedData.ports || []);
+            }
+        }
     }
 }
 
@@ -4403,7 +4521,7 @@ const INTERFACE_NAMES = {
 
 let currentDeviceIndex = -1; // For editing devices
 let deviceControlData = {}; // Cache for device control objects
-let devicesPollingInterval = null;
+// Note: devicesPollingInterval removed - now using PollingManager
 
 // ============================================================================
 // Device Control Data Polling
@@ -4520,21 +4638,16 @@ function updateDeviceControlStatus(devices) {
     });
 }
 
+// NOTE: startDevicesPolling and stopDevicesPolling are deprecated
+// Polling is now handled by PollingManager in initDevicesTab()
 function startDevicesPolling() {
-    // Poll every 2 seconds
-    if (devicesPollingInterval) {
-        clearInterval(devicesPollingInterval);
-    }
-    
-    fetchDeviceControlData();  // Initial fetch
-    devicesPollingInterval = setInterval(fetchDeviceControlData, 2000);
+    // Legacy function - now handled by PollingManager
+    console.log('[DEVICES] startDevicesPolling called - now using PollingManager');
 }
 
 function stopDevicesPolling() {
-    if (devicesPollingInterval) {
-        clearInterval(devicesPollingInterval);
-        devicesPollingInterval = null;
-    }
+    // Legacy function - now handled by PollingManager
+    console.log('[DEVICES] stopDevicesPolling called - now using PollingManager');
 }
 
 // ============================================================================
@@ -5302,8 +5415,9 @@ if (document.readyState === 'loading') {
 
 // Hook into tab switching to start/stop polling
 function initDevicesTab() {
-    startDevicesPolling();
-    console.log('[DEVICES] Polling started');
+    // Use PollingManager - polls every 2 seconds while devices tab is active
+    PollingManager.startPolling('devices-api', fetchDeviceControlData, 2000);
+    console.log('[DEVICES] Polling started via PollingManager');
 }
 
 // Export for use in main script.js
@@ -5323,7 +5437,7 @@ const CONTROLLER_TYPES = {
 
 // State management
 let controllersData = [];
-let controllersPolling = null;
+// Note: controllersPolling removed - now using PollingManager
 let currentConfigIndex = null;
 let selectedControllerType = null;
 let focusedControllerSetpoints = new Set();  // Track focused setpoint inputs
@@ -5335,29 +5449,28 @@ let autotuneJustCompleted = new Map();  // Track which controllers just complete
  */
 async function initControllersTab() {
     console.log('[CONTROLLERS] Initializing Controllers tab');
-    await loadControllers();
     
-    // Start polling
-    if (!controllersPolling) {
-        controllersPolling = setInterval(loadControllers, 2000);
-    }
+    // Use PollingManager - polls every 2 seconds while controllers tab is active
+    PollingManager.startPolling('controllers-api', loadControllers, 2000);
 }
 
 /**
  * Load all controllers from API
  */
 async function loadControllers() {
+    const ENDPOINT = '/api/controllers';
+    
     try {
-        const response = await fetch('/api/controllers');
-        console.log('[CONTROLLERS] Fetch response:', response.status, response.ok);
+        const response = await fetch(ENDPOINT);
         
         if (!response.ok) throw new Error('Failed to load controllers');
         
         const data = await response.json();
-        console.log('[CONTROLLERS] Received data:', data);
+        
+        // Record success and cache data
+        PollingManager.recordSuccess(ENDPOINT, data);
         
         controllersData = data.controllers || [];
-        console.log('[CONTROLLERS] Controllers array:', controllersData.length, 'items');
         
         // Track autotune completion (transition from tuning=true to tuning=false)
         controllersData.forEach(ctrl => {
@@ -5377,7 +5490,25 @@ async function loadControllers() {
         renderControllers();
     } catch (error) {
         console.error('[CONTROLLERS] Error loading:', error);
-        // Don't show toast on every poll failure
+        
+        // Record error and check if we should show error UI
+        const errorCount = PollingManager.recordError(ENDPOINT);
+        
+        if (PollingManager.shouldShowError(ENDPOINT)) {
+            // Enough consecutive errors - show error message in container
+            const container = document.getElementById('controllers-list');
+            if (container) {
+                container.innerHTML = '<div class="error-message">Failed to load controllers</div>';
+            }
+        } else {
+            // Transient error - use cached data if available
+            const cachedData = PollingManager.getCachedData(ENDPOINT);
+            if (cachedData) {
+                console.log(`[Controllers] Using cached data (error ${errorCount}/${PollingManager.ERROR_THRESHOLD})`);
+                controllersData = cachedData.controllers || [];
+                renderControllers();
+            }
+        }
     }
 }
 

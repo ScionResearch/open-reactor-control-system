@@ -477,12 +477,9 @@ void handleUpdateControl() {
 
 // --- Add this handler for /api/system/status ---
 void handleSystemStatus() {
-  if (statusLocked || sdLocked) {
-    server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
-    return;
-  }
-  statusLocked = true;
-  sdLocked = true;
+  // NOTE: This handler only READS from status/sdInfo structs, it doesn't write.
+  // Therefore we don't need to acquire statusLocked - reads are safe without it.
+  // This prevents 503 errors when other processes are briefly updating status.
 
   StaticJsonDocument<1024> doc;
 
@@ -515,7 +512,7 @@ void handleSystemStatus() {
   modbus["connected"] = status.modbusConnected;
   modbus["fault"] = status.modbusFault;
 
-  // SD card info
+  // SD card info - read from cached sdInfo struct (updated by SD manager)
   JsonObject sd = doc.createNestedObject("sd");
   sd["inserted"] = sdInfo.inserted;
   sd["ready"] = sdInfo.ready;
@@ -523,9 +520,6 @@ void handleSystemStatus() {
   sd["freeSpaceGB"] = sdInfo.cardFreeBytes * 0.000000001;
   sd["logFileSizeKB"] = sdInfo.logSizeBytes * 0.001;
   sd["sensorFileSizeKB"] = sdInfo.sensorSizeBytes * 0.001;
-
-  statusLocked = false;
-  sdLocked = false;
 
   String response;
   serializeJson(doc, response);
