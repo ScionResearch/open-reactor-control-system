@@ -1090,6 +1090,11 @@ void pushIOConfigToIOmcu() {
     
     uint16_t sentCount = 0;
     
+    // Config push delays - increase for more reliable transmission
+    const uint16_t CONFIG_DELAY_MS = 20;        // Delay between simple config messages
+    const uint16_t DEVICE_DELAY_MS = 30;        // Delay for device creation (needs more processing)
+    const uint16_t CONTROLLER_DELAY_MS = 20;    // Delay for controller config
+    
     // ========================================================================
     // Push ADC Input configurations (indices 0-7)
     // ========================================================================
@@ -1122,7 +1127,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send ADC[%d] config after retries\n", i);
         }
         
-        delay(10);  // Delay between messages
+        delay(CONFIG_DELAY_MS);  // Delay between messages
     }
     
     // ========================================================================
@@ -1157,7 +1162,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send DAC[%d] config after retries\n", 8 + i);
         }
         
-        delay(10);
+        delay(CONFIG_DELAY_MS);
     }
     
     // ========================================================================
@@ -1194,7 +1199,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send RTD[%d] config after retries\n", 10 + i);
         }
         
-        delay(10);
+        delay(CONFIG_DELAY_MS);
     }
     
     // ========================================================================
@@ -1231,7 +1236,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send GPIO[%d] config after retries\n", 13 + i);
         }
         
-        delay(10);
+        delay(CONFIG_DELAY_MS);
     }
     
     // ========================================================================
@@ -1267,7 +1272,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send DigitalOutput[%d] config after retries\n", 21 + i);
         }
         
-        delay(10);
+        delay(CONFIG_DELAY_MS);
     }
     
     // ========================================================================
@@ -1313,7 +1318,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send Stepper config after retries\n");
         }
         
-        delay(10);
+        delay(CONFIG_DELAY_MS);
     }
     
     // ========================================================================
@@ -1348,7 +1353,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send DCMotor[%d] config after retries\n", 27 + i);
         }
         
-        delay(10);
+        delay(CONFIG_DELAY_MS);
     }
     
     // ========================================================================
@@ -1385,7 +1390,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send COM Port[%d] config after retries\n", i);
         }
         
-        delay(10);
+        delay(CONFIG_DELAY_MS);
     }
     
     // ========================================================================
@@ -1466,7 +1471,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send Device[%d] config after retries\n", dynamicIndex);
         }
         
-        delay(20);  // Extra delay for device initialization
+        delay(DEVICE_DELAY_MS);  // Extra delay for device initialization
     }
     
     // Push pressure controller calibration (after device creation)
@@ -1491,8 +1496,7 @@ void pushIOConfigToIOmcu() {
                     sent = true;
                     sentCount++;
                     log(LOG_DEBUG, false, "  → Pressure[%d]: scale=%.6f, offset=%.2f %s at DAC %d\n",
-                        cfg.controlIndex, cfg.scale, cfg.offset, 
-                        cfg.unit, cfg.dacIndex);
+                        cfg.controlIndex, cfg.scale, cfg.offset, cfg.unit, cfg.dacIndex);
                     break;
                 }
                 ipc.update();
@@ -1503,7 +1507,7 @@ void pushIOConfigToIOmcu() {
                 log(LOG_WARNING, false, "  ✗ Failed to send pressure controller calibration\n");
             }
             
-            delay(10);
+            delay(CONTROLLER_DELAY_MS);
         }
     }
     
@@ -1551,7 +1555,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send TempController[%d] config after retries\n", 40 + i);
         }
         
-        delay(10);
+        delay(CONTROLLER_DELAY_MS);
     }
     
     // ========================================================================
@@ -1606,7 +1610,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send pHController[43] config after retries\n");
         }
         
-        delay(10);
+        delay(CONTROLLER_DELAY_MS);
     }
     
     // ========================================================================
@@ -1654,7 +1658,7 @@ void pushIOConfigToIOmcu() {
                 log(LOG_WARNING, false, "  ✗ Failed to send FlowController[%d] config after retries\n", cfg.index);
             }
             
-            delay(10);
+            delay(CONTROLLER_DELAY_MS);
         }
     }
     
@@ -1718,7 +1722,7 @@ void pushIOConfigToIOmcu() {
             log(LOG_WARNING, false, "  ✗ Failed to send DOController[48] config after retries\n");
         }
         
-        delay(10);
+        delay(CONTROLLER_DELAY_MS);
     }
     
     log(LOG_INFO, false, "IO configuration push complete: %d objects configured (inputs + outputs + COM ports + devices + controllers)\n", sentCount);

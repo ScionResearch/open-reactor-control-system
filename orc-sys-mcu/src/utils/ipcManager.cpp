@@ -25,8 +25,9 @@ struct PendingTransaction {
     unsigned long timestamp;      // For timeout detection
 };
 
-// Transaction tracking table (max 16 concurrent operations)
-#define MAX_PENDING_TRANSACTIONS 16
+// Transaction tracking table (max 32 concurrent operations)
+// Increased from 16 to handle bulk operations during startup
+#define MAX_PENDING_TRANSACTIONS 32
 static PendingTransaction pendingTransactions[MAX_PENDING_TRANSACTIONS];
 static uint8_t pendingTxnCount = 0;
 
@@ -395,14 +396,18 @@ void handleHello(uint8_t messageType, const uint8_t *payload, uint16_t length) {
   objectCache.clear();
   log(LOG_INFO, false, "IPC: Object cache cleared for fresh start\n");
   
+  // Clear any stale transactions before config push
+  pendingTxnCount = 0;
+  
   // Push IO configuration to IO MCU before enabling polling
   // This ensures IO MCU always has current config after any reboot
   pushIOConfigToIOmcu();
   log(LOG_INFO, false, "IPC: Configuration pushed to IO MCU\n");
   
   // Wait for IO MCU to finish processing config messages before starting polling
-  // This prevents sensor polling from colliding with config message processing
-  delay(200);  // 200ms should be sufficient for config processing
+  // Device creation and controller setup can take significant time on IO MCU
+  // 500ms gives IO MCU time to process all configs without interference
+  delay(500);
   log(LOG_DEBUG, false, "IPC: Config processing delay complete\n");
   
   // Enable sensor polling now that handshake and config push are complete
