@@ -453,6 +453,9 @@ uint8_t getActiveDeviceSensorCount();    // Count sensor objects (indices 70-99)
 uint8_t getFixedHardwareObjectCount();   // Get highest index for fixed hardware range (returns span, not count)
 uint8_t getFixedHardwareExpectedCount(); // Get expected number of valid responses in fixed hardware range
 
+// Name lookup helper (for MQTT publishing - names stored in SYS MCU config, not IPC)
+const char* getObjectNameByIndex(uint8_t index);
+
 /**
  * @brief Get the control object index for a device
  * 

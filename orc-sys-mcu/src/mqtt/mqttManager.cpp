@@ -461,7 +461,10 @@ static void mqttPublishIPCSensors() {
         doc["timestamp"] = timestamp;
         doc["value"] = obj->value;
         doc["unit"] = obj->unit;
-        doc["name"] = obj->name;
+        
+        // Get name from ioConfig (names are stored on SYS MCU, not transmitted via IPC)
+        const char* name = getObjectNameByIndex(obj->index);
+        doc["name"] = (name && name[0] != '\0') ? name : obj->name;
         
         // Add flags
         if (obj->flags & IPC_SENSOR_FLAG_FAULT) {
@@ -552,6 +555,12 @@ static void mqttPublishIPCSensors() {
         // 4. Create JSON payload based on message type
         StaticJsonDocument<256> doc;
         doc["timestamp"] = timestamp;
+        
+        // Get name from ioConfig (names are stored on SYS MCU, not transmitted via IPC)
+        const char* name = getObjectNameByIndex(msg.objId);
+        if (name && name[0] != '\0') {
+            doc["name"] = name;
+        }
 
         // Decode the data payload based on the message type
         switch (msg.msgId) {
@@ -700,6 +709,12 @@ static void mqttPublishIPCSensors() {
         doc["value"] = data->value;
         doc["unit"] = data->unit;
         doc["status"] = data->flags;
+        
+        // Get name from ioConfig (names are stored on SYS MCU, not transmitted via IPC)
+        const char* name = getObjectNameByIndex(data->index);
+        if (name && name[0] != '\0') {
+            doc["name"] = name;
+        }
         
         // Add fault flag if present
         if (data->flags & IPC_SENSOR_FLAG_FAULT) {

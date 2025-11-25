@@ -2126,3 +2126,100 @@ uint8_t getFixedHardwareExpectedCount() {
     
     return count;
 }
+
+/**
+ * @brief Get the configured name for an object by its index
+ * 
+ * Names are stored in SYS MCU config (ioConfig), not transmitted via IPC.
+ * This function maps object indices to their configured names for MQTT publishing.
+ * 
+ * @param index Object index (0-99)
+ * @return Pointer to name string, or empty string if index is invalid/unnamed
+ */
+const char* getObjectNameByIndex(uint8_t index) {
+    // ADC Inputs (0-7)
+    if (index < MAX_ADC_INPUTS) {
+        return ioConfig.adcInputs[index].name;
+    }
+    
+    // DAC Outputs (8-9)
+    if (index >= 8 && index < 8 + MAX_DAC_OUTPUTS) {
+        return ioConfig.dacOutputs[index - 8].name;
+    }
+    
+    // RTD Sensors (10-12)
+    if (index >= 10 && index < 10 + MAX_RTD_SENSORS) {
+        return ioConfig.rtdSensors[index - 10].name;
+    }
+    
+    // GPIO (13-20)
+    if (index >= 13 && index < 13 + MAX_GPIO) {
+        return ioConfig.gpio[index - 13].name;
+    }
+    
+    // Digital Outputs (21-25)
+    if (index >= 21 && index < 21 + MAX_DIGITAL_OUTPUTS) {
+        return ioConfig.digitalOutputs[index - 21].name;
+    }
+    
+    // Stepper Motor (26)
+    if (index == 26) {
+        return ioConfig.stepperMotor.name;
+    }
+    
+    // DC Motors (27-30)
+    if (index >= 27 && index < 27 + MAX_DC_MOTORS) {
+        return ioConfig.dcMotors[index - 27].name;
+    }
+    
+    // Energy Sensors (31-32)
+    if (index >= 31 && index < 31 + MAX_ENERGY_SENSORS) {
+        return ioConfig.energySensors[index - 31].name;
+    }
+    
+    // COM Ports (33-36)
+    if (index >= 33 && index < 33 + MAX_COM_PORTS) {
+        return ioConfig.comPorts[index - 33].name;
+    }
+    
+    // Temperature Controllers (40-42)
+    if (index >= 40 && index < 40 + MAX_TEMP_CONTROLLERS) {
+        return ioConfig.tempControllers[index - 40].name;
+    }
+    
+    // pH Controller (43)
+    if (index == 43) {
+        return ioConfig.phController.name;
+    }
+    
+    // Flow Controllers (44-47)
+    if (index >= 44 && index < 44 + MAX_FLOW_CONTROLLERS) {
+        return ioConfig.flowControllers[index - 44].name;
+    }
+    
+    // DO Controller (48)
+    if (index == 48) {
+        return ioConfig.doController.name;
+    }
+    
+    // Device Control Objects (50-69) - get name from associated device
+    if (index >= 50 && index < 70) {
+        // Find device that owns this control index
+        for (int i = 0; i < MAX_DEVICES; i++) {
+            if (ioConfig.devices[i].isActive) {
+                uint8_t ctrlIndex = getDeviceControlIndex(&ioConfig.devices[i]);
+                if (ctrlIndex == index) {
+                    return ioConfig.devices[i].name;
+                }
+            }
+        }
+    }
+    
+    // Device Sensors (70-99)
+    if (index >= 70 && index < 70 + MAX_DEVICE_SENSORS) {
+        return ioConfig.deviceSensors[index - 70].name;
+    }
+    
+    // Unknown index
+    return "";
+}
