@@ -1,5 +1,6 @@
 #include "ioConfig.h"
 #include "../sys_init.h"  // For ipc global instance
+#include "../utils/ipcManager.h"  // For ipcPrepareForLongOperation/ipcRecoverFromLongOperation
 
 // Global configuration instance
 IOConfig ioConfig;
@@ -1019,15 +1020,21 @@ void saveIOConfig() {
         sensor["nameOverridden"] = ioConfig.deviceSensors[i].nameOverridden;
     }    
     
+    // Prepare IPC for long blocking operation (flash write can take 400-500ms)
+    // This pauses polling, clears pending transactions, and flushes UART buffers
+    // to prevent IPC timeouts and length mismatch errors
+    ipcPrepareForLongOperation();
+    
     // Open file for writing
     File configFile = LittleFS.open(IO_CONFIG_FILENAME, "w");
     if (!configFile) {
         log(LOG_WARNING, true, "Failed to open IO config file for writing\n");
         LittleFS.end();
+        ipcRecoverFromLongOperation();  // Recover even on failure
         return;
     }
     
-    // Write to file
+    // Write to file (this is the blocking operation that can take 400-500ms)
     if (serializeJson(doc, configFile) == 0) {
         log(LOG_WARNING, true, "Failed to write IO config file\n");
     } else {
@@ -1037,6 +1044,10 @@ void saveIOConfig() {
     log(LOG_DEBUG, false, "IO configuration JSON doc size: %d bytes\n", doc.memoryUsage());
     
     configFile.close();
+    
+    // Recover IPC after long operation
+    // This flushes corrupted UART data, resets RX state machine, and resumes polling
+    ipcRecoverFromLongOperation();
     
     // Don't end LittleFS here as it will prevent serving web files
 }

@@ -2785,13 +2785,13 @@ void handleStopDCMotor(uint8_t index) {
     server.send(503, "application/json", "{\"error\":\"IPC queue full, try again\"}");
   }
 }
-
-// ============================================================================
 // Controllers API (indices 40-49) - Phase 1
 // ============================================================================
 
 void handleGetControllers() {
-  StaticJsonDocument<2048> doc;
+  // Use DynamicJsonDocument for larger responses - 8KB supports up to 10+ controllers
+  // Each controller can add 300-500 bytes of JSON data
+  DynamicJsonDocument doc(8192);
   JsonArray controllers = doc.createNestedArray("controllers");
   
   for (int i = 0; i < MAX_TEMP_CONTROLLERS; i++) {    

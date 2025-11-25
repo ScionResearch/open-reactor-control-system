@@ -140,6 +140,95 @@ void cleanupStalledTransactions() {
     }
 }
 
+// ============================================================================
+// Long Operation Coordination
+// ============================================================================
+// These functions help prevent IPC timeouts during blocking operations like
+// flash writes. Call ipcPrepareForLongOperation() before the operation and
+// ipcRecoverFromLongOperation() after.
+
+// Flag to pause polling during long operations
+static bool ipcPollingPaused = false;
+
+/**
+ * @brief Prepare IPC for a long blocking operation (e.g., flash write)
+ * 
+ * This function:
+ * 1. Pauses sensor polling to prevent new transactions
+ * 2. Processes any pending IPC data (drain buffers)
+ * 3. Clears pending transactions (they would timeout anyway)
+ * 4. Flushes UART RX buffer (data would be corrupted anyway)
+ * 
+ * Call this BEFORE starting a long blocking operation like saveIOConfig().
+ */
+void ipcPrepareForLongOperation() {
+    log(LOG_DEBUG, false, "[IPC] Preparing for long operation...\n");
+    
+    // 1. Pause polling - prevents new transactions from being started
+    ipcPollingPaused = true;
+    
+    // 2. Process any pending IPC data to drain TX queue
+    unsigned long drainStart = millis();
+    while (millis() - drainStart < 50) {
+        ipc.update();
+        delay(5);
+    }
+    
+    // 3. Clear pending transactions - they will all timeout during the long operation
+    //    Better to clear them now and avoid the timeout warnings later
+    if (pendingTxnCount > 0) {
+        log(LOG_DEBUG, false, "[IPC] Clearing %d pending transactions before long operation\n", pendingTxnCount);
+        pendingTxnCount = 0;
+    }
+    
+    // 4. Flush UART RX buffer - any data arriving during the operation will be
+    //    corrupted due to buffer overflow anyway, so discard it now
+    uint16_t flushed = 0;
+    while (Serial1.available()) {
+        Serial1.read();
+        flushed++;
+    }
+    if (flushed > 0) {
+        log(LOG_DEBUG, false, "[IPC] Flushed %d bytes from UART before long operation\n", flushed);
+    }
+}
+
+/**
+ * @brief Recover IPC after a long blocking operation
+ * 
+ * This function:
+ * 1. Flushes UART RX buffer (discard corrupted data accumulated during operation)
+ * 2. Resets the IPC protocol state machine
+ * 3. Resumes sensor polling
+ * 4. Resets poll timer to delay first poll
+ * 
+ * Call this AFTER completing a long blocking operation like saveIOConfig().
+ */
+void ipcRecoverFromLongOperation() {
+    // 1. Flush UART RX buffer - any data that arrived during the blocking
+    //    operation is likely corrupted or partial, discard it
+    uint16_t flushed = 0;
+    while (Serial1.available()) {
+        Serial1.read();
+        flushed++;
+    }
+    if (flushed > 0) {
+        log(LOG_DEBUG, false, "[IPC] Flushed %d bytes from UART after long operation\n", flushed);
+    }
+    
+    // 2. Reset the IPC protocol RX state machine to resync
+    ipc.resetRxState();
+    
+    // 3. Resume polling
+    ipcPollingPaused = false;
+    
+    // 4. Reset poll timer to delay first poll by a full interval
+    //    This gives IO MCU time to stabilize and prevents immediate burst
+    lastSensorPollTime = millis();
+    
+    log(LOG_DEBUG, false, "[IPC] Recovered from long operation, polling resumed\n");
+}
+
 // Inter-processor communication
 void init_ipcManager(void) {
   Serial1.setRX(PIN_SI_RX);
@@ -182,6 +271,11 @@ void init_ipcManager(void) {
  * - Data logging
  */
 void pollSensors(void) {
+  // Skip polling if paused for long operations (e.g., flash write)
+  if (ipcPollingPaused) {
+    return;
+  }
+  
   // Wait for IPC handshake and configuration to complete
   // Rate-limit the warning so it doesn't spam the serial console when IPC is down.
   if (!ipcReady) {
@@ -406,12 +500,24 @@ void handleHello(uint8_t messageType, const uint8_t *payload, uint16_t length) {
   
   // Wait for IO MCU to finish processing config messages before starting polling
   // Device creation and controller setup can take significant time on IO MCU
-  // 500ms gives IO MCU time to process all configs without interference
-  delay(500);
+  // Use non-blocking wait that continues to call ipc.update() to:
+  // 1. Process any pending TX/RX data (ensures large packets complete)
+  // 2. Respond to PING keepalives (prevents IO MCU timeout)
+  // 3. Receive ACKs from config messages
+  unsigned long configWaitStart = millis();
+  while (millis() - configWaitStart < 500) {
+    ipc.update();
+    delay(10);  // Small delay to prevent tight loop
+  }
   log(LOG_DEBUG, false, "IPC: Config processing delay complete\n");
   
   // Enable sensor polling now that handshake and config push are complete
   ipcReady = true;
+  
+  // Reset poll timer to delay first poll by a full interval
+  // This prevents polling from starting immediately after config push
+  // and gives IO MCU extra time to complete all config processing
+  lastSensorPollTime = millis();
   
   // Update status flags - connection restored
   if (!statusLocked) {
@@ -452,12 +558,27 @@ void handleHelloAck(uint8_t messageType, const uint8_t *payload, uint16_t length
   objectCache.clear();
   log(LOG_INFO, false, "IPC: Object cache cleared for fresh start\n");
   
+  // Clear any stale transactions before config push
+  pendingTxnCount = 0;
+  
   // Push IO configuration to IO MCU now that IPC is established
   pushIOConfigToIOmcu();
   log(LOG_INFO, false, "IPC: Configuration pushed to IO MCU\n");
   
+  // Wait for IO MCU to finish processing config messages before starting polling
+  // Use non-blocking wait that continues to call ipc.update() to process keepalives
+  unsigned long configWaitStart = millis();
+  while (millis() - configWaitStart < 500) {
+    ipc.update();
+    delay(10);  // Small delay to prevent tight loop
+  }
+  log(LOG_DEBUG, false, "IPC: Config processing delay complete\n");
+  
   // Enable sensor polling now that IPC is ready
   ipcReady = true;
+  
+  // Reset poll timer to delay first poll by a full interval
+  lastSensorPollTime = millis();
   
   // Update status flags - connection restored
   if (!statusLocked) {

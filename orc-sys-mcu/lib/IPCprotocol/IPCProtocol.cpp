@@ -526,3 +526,11 @@ void IPCProtocol::resetStatistics() {
     _rxErrorCount = 0;
     _crcErrorCount = 0;
 }
+
+void IPCProtocol::resetRxState() {
+    // Reset RX state machine to IDLE
+    _state = IPC_STATE_IDLE;
+    _rxBufferIndex = 0;
+    _rxPacketLength = 0;
+    _rxEscapeNext = false;
+}

@@ -116,6 +116,13 @@ public:
      */
     void resetStatistics();
     
+    /**
+     * @brief Reset RX state machine to resync after errors
+     * Call this after long blocking operations that may have caused
+     * UART buffer overflow and corrupted packet boundaries.
+     */
+    void resetRxState();
+    
     // Helper functions for common messages
     bool sendPing();
     bool sendPong();

@@ -34,5 +34,9 @@ bool sendDeviceQueryCommand(uint8_t startIndex);
 uint16_t generateTransactionId();
 bool addPendingTransaction(uint16_t txnId, uint8_t reqType, uint8_t respType, uint16_t respCount, uint8_t startIdx);
 
+// Long operation coordination (prevents IPC timeouts during flash writes)
+void ipcPrepareForLongOperation();
+void ipcRecoverFromLongOperation();
+
 // Global IPC object
 extern IPCProtocol ipc;
