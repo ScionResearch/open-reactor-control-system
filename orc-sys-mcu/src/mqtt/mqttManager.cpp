@@ -666,7 +666,7 @@ static void mqttPublishIPCSensors() {
                 topicPath = "sensors/od";
                 break;
             case OBJ_T_FLOW_SENSOR:
-                topicPath = "sensors/gasflow";
+                topicPath = "sensors/flow";
                 break;
             case OBJ_T_PRESSURE_SENSOR:
                 topicPath = "sensors/pressure";
