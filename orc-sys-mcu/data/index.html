@@ -449,6 +449,106 @@
                         <button type="submit" class="btn">Save MQTT Settings</button>
                     </form>
                 </div>
+
+                <div class="settings-section">
+                    <h3>Data Recording</h3>
+                    <p class="settings-description">Configure automatic data recording to SD card. Data will be recorded at the specified intervals, aligned to RTC time.</p>
+                    <form id="recordingForm">
+                        <div class="form-group recording-master">
+                            <label for="recordingEnabled">Enable Data Recording</label>
+                            <input type="checkbox" id="recordingEnabled">
+                        </div>
+                        
+                        <div class="recording-types">
+                            <div class="recording-type-row">
+                                <div class="recording-type-enable">
+                                    <input type="checkbox" id="recordInputs">
+                                    <label for="recordInputs">Inputs (ADC, Digital)</label>
+                                </div>
+                                <div class="recording-type-interval">
+                                    <label>Interval:</label>
+                                    <input type="number" id="inputsInterval" min="15" step="1" value="60">
+                                    <span>sec</span>
+                                </div>
+                            </div>
+                            
+                            <div class="recording-type-row">
+                                <div class="recording-type-enable">
+                                    <input type="checkbox" id="recordOutputs">
+                                    <label for="recordOutputs">Outputs (DAC, Digital)</label>
+                                </div>
+                                <div class="recording-type-interval">
+                                    <label>Interval:</label>
+                                    <input type="number" id="outputsInterval" min="15" step="1" value="60">
+                                    <span>sec</span>
+                                </div>
+                            </div>
+                            
+                            <div class="recording-type-row">
+                                <div class="recording-type-enable">
+                                    <input type="checkbox" id="recordMotors">
+                                    <label for="recordMotors">Motors (Stepper, DC)</label>
+                                </div>
+                                <div class="recording-type-interval">
+                                    <label>Interval:</label>
+                                    <input type="number" id="motorsInterval" min="15" step="1" value="60">
+                                    <span>sec</span>
+                                </div>
+                            </div>
+                            
+                            <div class="recording-type-row">
+                                <div class="recording-type-enable">
+                                    <input type="checkbox" id="recordSensors">
+                                    <label for="recordSensors">Sensors (RTD, Device)</label>
+                                </div>
+                                <div class="recording-type-interval">
+                                    <label>Interval:</label>
+                                    <input type="number" id="sensorsInterval" min="15" step="1" value="60">
+                                    <span>sec</span>
+                                </div>
+                            </div>
+                            
+                            <div class="recording-type-row">
+                                <div class="recording-type-enable">
+                                    <input type="checkbox" id="recordEnergy">
+                                    <label for="recordEnergy">Energy Monitors</label>
+                                </div>
+                                <div class="recording-type-interval">
+                                    <label>Interval:</label>
+                                    <input type="number" id="energyInterval" min="15" step="1" value="60">
+                                    <span>sec</span>
+                                </div>
+                            </div>
+                            
+                            <div class="recording-type-row">
+                                <div class="recording-type-enable">
+                                    <input type="checkbox" id="recordControllers">
+                                    <label for="recordControllers">Controllers</label>
+                                </div>
+                                <div class="recording-type-interval">
+                                    <label>Interval:</label>
+                                    <input type="number" id="controllersInterval" min="15" step="1" value="60">
+                                    <span>sec</span>
+                                </div>
+                            </div>
+                            
+                            <div class="recording-type-row">
+                                <div class="recording-type-enable">
+                                    <input type="checkbox" id="recordDevices">
+                                    <label for="recordDevices">Devices (MFC, pH, DO)</label>
+                                </div>
+                                <div class="recording-type-interval">
+                                    <label>Interval:</label>
+                                    <input type="number" id="devicesInterval" min="15" step="1" value="60">
+                                    <span>sec</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">Save Recording Settings</button>
+                        <div id="recordingStatus" class="status-message"></div>
+                    </form>
+                </div>
             </div>
 
         </main>

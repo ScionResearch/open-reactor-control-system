@@ -3,7 +3,7 @@
 #include "../sys_init.h"
 
 // LittleFS configuration
-#define CONFIG_FILENAME "/network_config.json"
+#define CONFIG_FILENAME "/system_config.json"
 #define CONFIG_MAGIC_NUMBER 0x55
 
 // Timing defines
@@ -56,6 +56,10 @@ void handleSDDownloadFile(void);
 void handleSDViewFile(void);
 void handleSDDeleteFile(void);
 void handleFileManagerPage(void);
+
+// Recording configuration API functions
+void handleGetRecordingConfig(void);
+void handleSaveRecordingConfig(void);
 
 // Network configuration structure
 struct NetworkConfig

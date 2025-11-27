@@ -705,6 +705,9 @@ bool loadIOConfig() {
 void saveIOConfig() {
     log(LOG_INFO, true, "Saving IO configuration to %s\n", IO_CONFIG_FILENAME);
     
+    // Set flag to trigger recording header rewrite (names/units may have changed)
+    ioConfigChanged = true;
+    
     // TEMPORARILY DISABLED FOR TESTING
     /*
     // Check if LittleFS is mounted

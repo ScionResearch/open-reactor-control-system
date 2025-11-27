@@ -213,6 +213,11 @@ function openTab(evt, tabName) {
         if (typeof initControllersTab === 'function') {
             initControllersTab();
         }
+    } else if (tabName === 'settings') {
+        // Load recording configuration when settings tab is opened
+        if (typeof loadRecordingConfig === 'function') {
+            loadRecordingConfig();
+        }
     }
 }
 
@@ -1341,12 +1346,10 @@ async function updateSystemStatus() {
                     const sdCapacityContainer = document.getElementById('sdCapacityContainer');
                     const sdFreeSpaceContainer = document.getElementById('sdFreeSpaceContainer');
                     const sdLogSizeContainer = document.getElementById('sdLogSizeContainer');
-                    const sdSensorSizeContainer = document.getElementById('sdSensorSizeContainer');
                     
                     if (sdCapacityContainer) sdCapacityContainer.style.display = 'flex';
                     if (sdFreeSpaceContainer) sdFreeSpaceContainer.style.display = 'flex';
                     if (sdLogSizeContainer) sdLogSizeContainer.style.display = 'flex';
-                    if (sdSensorSizeContainer) sdSensorSizeContainer.style.display = 'flex';
                     
                     // Update SD card details
                     const sdCapacity = document.getElementById('sdCapacity');
@@ -1356,10 +1359,9 @@ async function updateSystemStatus() {
                     if (sdFreeSpace) sdFreeSpace.textContent = data.sd.freeSpaceGB.toFixed(1) + ' GB';
                     
                     const sdLogSize = document.getElementById('sdLogSize');
-                    if (sdLogSize) sdLogSize.textContent = data.sd.logFileSizeKB.toFixed(1) + ' kB';
-                    
-                    const sdSensorSize = document.getElementById('sdSensorSize');
-                    if (sdSensorSize) sdSensorSize.textContent = data.sd.sensorFileSizeKB.toFixed(1) + ' kB';
+                    if (sdLogSize && data.sd.logFileSizeKB !== undefined) {
+                        sdLogSize.textContent = data.sd.logFileSizeKB.toFixed(1) + ' kB';
+                    }
                 }
             }
         }
@@ -1579,6 +1581,126 @@ document.getElementById('mqttForm').addEventListener('submit', async (e) => {
         }
         
         showToast('error', 'Error', 'Failed to save MQTT settings');
+    }
+});
+
+// ============================================================================
+// DATA RECORDING CONFIGURATION
+// ============================================================================
+
+// Load recording configuration when settings tab is opened
+async function loadRecordingConfig() {
+    try {
+        const response = await fetch('/api/config/recording');
+        if (!response.ok) throw new Error('Failed to load recording config');
+        
+        const config = await response.json();
+        
+        // Master enable
+        document.getElementById('recordingEnabled').checked = config.enabled;
+        
+        // Individual types
+        document.getElementById('recordInputs').checked = config.inputs.enabled;
+        document.getElementById('inputsInterval').value = config.inputs.interval;
+        
+        document.getElementById('recordOutputs').checked = config.outputs.enabled;
+        document.getElementById('outputsInterval').value = config.outputs.interval;
+        
+        document.getElementById('recordMotors').checked = config.motors.enabled;
+        document.getElementById('motorsInterval').value = config.motors.interval;
+        
+        document.getElementById('recordSensors').checked = config.sensors.enabled;
+        document.getElementById('sensorsInterval').value = config.sensors.interval;
+        
+        document.getElementById('recordEnergy').checked = config.energy.enabled;
+        document.getElementById('energyInterval').value = config.energy.interval;
+        
+        document.getElementById('recordControllers').checked = config.controllers.enabled;
+        document.getElementById('controllersInterval').value = config.controllers.interval;
+        
+        document.getElementById('recordDevices').checked = config.devices.enabled;
+        document.getElementById('devicesInterval').value = config.devices.interval;
+        
+    } catch (error) {
+        console.error('Error loading recording config:', error);
+    }
+}
+
+// Recording form submission handler
+document.getElementById('recordingForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const statusDiv = document.getElementById('recordingStatus');
+    statusDiv.textContent = '';
+    statusDiv.className = 'status-message';
+    
+    const recordingConfig = {
+        enabled: document.getElementById('recordingEnabled').checked,
+        inputs: {
+            enabled: document.getElementById('recordInputs').checked,
+            interval: parseInt(document.getElementById('inputsInterval').value) || 60
+        },
+        outputs: {
+            enabled: document.getElementById('recordOutputs').checked,
+            interval: parseInt(document.getElementById('outputsInterval').value) || 60
+        },
+        motors: {
+            enabled: document.getElementById('recordMotors').checked,
+            interval: parseInt(document.getElementById('motorsInterval').value) || 60
+        },
+        sensors: {
+            enabled: document.getElementById('recordSensors').checked,
+            interval: parseInt(document.getElementById('sensorsInterval').value) || 60
+        },
+        energy: {
+            enabled: document.getElementById('recordEnergy').checked,
+            interval: parseInt(document.getElementById('energyInterval').value) || 60
+        },
+        controllers: {
+            enabled: document.getElementById('recordControllers').checked,
+            interval: parseInt(document.getElementById('controllersInterval').value) || 60
+        },
+        devices: {
+            enabled: document.getElementById('recordDevices').checked,
+            interval: parseInt(document.getElementById('devicesInterval').value) || 60
+        }
+    };
+    
+    // Show loading toast
+    const loadingToast = showToast('info', 'Saving...', 'Updating recording settings', 10000);
+    
+    try {
+        const response = await fetch('/api/config/recording', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(recordingConfig)
+        });
+        
+        // Remove loading toast
+        if (loadingToast.parentNode) {
+            loadingToast.parentNode.removeChild(loadingToast);
+        }
+        
+        if (response.ok) {
+            showToast('success', 'Success', 'Recording settings saved successfully');
+            statusDiv.textContent = 'Settings saved successfully';
+            statusDiv.className = 'status-message success';
+        } else {
+            const result = await response.json();
+            throw new Error(result.error || 'Failed to save recording settings');
+        }
+    } catch (error) {
+        console.error('Error saving recording settings:', error);
+        
+        // Remove loading toast if it still exists
+        if (loadingToast.parentNode) {
+            loadingToast.parentNode.removeChild(loadingToast);
+        }
+        
+        showToast('error', 'Error', error.message || 'Failed to save recording settings');
+        statusDiv.textContent = error.message || 'Failed to save settings';
+        statusDiv.className = 'status-message error';
     }
 });
 

@@ -42,4 +42,5 @@ void manage_core1(void) {
     manageTerminal();
     manageIPC();
     manageSD();
+    manageDataRecording();
 }

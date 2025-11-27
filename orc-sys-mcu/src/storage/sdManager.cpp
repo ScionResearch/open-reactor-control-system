@@ -1,4 +1,6 @@
 #include "utils/statusManager.h"
+#include "utils/objectCache.h"
+#include "config/ioConfig.h"
 #include "sdManager.h"
 
 SdFs sd;
@@ -7,6 +9,24 @@ FsFile file;
 sdInfo_t sdInfo;
 uint32_t sdTS;
 volatile bool sdLocked = false;
+
+// Recording configuration and state
+RecordingConfig recordingConfig = {
+    .enabled = false,
+    .inputs = { .enabled = false, .interval = 60 },
+    .outputs = { .enabled = false, .interval = 60 },
+    .motors = { .enabled = false, .interval = 60 },
+    .sensors = { .enabled = false, .interval = 60 },
+    .energy = { .enabled = false, .interval = 60 },
+    .controllers = { .enabled = false, .interval = 60 },
+    .devices = { .enabled = false, .interval = 60 }
+};
+
+RecordingScheduler recordingScheduler = {0};
+bool ioConfigChanged = false;
+
+// Forward declaration for internal function
+void initRecordingDirectoriesInternal(void);
 
 void init_sdManager(void) {
     SPI1.setMISO(PIN_SD_MISO);
@@ -87,17 +107,14 @@ void mountSD(void) {
         log(LOG_INFO, false, "SD card initialisation successful, using %s\n", sdSPIinitialised ? "SPI" : "SDIO");
         // Check for correct folder structure and create if missing
         log(LOG_INFO, false, "Checking for correct folder structure\n");
-        if (!sd.exists("/sensors")) sd.mkdir("/sensors");
         if (!sd.exists("/logs")) sd.mkdir("/logs");
         // Check for log files and create if missing
         if (!sd.exists("/logs/system.txt")) {
             file = sd.open("/logs/system.txt", O_CREAT | O_RDWR | O_APPEND);
             file.close();
         }
-        if (!sd.exists("/sensors/sensors.csv")) {
-            file = sd.open("/sensors/sensors.csv", O_CREAT | O_RDWR | O_APPEND);
-            file.close();
-        }
+        // Initialize recording directories
+        initRecordingDirectoriesInternal();
         sdInfo.ready = true;
     }
     if (sdInfo.ready) {
@@ -162,16 +179,13 @@ void printSDInfo(void) {
     sdInfo.cardFreeBytes = (uint64_t)sd.vol()->bytesPerCluster() * (uint64_t)sd.freeClusterCount();
     sdLocked = false;
     uint64_t logFileSize = getFileSize("/logs/system.txt");
-    uint64_t sensorFileSize = getFileSize("/sensors/sensors.csv");
     sdLocked = true;
     sdInfo.logSizeBytes = logFileSize;
-    sdInfo.sensorSizeBytes = sensorFileSize;
     
     log(LOG_INFO, false, "SD card size: %0.1f GB\n", sdInfo.cardSizeBytes * 0.000000001);
     log(LOG_INFO, false, "Free space: %0.1f GB\n", sdInfo.cardFreeBytes * 0.000000001);
     log(LOG_INFO, false, "Volume is FAT%d\n", sd.vol()->fatType());
     log(LOG_INFO, false, "Log file size: %0.1f kbytes\n", 0.001 * (float)logFileSize);
-    log(LOG_INFO, false, "Sensor file size: %0.1f kbytes\n", 0.001 * (float)sensorFileSize);
     
     sdLocked = false;
 }
@@ -242,7 +256,734 @@ bool writeLog(const char *message) {
     sdLocked = false;
     return true;
 }
+// DATA RECORDING FUNCTIONS
+// ============================================================================
 
-void writeSensorData(/* Sensor data struct to be defined */) {
-    // To be implemented
+void initRecordingDirectoriesInternal(void) {
+    // Create main recording directory
+    if (!sd.exists(RECORDED_DATA_DIR)) {
+        if (sd.mkdir(RECORDED_DATA_DIR)) {
+            log(LOG_INFO, false, "Created %s directory\n", RECORDED_DATA_DIR);
+        } else {
+            log(LOG_ERROR, false, "Failed to create %s directory\n", RECORDED_DATA_DIR);
+        }
+    }
+    // Create controllers subdirectory
+    if (!sd.exists(CONTROLLERS_DIR)) {
+        if (sd.mkdir(CONTROLLERS_DIR)) {
+            log(LOG_INFO, false, "Created %s directory\n", CONTROLLERS_DIR);
+        } else {
+            log(LOG_ERROR, false, "Failed to create %s directory\n", CONTROLLERS_DIR);
+        }
+    }
+    // Create devices subdirectory
+    if (!sd.exists(DEVICES_DIR)) {
+        if (sd.mkdir(DEVICES_DIR)) {
+            log(LOG_INFO, false, "Created %s directory\n", DEVICES_DIR);
+        } else {
+            log(LOG_ERROR, false, "Failed to create %s directory\n", DEVICES_DIR);
+        }
+    }
+}
+
+void initRecordingDirectories(void) {
+    if (sdLocked) return;
+    sdLocked = true;
+    if (!sdInfo.ready) {
+        sdLocked = false;
+        return;
+    }
+    initRecordingDirectoriesInternal();
+    sdLocked = false;
+}
+
+void invalidateRecordingHeaders(void) {
+    // Mark all headers as needing rewrite
+    recordingScheduler.inputsHeadersWritten = false;
+    recordingScheduler.outputsHeadersWritten = false;
+    recordingScheduler.motorsHeadersWritten = false;
+    recordingScheduler.sensorsHeadersWritten = false;
+    recordingScheduler.energyHeadersWritten = false;
+    recordingScheduler.controllersHeadersWritten = false;
+    recordingScheduler.devicesHeadersWritten = false;
+    log(LOG_INFO, false, "Recording headers invalidated - will rewrite on next record\n");
+}
+
+// Local timestamp function for recording (renamed to avoid conflict with timeManager.h)
+static String getRecordingTimestamp(void) {
+    DateTime now;
+    if (!getGlobalDateTime(now, 10)) {
+        return "1970-01-01T00:00:00";
+    }
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d",
+             now.year, now.month, now.day, now.hour, now.minute, now.second);
+    return String(buf);
+}
+
+uint32_t getEpochSeconds(void) {
+    DateTime now;
+    if (!getGlobalDateTime(now, 10)) {
+        return 0;
+    }
+    // Simple epoch calculation (not accounting for leap seconds, good enough for scheduling)
+    // Days since 1970-01-01
+    uint32_t days = 0;
+    for (int y = 1970; y < now.year; y++) {
+        days += (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) ? 366 : 365;
+    }
+    static const int daysInMonth[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    for (int m = 1; m < now.month; m++) {
+        days += daysInMonth[m];
+        if (m == 2 && (now.year % 4 == 0 && (now.year % 100 != 0 || now.year % 400 == 0))) {
+            days += 1; // Leap year February
+        }
+    }
+    days += now.day - 1;
+    return days * 86400UL + now.hour * 3600UL + now.minute * 60UL + now.second;
+}
+
+bool appendToCSV(const char* path, const String& line) {
+    if (sdLocked) return false;
+    sdLocked = true;
+    if (!sdInfo.ready) {
+        sdLocked = false;
+        return false;
+    }
+    
+    FsFile csvFile = sd.open(path, O_CREAT | O_RDWR | O_APPEND);
+    if (!csvFile) {
+        sdLocked = false;
+        log(LOG_ERROR, false, "Failed to open %s for writing\n", path);
+        return false;
+    }
+    
+    csvFile.println(line);
+    csvFile.close();
+    sdLocked = false;
+    return true;
+}
+
+void archiveRecordingFile(const char* path, const char* archivePrefix) {
+    if (sdLocked) return;
+    sdLocked = true;
+    if (!sdInfo.ready || !sd.exists(path)) {
+        sdLocked = false;
+        return;
+    }
+    
+    DateTime now;
+    if (!getGlobalDateTime(now, 10)) {
+        sdLocked = false;
+        return;
+    }
+    
+    // Build archive filename
+    char archivePath[128];
+    snprintf(archivePath, sizeof(archivePath), "%s-%04d-%02d-%02d.csv",
+             archivePrefix, now.year, now.month, now.day);
+    
+    // If archive exists, add a number suffix
+    if (sd.exists(archivePath)) {
+        for (int i = 1; i < 100; i++) {
+            snprintf(archivePath, sizeof(archivePath), "%s-%04d-%02d-%02d-%d.csv",
+                     archivePrefix, now.year, now.month, now.day, i);
+            if (!sd.exists(archivePath)) break;
+        }
+    }
+    
+    sd.rename(path, archivePath);
+    log(LOG_INFO, true, "Archived %s to %s\n", path, archivePath);
+    sdLocked = false;
+}
+
+// Check if it's time to record based on RTC alignment
+bool shouldRecord(uint32_t lastRecord, uint16_t interval) {
+    uint32_t now = getEpochSeconds();
+    if (now == 0) return false;  // RTC not ready
+    
+    // Check alignment: record at multiples of interval from :00
+    bool aligned = (now % interval) == 0;
+    bool notDuplicate = (now != lastRecord);
+    
+    return aligned && notDuplicate;
+}
+
+// Flag to track if directories have been initialized this session
+static bool recordingDirsInitialized = false;
+
+void manageDataRecording(void) {
+    if (!recordingConfig.enabled || !sdInfo.ready) return;
+    
+    // Ensure directories exist (only check once per session)
+    if (!recordingDirsInitialized) {
+        initRecordingDirectories();
+        recordingDirsInitialized = true;
+    }
+    
+    // Check if ioConfig changed - invalidate headers
+    if (ioConfigChanged) {
+        invalidateRecordingHeaders();
+        ioConfigChanged = false;
+    }
+    
+    uint32_t now = getEpochSeconds();
+    if (now == 0) return;  // RTC not ready
+    
+    // Inputs recording
+    if (recordingConfig.inputs.enabled && shouldRecord(recordingScheduler.lastInputsRecord, recordingConfig.inputs.interval)) {
+        recordingScheduler.lastInputsRecord = now;  // Update timestamp first to prevent spam
+        // Check if file was deleted - reset header flag if so
+        if (recordingScheduler.inputsHeadersWritten && getFileSize(RECORDED_DATA_DIR "/inputs.csv") == 0) {
+            recordingScheduler.inputsHeadersWritten = false;
+        }
+        if (!recordingScheduler.inputsHeadersWritten) {
+            if (writeInputsHeader()) {
+                recordingScheduler.inputsHeadersWritten = true;
+            }
+        }
+        writeInputsRecord();
+    }
+    
+    // Outputs recording
+    if (recordingConfig.outputs.enabled && shouldRecord(recordingScheduler.lastOutputsRecord, recordingConfig.outputs.interval)) {
+        recordingScheduler.lastOutputsRecord = now;
+        if (recordingScheduler.outputsHeadersWritten && getFileSize(RECORDED_DATA_DIR "/outputs.csv") == 0) {
+            recordingScheduler.outputsHeadersWritten = false;
+        }
+        if (!recordingScheduler.outputsHeadersWritten) {
+            if (writeOutputsHeader()) {
+                recordingScheduler.outputsHeadersWritten = true;
+            }
+        }
+        writeOutputsRecord();
+    }
+    
+    // Motors recording
+    if (recordingConfig.motors.enabled && shouldRecord(recordingScheduler.lastMotorsRecord, recordingConfig.motors.interval)) {
+        recordingScheduler.lastMotorsRecord = now;
+        if (recordingScheduler.motorsHeadersWritten && getFileSize(RECORDED_DATA_DIR "/motors.csv") == 0) {
+            recordingScheduler.motorsHeadersWritten = false;
+        }
+        if (!recordingScheduler.motorsHeadersWritten) {
+            if (writeMotorsHeader()) {
+                recordingScheduler.motorsHeadersWritten = true;
+            }
+        }
+        writeMotorsRecord();
+    }
+    
+    // Sensors recording
+    if (recordingConfig.sensors.enabled && shouldRecord(recordingScheduler.lastSensorsRecord, recordingConfig.sensors.interval)) {
+        recordingScheduler.lastSensorsRecord = now;
+        if (recordingScheduler.sensorsHeadersWritten && getFileSize(RECORDED_DATA_DIR "/sensors.csv") == 0) {
+            recordingScheduler.sensorsHeadersWritten = false;
+        }
+        if (!recordingScheduler.sensorsHeadersWritten) {
+            if (writeSensorsHeader()) {
+                recordingScheduler.sensorsHeadersWritten = true;
+            }
+        }
+        writeSensorsRecord();
+    }
+    
+    // Energy recording
+    if (recordingConfig.energy.enabled && shouldRecord(recordingScheduler.lastEnergyRecord, recordingConfig.energy.interval)) {
+        recordingScheduler.lastEnergyRecord = now;
+        if (recordingScheduler.energyHeadersWritten && getFileSize(RECORDED_DATA_DIR "/energy.csv") == 0) {
+            recordingScheduler.energyHeadersWritten = false;
+        }
+        if (!recordingScheduler.energyHeadersWritten) {
+            if (writeEnergyHeader()) {
+                recordingScheduler.energyHeadersWritten = true;
+            }
+        }
+        writeEnergyRecord();
+    }
+    
+    // Controllers recording (headers checked per-file in writeControllersRecord)
+    if (recordingConfig.controllers.enabled && shouldRecord(recordingScheduler.lastControllersRecord, recordingConfig.controllers.interval)) {
+        recordingScheduler.lastControllersRecord = now;
+        writeControllersRecord();
+    }
+    
+    // Devices recording (headers checked per-file in writeDevicesRecord)
+    if (recordingConfig.devices.enabled && shouldRecord(recordingScheduler.lastDevicesRecord, recordingConfig.devices.interval)) {
+        recordingScheduler.lastDevicesRecord = now;
+        writeDevicesRecord();
+    }
+}
+
+// ============================================================================
+// HEADER WRITING FUNCTIONS
+// ============================================================================
+
+bool writeInputsHeader(void) {
+    const char* path = RECORDED_DATA_DIR "/inputs.csv";
+    
+    // Check file size and archive if needed
+    uint64_t fileSize = getFileSize(path);
+    if (fileSize > SD_RECORDING_MAX_SIZE) {
+        archiveRecordingFile(path, RECORDED_DATA_DIR "/inputs-archive");
+    }
+    
+    String header = "Timestamp";
+    
+    // ADC inputs 0-7
+    for (int i = 0; i <= 7; i++) {
+        header += ",";
+        header += ioConfig.adcInputs[i].name;
+        header += " (";
+        header += ioConfig.adcInputs[i].unit;
+        header += ")";
+    }
+    
+    // Digital inputs 13-20
+    for (int i = 0; i <= 7; i++) {
+        header += ",";
+        header += ioConfig.gpio[i].name;
+        header += " (state)";
+    }
+    
+    return appendToCSV(path, header);
+}
+
+bool writeOutputsHeader(void) {
+    const char* path = RECORDED_DATA_DIR "/outputs.csv";
+    
+    uint64_t fileSize = getFileSize(path);
+    if (fileSize > SD_RECORDING_MAX_SIZE) {
+        archiveRecordingFile(path, RECORDED_DATA_DIR "/outputs-archive");
+    }
+    
+    String header = "Timestamp";
+    
+    // DAC outputs 8-9
+    for (int i = 0; i <= 1; i++) {
+        header += ",";
+        header += ioConfig.dacOutputs[i].name;
+        header += " (";
+        header += ioConfig.dacOutputs[i].unit;
+        header += ")";
+    }
+    
+    // Digital outputs 21-25
+    for (int i = 0; i <= 4; i++) {
+        header += ",";
+        header += ioConfig.digitalOutputs[i].name;
+        header += " (%)";
+    }
+    
+    return appendToCSV(path, header);
+}
+
+bool writeMotorsHeader(void) {
+    const char* path = RECORDED_DATA_DIR "/motors.csv";
+    
+    uint64_t fileSize = getFileSize(path);
+    if (fileSize > SD_RECORDING_MAX_SIZE) {
+        archiveRecordingFile(path, RECORDED_DATA_DIR "/motors-archive");
+    }
+    
+    String header = "Timestamp";
+    
+    // Stepper motor (index 26)
+    header += ",";
+    header += ioConfig.stepperMotor.name;
+    header += " RPM,";
+    header += ioConfig.stepperMotor.name;
+    header += " Running,";
+    header += ioConfig.stepperMotor.name;
+    header += " Direction";
+    
+    // DC motors (indices 27-30)
+    for (int i = 0; i < 4; i++) {
+        header += ",";
+        header += ioConfig.dcMotors[i].name;
+        header += " (%),";
+        header += ioConfig.dcMotors[i].name;
+        header += " Running,";
+        header += ioConfig.dcMotors[i].name;
+        header += " Direction,";
+        header += ioConfig.dcMotors[i].name;
+        header += " (A)";
+    }
+    
+    return appendToCSV(path, header);
+}
+
+bool writeSensorsHeader(void) {
+    const char* path = RECORDED_DATA_DIR "/sensors.csv";
+    
+    uint64_t fileSize = getFileSize(path);
+    if (fileSize > SD_RECORDING_MAX_SIZE) {
+        archiveRecordingFile(path, RECORDED_DATA_DIR "/sensors-archive");
+    }
+    
+    String header = "Timestamp";
+    
+    // RTD sensors 10-12
+    for (int i = 0; i <= 2; i++) {
+        header += ",";
+        header += ioConfig.rtdSensors[i].name;
+        header += " (";
+        header += ioConfig.rtdSensors[i].unit;
+        header += ")";
+    }
+    
+    // Device sensors 70-89 (dynamically check which exist)
+    for (int i = 70; i <= 89; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        if (obj && obj->valid) {
+            header += ",";
+            header += obj->name;
+            header += " (";
+            header += obj->unit;
+            header += ")";
+        }
+    }
+    
+    return appendToCSV(path, header);
+}
+
+bool writeEnergyHeader(void) {
+    const char* path = RECORDED_DATA_DIR "/energy.csv";
+    
+    uint64_t fileSize = getFileSize(path);
+    if (fileSize > SD_RECORDING_MAX_SIZE) {
+        archiveRecordingFile(path, RECORDED_DATA_DIR "/energy-archive");
+    }
+    
+    String header = "Timestamp";
+    
+    // INA260 sensors at indices 31-32 (multi-value: V, A, W)
+    for (int i = 31; i <= 32; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        String name = obj && obj->valid ? String(obj->name) : String("Energy") + String(i - 30);
+        header += ",";
+        header += name;
+        header += " (V),";
+        header += name;
+        header += " (A),";
+        header += name;
+        header += " (W)";
+    }
+    
+    return appendToCSV(path, header);
+}
+
+bool writeControllerHeader(uint8_t index, const char* name) {
+    char path[64];
+    snprintf(path, sizeof(path), "%s/%s.csv", CONTROLLERS_DIR, name);
+    
+    uint64_t fileSize = getFileSize(path);
+    if (fileSize > SD_RECORDING_MAX_SIZE) {
+        char archivePrefix[64];
+        snprintf(archivePrefix, sizeof(archivePrefix), "%s/%s-archive", CONTROLLERS_DIR, name);
+        archiveRecordingFile(path, archivePrefix);
+    }
+    
+    // Generic controller header - fields depend on controller type
+    String header = "Timestamp,Enabled,Setpoint,ProcessValue,Output,Error";
+    
+    return appendToCSV(path, header);
+}
+
+bool writeDeviceHeader(uint8_t index, const char* name) {
+    char path[64];
+    snprintf(path, sizeof(path), "%s/%s.csv", DEVICES_DIR, name);
+    
+    uint64_t fileSize = getFileSize(path);
+    if (fileSize > SD_RECORDING_MAX_SIZE) {
+        char archivePrefix[64];
+        snprintf(archivePrefix, sizeof(archivePrefix), "%s/%s-archive", DEVICES_DIR, name);
+        archiveRecordingFile(path, archivePrefix);
+    }
+    
+    // Generic device header - value + additional values from cache
+    ObjectCache::CachedObject* obj = objectCache.getObject(index);
+    String header = "Timestamp,Value";
+    
+    if (obj && obj->valid && obj->valueCount > 0) {
+        for (int i = 0; i < obj->valueCount; i++) {
+            header += ",";
+            header += obj->additionalUnits[i];
+        }
+    }
+    
+    return appendToCSV(path, header);
+}
+
+// ============================================================================
+// RECORD WRITING FUNCTIONS
+// ============================================================================
+
+bool writeInputsRecord(void) {
+    const char* path = RECORDED_DATA_DIR "/inputs.csv";
+    
+    String line = getRecordingTimestamp();
+    
+    // ADC inputs 0-7
+    for (int i = 0; i <= 7; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        line += ",";
+        if (obj && obj->valid) {
+            line += String(obj->value, 3);
+        } else {
+            line += "NaN";
+        }
+    }
+    
+    // Digital inputs 13-20
+    for (int i = 13; i <= 20; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        line += ",";
+        if (obj && obj->valid) {
+            line += String((int)obj->value);
+        } else {
+            line += "-1";
+        }
+    }
+    
+    return appendToCSV(path, line);
+}
+
+bool writeOutputsRecord(void) {
+    const char* path = RECORDED_DATA_DIR "/outputs.csv";
+    
+    String line = getRecordingTimestamp();
+    
+    // DAC outputs 8-9
+    for (int i = 8; i <= 9; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        line += ",";
+        if (obj && obj->valid) {
+            line += String(obj->value, 2);
+        } else {
+            line += "NaN";
+        }
+    }
+    
+    // Digital outputs 21-25
+    for (int i = 21; i <= 25; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        line += ",";
+        if (obj && obj->valid) {
+            line += String(obj->value, 1);
+        } else {
+            line += "NaN";
+        }
+    }
+    
+    return appendToCSV(path, line);
+}
+
+bool writeMotorsRecord(void) {
+    const char* path = RECORDED_DATA_DIR "/motors.csv";
+    
+    String line = getRecordingTimestamp();
+    
+    // Stepper motor (index 26)
+    ObjectCache::CachedObject* stepper = objectCache.getObject(26);
+    if (stepper && stepper->valid) {
+        line += ",";
+        line += String(stepper->value, 1);  // RPM
+        line += ",";
+        line += (stepper->flags & IPC_SENSOR_FLAG_RUNNING) ? "1" : "0";
+        line += ",";
+        line += (stepper->flags & IPC_SENSOR_FLAG_DIRECTION) ? "FWD" : "REV";
+    } else {
+        line += ",NaN,0,N/A";
+    }
+    
+    // DC motors (indices 27-30)
+    for (int i = 27; i <= 30; i++) {
+        ObjectCache::CachedObject* motor = objectCache.getObject(i);
+        if (motor && motor->valid) {
+            line += ",";
+            line += String(motor->value, 1);  // Power %
+            line += ",";
+            line += (motor->flags & IPC_SENSOR_FLAG_RUNNING) ? "1" : "0";
+            line += ",";
+            line += (motor->flags & IPC_SENSOR_FLAG_DIRECTION) ? "FWD" : "REV";
+            line += ",";
+            // Current from additionalValues[0] if available
+            if (motor->valueCount > 0) {
+                line += String(motor->additionalValues[0], 3);
+            } else {
+                line += "NaN";
+            }
+        } else {
+            line += ",NaN,0,N/A,NaN";
+        }
+    }
+    
+    return appendToCSV(path, line);
+}
+
+bool writeSensorsRecord(void) {
+    const char* path = RECORDED_DATA_DIR "/sensors.csv";
+    
+    String line = getRecordingTimestamp();
+    
+    // RTD sensors 10-12
+    for (int i = 10; i <= 12; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        line += ",";
+        if (obj && obj->valid) {
+            line += String(obj->value, 2);
+        } else {
+            line += "NaN";
+        }
+    }
+    
+    // Device sensors 70-89
+    for (int i = 70; i <= 89; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        if (obj && obj->valid) {
+            line += ",";
+            line += String(obj->value, 3);
+        }
+    }
+    
+    return appendToCSV(path, line);
+}
+
+bool writeEnergyRecord(void) {
+    const char* path = RECORDED_DATA_DIR "/energy.csv";
+    
+    String line = getRecordingTimestamp();
+    
+    // INA260 sensors at indices 31-32 (multi-value: V, A, W)
+    for (int i = 31; i <= 32; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        if (obj && obj->valid) {
+            // Primary value is voltage
+            line += ",";
+            line += String(obj->value, 3);
+            // Additional values: current, power
+            if (obj->valueCount >= 2) {
+                line += ",";
+                line += String(obj->additionalValues[0], 3);  // Current
+                line += ",";
+                line += String(obj->additionalValues[1], 3);  // Power
+            } else {
+                line += ",NaN,NaN";
+            }
+        } else {
+            line += ",NaN,NaN,NaN";
+        }
+    }
+    
+    return appendToCSV(path, line);
+}
+
+bool writeControllersRecord(void) {
+    bool anyWritten = false;
+    int controllersFound = 0;
+        
+    // Controllers at indices 40-49
+    for (int i = 40; i <= 49; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        if (obj && obj->valid) {
+            controllersFound++;
+            
+            // Use name if available, otherwise generate from type+index
+            char filename[48];
+            if (strlen(obj->name) > 0) {
+                snprintf(filename, sizeof(filename), "%s", obj->name);
+            } else {
+                snprintf(filename, sizeof(filename), "controller_%d_type%d", i, obj->objectType);
+            }
+            
+            char path[64];
+            snprintf(path, sizeof(path), "%s/%s.csv", CONTROLLERS_DIR, filename);
+            
+            // Check if header needs to be written (file doesn't exist)
+            uint64_t fileSize = getFileSize(path);
+            if (fileSize == 0) {
+                writeControllerHeader(i, filename);
+            }
+            
+            String line = getRecordingTimestamp();
+            line += ",";
+            line += (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? "1" : "0";  // Enabled
+            line += ",";
+            line += String(obj->value, 3);  // Setpoint or primary value
+            
+            // Additional values if available
+            for (int v = 0; v < obj->valueCount && v < 4; v++) {
+                line += ",";
+                line += String(obj->additionalValues[v], 3);
+            }
+            
+            if (appendToCSV(path, line)) {
+                anyWritten = true;
+            }
+        }
+    }
+    
+    if (controllersFound == 0) {
+        static bool warnedNoControllers = false;
+        if (!warnedNoControllers) {
+            log(LOG_INFO, false, "Controllers recording enabled but no controllers found in cache (indices 40-49)\n");
+            warnedNoControllers = true;
+        }
+    }
+    
+    return anyWritten;
+}
+
+bool writeDevicesRecord(void) {
+    bool anyWritten = false;
+    int devicesFound = 0;
+    
+    // Devices at indices 50-69
+    for (int i = 50; i <= 69; i++) {
+        ObjectCache::CachedObject* obj = objectCache.getObject(i);
+        if (obj && obj->valid) {
+            devicesFound++;
+            
+            // Use name if available, otherwise generate from type+index
+            char filename[48];
+            if (strlen(obj->name) > 0) {
+                snprintf(filename, sizeof(filename), "%s", obj->name);
+            } else {
+                snprintf(filename, sizeof(filename), "device_%d_type%d", i, obj->objectType);
+            }
+            
+            char path[64];
+            snprintf(path, sizeof(path), "%s/%s.csv", DEVICES_DIR, filename);
+            
+            // Check if header needs to be written (file doesn't exist or is empty)
+            uint64_t fileSize = getFileSize(path);
+            if (fileSize == 0) {
+                writeDeviceHeader(i, filename);
+            }
+            
+            String line = getRecordingTimestamp();
+            line += ",";
+            line += String(obj->value, 3);
+            
+            // Additional values
+            for (int v = 0; v < obj->valueCount && v < 4; v++) {
+                line += ",";
+                line += String(obj->additionalValues[v], 3);
+            }
+            
+            if (appendToCSV(path, line)) {
+                anyWritten = true;
+            }
+        }
+    }
+    
+    if (devicesFound == 0) {
+        static bool warnedNoDevices = false;
+        if (!warnedNoDevices) {
+            log(LOG_INFO, false, "Devices recording enabled but no devices found in cache (indices 50-69)\n");
+            warnedNoDevices = true;
+        }
+    }
+    
+    return anyWritten;
 }

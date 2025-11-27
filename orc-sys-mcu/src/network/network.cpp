@@ -134,8 +134,8 @@ bool loadNetworkConfig()
     return false;
   }
 
-  // Allocate a buffer to store contents of the file
-  StaticJsonDocument<1024> doc;
+  // Allocate a buffer to store contents of the file (increased for recording config)
+  StaticJsonDocument<1536> doc;
   DeserializationError error = deserializeJson(doc, configFile);
   configFile.close();
 
@@ -184,6 +184,57 @@ bool loadNetworkConfig()
   strlcpy(networkConfig.mqttDevicePrefix, doc["mqtt_device_prefix"] | "", sizeof(networkConfig.mqttDevicePrefix));
   networkConfig.mqttPublishIntervalMs = doc["mqtt_publish_interval_ms"] | 10000;
 
+  // Parse recording configuration
+  JsonObject recording = doc["recording"];
+  if (!recording.isNull()) {
+    recordingConfig.enabled = recording["enabled"] | false;
+    
+    JsonObject inputs = recording["inputs"];
+    recordingConfig.inputs.enabled = inputs["enabled"] | false;
+    recordingConfig.inputs.interval = inputs["interval"] | 60;
+    if (recordingConfig.inputs.interval < RECORDING_MIN_INTERVAL) 
+      recordingConfig.inputs.interval = RECORDING_MIN_INTERVAL;
+    
+    JsonObject outputs = recording["outputs"];
+    recordingConfig.outputs.enabled = outputs["enabled"] | false;
+    recordingConfig.outputs.interval = outputs["interval"] | 60;
+    if (recordingConfig.outputs.interval < RECORDING_MIN_INTERVAL) 
+      recordingConfig.outputs.interval = RECORDING_MIN_INTERVAL;
+    
+    JsonObject motors = recording["motors"];
+    recordingConfig.motors.enabled = motors["enabled"] | false;
+    recordingConfig.motors.interval = motors["interval"] | 60;
+    if (recordingConfig.motors.interval < RECORDING_MIN_INTERVAL) 
+      recordingConfig.motors.interval = RECORDING_MIN_INTERVAL;
+    
+    JsonObject sensors = recording["sensors"];
+    recordingConfig.sensors.enabled = sensors["enabled"] | false;
+    recordingConfig.sensors.interval = sensors["interval"] | 60;
+    if (recordingConfig.sensors.interval < RECORDING_MIN_INTERVAL) 
+      recordingConfig.sensors.interval = RECORDING_MIN_INTERVAL;
+    
+    JsonObject energy = recording["energy"];
+    recordingConfig.energy.enabled = energy["enabled"] | false;
+    recordingConfig.energy.interval = energy["interval"] | 60;
+    if (recordingConfig.energy.interval < RECORDING_MIN_INTERVAL) 
+      recordingConfig.energy.interval = RECORDING_MIN_INTERVAL;
+    
+    JsonObject controllers = recording["controllers"];
+    recordingConfig.controllers.enabled = controllers["enabled"] | false;
+    recordingConfig.controllers.interval = controllers["interval"] | 60;
+    if (recordingConfig.controllers.interval < RECORDING_MIN_INTERVAL) 
+      recordingConfig.controllers.interval = RECORDING_MIN_INTERVAL;
+    
+    JsonObject devices = recording["devices"];
+    recordingConfig.devices.enabled = devices["enabled"] | false;
+    recordingConfig.devices.interval = devices["interval"] | 60;
+    if (recordingConfig.devices.interval < RECORDING_MIN_INTERVAL) 
+      recordingConfig.devices.interval = RECORDING_MIN_INTERVAL;
+    
+    log(LOG_INFO, false, "Loaded recording config: master=%s\n", 
+        recordingConfig.enabled ? "enabled" : "disabled");
+  }
+
   LittleFS.end();
   //debugPrintNetConfig(networkConfig);
   return true;
@@ -200,8 +251,8 @@ void saveNetworkConfig()
     return;
   }
 
-  // Create JSON document
-  StaticJsonDocument<512> doc;
+  // Create JSON document on heap to avoid stack overflow
+  DynamicJsonDocument doc(1536);
   
   // Store magic number
   doc["magic_number"] = CONFIG_MAGIC_NUMBER;
@@ -232,6 +283,38 @@ void saveNetworkConfig()
   // Optional fields
   doc["mqtt_device_prefix"] = networkConfig.mqttDevicePrefix;
   doc["mqtt_publish_interval_ms"] = networkConfig.mqttPublishIntervalMs;
+  
+  // Store recording configuration
+  JsonObject recording = doc.createNestedObject("recording");
+  recording["enabled"] = recordingConfig.enabled;
+  
+  JsonObject inputs = recording.createNestedObject("inputs");
+  inputs["enabled"] = recordingConfig.inputs.enabled;
+  inputs["interval"] = recordingConfig.inputs.interval;
+  
+  JsonObject outputs = recording.createNestedObject("outputs");
+  outputs["enabled"] = recordingConfig.outputs.enabled;
+  outputs["interval"] = recordingConfig.outputs.interval;
+  
+  JsonObject motors = recording.createNestedObject("motors");
+  motors["enabled"] = recordingConfig.motors.enabled;
+  motors["interval"] = recordingConfig.motors.interval;
+  
+  JsonObject sensors = recording.createNestedObject("sensors");
+  sensors["enabled"] = recordingConfig.sensors.enabled;
+  sensors["interval"] = recordingConfig.sensors.interval;
+  
+  JsonObject energy = recording.createNestedObject("energy");
+  energy["enabled"] = recordingConfig.energy.enabled;
+  energy["interval"] = recordingConfig.energy.interval;
+  
+  JsonObject controllers = recording.createNestedObject("controllers");
+  controllers["enabled"] = recordingConfig.controllers.enabled;
+  controllers["interval"] = recordingConfig.controllers.interval;
+  
+  JsonObject devices = recording.createNestedObject("devices");
+  devices["enabled"] = recordingConfig.devices.enabled;
+  devices["interval"] = recordingConfig.devices.interval;
   
   // Open file for writing
   File configFile = LittleFS.open(CONFIG_FILENAME, "w");
@@ -519,7 +602,6 @@ void handleSystemStatus() {
   sd["capacityGB"] = sdInfo.cardSizeBytes * 0.000000001;
   sd["freeSpaceGB"] = sdInfo.cardFreeBytes * 0.000000001;
   sd["logFileSizeKB"] = sdInfo.logSizeBytes * 0.001;
-  sd["sensorFileSizeKB"] = sdInfo.sensorSizeBytes * 0.001;
 
   String response;
   serializeJson(doc, response);
@@ -4604,6 +4686,10 @@ void setupWebServer()
   server.on("/api/sd/view", HTTP_GET, handleSDViewFile);
   server.on("/api/sd/delete", HTTP_DELETE, handleSDDeleteFile);
 
+  // Recording Configuration API endpoints
+  server.on("/api/config/recording", HTTP_GET, handleGetRecordingConfig);
+  server.on("/api/config/recording", HTTP_POST, handleSaveRecordingConfig);
+
   // System reboot endpoint
   server.on("/api/system/reboot", HTTP_POST, []() {
     // Send response first before rebooting
@@ -5989,4 +6075,114 @@ void printNetConfig(NetworkConfig config)
   log(LOG_INFO, true, "NTP Server: %s\n", config.ntpServer);
   log(LOG_INFO, true, "NTP Enabled: %s\n", config.ntpEnabled ? "true" : "false");
   log(LOG_INFO, true, "DST Enabled: %s\n", config.dstEnabled ? "true" : "false");
+}
+
+// Recording Configuration API handlers -------------------------------------->
+void handleGetRecordingConfig() {
+  StaticJsonDocument<768> doc;
+  
+  doc["enabled"] = recordingConfig.enabled;
+  
+  JsonObject inputs = doc.createNestedObject("inputs");
+  inputs["enabled"] = recordingConfig.inputs.enabled;
+  inputs["interval"] = recordingConfig.inputs.interval;
+  
+  JsonObject outputs = doc.createNestedObject("outputs");
+  outputs["enabled"] = recordingConfig.outputs.enabled;
+  outputs["interval"] = recordingConfig.outputs.interval;
+  
+  JsonObject motors = doc.createNestedObject("motors");
+  motors["enabled"] = recordingConfig.motors.enabled;
+  motors["interval"] = recordingConfig.motors.interval;
+  
+  JsonObject sensors = doc.createNestedObject("sensors");
+  sensors["enabled"] = recordingConfig.sensors.enabled;
+  sensors["interval"] = recordingConfig.sensors.interval;
+  
+  JsonObject energy = doc.createNestedObject("energy");
+  energy["enabled"] = recordingConfig.energy.enabled;
+  energy["interval"] = recordingConfig.energy.interval;
+  
+  JsonObject controllers = doc.createNestedObject("controllers");
+  controllers["enabled"] = recordingConfig.controllers.enabled;
+  controllers["interval"] = recordingConfig.controllers.interval;
+  
+  JsonObject devices = doc.createNestedObject("devices");
+  devices["enabled"] = recordingConfig.devices.enabled;
+  devices["interval"] = recordingConfig.devices.interval;
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSaveRecordingConfig() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+  
+  StaticJsonDocument<768> doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  // Update recording configuration
+  recordingConfig.enabled = doc["enabled"] | false;
+  
+  JsonObject inputs = doc["inputs"];
+  recordingConfig.inputs.enabled = inputs["enabled"] | false;
+  recordingConfig.inputs.interval = inputs["interval"] | 60;
+  if (recordingConfig.inputs.interval < RECORDING_MIN_INTERVAL)
+    recordingConfig.inputs.interval = RECORDING_MIN_INTERVAL;
+  
+  JsonObject outputs = doc["outputs"];
+  recordingConfig.outputs.enabled = outputs["enabled"] | false;
+  recordingConfig.outputs.interval = outputs["interval"] | 60;
+  if (recordingConfig.outputs.interval < RECORDING_MIN_INTERVAL)
+    recordingConfig.outputs.interval = RECORDING_MIN_INTERVAL;
+  
+  JsonObject motors = doc["motors"];
+  recordingConfig.motors.enabled = motors["enabled"] | false;
+  recordingConfig.motors.interval = motors["interval"] | 60;
+  if (recordingConfig.motors.interval < RECORDING_MIN_INTERVAL)
+    recordingConfig.motors.interval = RECORDING_MIN_INTERVAL;
+  
+  JsonObject sensors = doc["sensors"];
+  recordingConfig.sensors.enabled = sensors["enabled"] | false;
+  recordingConfig.sensors.interval = sensors["interval"] | 60;
+  if (recordingConfig.sensors.interval < RECORDING_MIN_INTERVAL)
+    recordingConfig.sensors.interval = RECORDING_MIN_INTERVAL;
+  
+  JsonObject energy = doc["energy"];
+  recordingConfig.energy.enabled = energy["enabled"] | false;
+  recordingConfig.energy.interval = energy["interval"] | 60;
+  if (recordingConfig.energy.interval < RECORDING_MIN_INTERVAL)
+    recordingConfig.energy.interval = RECORDING_MIN_INTERVAL;
+  
+  JsonObject controllers = doc["controllers"];
+  recordingConfig.controllers.enabled = controllers["enabled"] | false;
+  recordingConfig.controllers.interval = controllers["interval"] | 60;
+  if (recordingConfig.controllers.interval < RECORDING_MIN_INTERVAL)
+    recordingConfig.controllers.interval = RECORDING_MIN_INTERVAL;
+  
+  JsonObject devices = doc["devices"];
+  recordingConfig.devices.enabled = devices["enabled"] | false;
+  recordingConfig.devices.interval = devices["interval"] | 60;
+  if (recordingConfig.devices.interval < RECORDING_MIN_INTERVAL)
+    recordingConfig.devices.interval = RECORDING_MIN_INTERVAL;
+  
+  // Save to system config file
+  saveNetworkConfig();
+  
+  // Invalidate headers so they get rewritten
+  invalidateRecordingHeaders();
+  
+  log(LOG_INFO, false, "Recording config updated: master=%s\n", 
+      recordingConfig.enabled ? "enabled" : "disabled");
+  
+  server.send(200, "application/json", "{\"success\":true,\"message\":\"Recording configuration saved\"}");
 }

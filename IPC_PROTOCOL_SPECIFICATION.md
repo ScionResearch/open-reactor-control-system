@@ -462,16 +462,13 @@ The object index provides a unified addressing scheme for all sensors, actuators
 Each index has an associated `ObjectType` from the enum:
 
 ```cpp
-// Sensors
+// Inputs
 OBJ_T_ANALOG_INPUT              // Indices 0-7
 OBJ_T_ANALOG_OUTPUT             // Indices 8-9
-OBJ_T_TEMPERATURE_SENSOR        // Indices 10-12, 60+
+OBJ_T_TEMPERATURE_SENSOR        // Indices 10-12
 OBJ_T_DIGITAL_INPUT             // Indices 13-20
 OBJ_T_DIGITAL_OUTPUT            // Indices 21-25
 OBJ_T_ENERGY_SENSOR             // Indices 31-32 (multi-value: V, A, W)
-OBJ_T_VOLTAGE_SENSOR            // Reserved for future use
-OBJ_T_CURRENT_SENSOR            // Reserved for future use
-OBJ_T_POWER_SENSOR              // Reserved for future use
 
 // Motion
 OBJ_T_STEPPER_MOTOR             // Index 26

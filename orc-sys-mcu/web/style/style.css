@@ -2795,3 +2795,105 @@ input:checked + .slider:before { transform: translateX(26px); }
 .close:focus {
     color: #ddd;
 }
+
+/* ============================================================================
+   DATA RECORDING SETTINGS
+   ============================================================================ */
+
+.settings-description {
+    color: #7f8c8d;
+    font-size: 0.9em;
+    margin-bottom: 15px;
+}
+
+.recording-master {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.recording-master label {
+    font-weight: 600;
+    font-size: 1.1em;
+}
+
+.recording-master input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.recording-types {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.recording-type-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+}
+
+.recording-type-enable {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.recording-type-enable input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.recording-type-enable label {
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.recording-type-interval {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.recording-type-interval label {
+    color: #7f8c8d;
+    font-size: 0.9em;
+}
+
+.recording-type-interval input[type="number"] {
+    width: 80px;
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 0.95em;
+}
+
+.recording-type-interval span {
+    color: #7f8c8d;
+    font-size: 0.9em;
+}
+
+#recordingStatus {
+    margin-top: 10px;
+}
+
+#recordingStatus.success {
+    color: #27ae60;
+}
+
+#recordingStatus.error {
+    color: #e74c3c;
+}
