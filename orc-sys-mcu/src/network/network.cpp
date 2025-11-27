@@ -4600,8 +4600,8 @@ void setupWebServer()
 
   // SD Card File Manager API endpoint
   server.on("/api/sd/list", HTTP_GET, handleSDListDirectory);
-  server.on("/api/sd/download", HTTP_GET, handleSDDownloadFile);
-  server.on("/api/sd/view", HTTP_GET, handleSDViewFile);
+  // server.on("/api/sd/download", HTTP_GET, handleSDDownloadFile);
+  // server.on("/api/sd/view", HTTP_GET, handleSDViewFile);
 
   // System reboot endpoint
   server.on("/api/system/reboot", HTTP_POST, []() {
