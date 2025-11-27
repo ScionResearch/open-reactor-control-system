@@ -126,8 +126,8 @@ def minify_files(target=None, source=None, env=None):
     # Ensure data directories exist
     (data_dir / "script").mkdir(parents=True, exist_ok=True)
     (data_dir / "style").mkdir(parents=True, exist_ok=True)
-    (data_dir / "images").mkdir(parents=True, exist_ok=True)
-    (data_dir / "fonts").mkdir(parents=True, exist_ok=True)
+    #(data_dir / "images").mkdir(parents=True, exist_ok=True)
+    #(data_dir / "fonts").mkdir(parents=True, exist_ok=True)
     
     # Check if Terser is available without npm installation
     use_terser = check_terser_available()
@@ -184,20 +184,20 @@ def minify_files(target=None, source=None, env=None):
         shutil.copy2(html_file, output_file)
     
     # Copy image files
-    if (web_dir / "images").exists():
-        for img_file in (web_dir / "images").iterdir():
-            if img_file.is_file():
-                output_file = data_dir / "images" / img_file.name
-                print(f"Copying image: {img_file.name}")
-                shutil.copy2(img_file, output_file)
+    #if (web_dir / "images").exists():
+    #    for img_file in (web_dir / "images").iterdir():
+    #        if img_file.is_file():
+    #            output_file = data_dir / "images" / img_file.name
+    #            print(f"Copying image: {img_file.name}")
+    #            shutil.copy2(img_file, output_file)
     
     # Copy font files (Font Awesome and other fonts)
-    if (web_dir / "fonts").exists():
-        for font_file in (web_dir / "fonts").iterdir():
-            if font_file.is_file():
-                output_file = data_dir / "fonts" / font_file.name
-                print(f"Copying font: {font_file.name}")
-                shutil.copy2(font_file, output_file)
+    #if (web_dir / "fonts").exists():
+    #    for font_file in (web_dir / "fonts").iterdir():
+    #        if font_file.is_file():
+    #            output_file = data_dir / "fonts" / font_file.name
+    #            print(f"Copying font: {font_file.name}")
+    #            shutil.copy2(font_file, output_file)
     
     print("Web asset minification completed!")
     

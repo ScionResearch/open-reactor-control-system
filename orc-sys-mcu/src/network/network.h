@@ -54,6 +54,7 @@ void handleFileManager(void);
 void handleSDListDirectory(void);
 void handleSDDownloadFile(void);
 void handleSDViewFile(void);
+void handleSDDeleteFile(void);
 void handleFileManagerPage(void);
 
 // Network configuration structure

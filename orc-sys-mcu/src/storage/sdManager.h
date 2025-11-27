@@ -11,8 +11,8 @@
 #define SPI_SPEED SD_SCK_MHZ(4)
 #define SDIO_CONFIG SdioConfig(PIN_SDIO_CLK, PIN_SDIO_CMD, PIN_SDIO_D0)
 
-#define SD_LOG_MAX_SIZE 10000000        //10MB max size
-#define SD_SENSOR_MAX_SIZE 10000000     //10MB max size
+#define SD_LOG_MAX_SIZE 5000000        //5MB max size
+#define SD_SENSOR_MAX_SIZE 5000000     //5MB max size
 
 #define SD_MANAGE_INTERVAL 1000
 

@@ -66,6 +66,22 @@ function getConfigIconSVG() {
     return `<svg viewBox="0 0 24 24"><path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19H5V5H12V3H5M17.78,4C17.61,4 17.43,4.07 17.3,4.2L16.08,5.41L18.58,7.91L19.8,6.7C20.06,6.44 20.06,6 19.8,5.75L18.25,4.2C18.12,4.07 17.95,4 17.78,4M15.37,6.12L8,13.5V16H10.5L17.87,8.62L15.37,6.12Z" /></svg>`;
 }
 
+/**
+ * Download icon (download-box)
+ * Used for file download buttons
+ */
+function getDownloadIconSVG() {
+    return `<svg viewBox="0 0 24 24"><path d="M8 17V15H16V17H8M16 10L12 14L8 10H10.5V7H13.5V10H16M5 3H19C20.11 3 21 3.9 21 5V19C21 20.11 20.11 21 19 21H5C3.9 21 3 20.11 3 19V5C3 3.9 3.9 3 5 3M5 5V19H19V5H5Z" /></svg>`;
+}
+
+/**
+ * Delete/Trash icon (trash-can)
+ * Used for file delete buttons
+ */
+function getDeleteIconSVG() {
+    return `<svg viewBox="0 0 24 24"><path d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z" /></svg>`;
+}
+
 // ============================================================================
 // CENTRALIZED POLLING MANAGER
 // ============================================================================
@@ -450,7 +466,12 @@ const initFileManager = () => {
                 <div class="file-size">${formatFileSize(file.size)}</div>
                 <div class="file-modified">${file.modified || '-'}</div>
                 <div class="file-actions">
-                    <button class="${downloadBtnClass}" data-path="${file.path}" title="${downloadBtnTitle}">Download</button>
+                    <button class="${downloadBtnClass}" data-path="${file.path}" title="${downloadBtnTitle}">
+                        ${getDownloadIconSVG()}
+                    </button>
+                    <button class="delete-btn" data-path="${file.path}" title="Delete this file">
+                        ${getDeleteIconSVG()}
+                    </button>
                 </div>
             `;
             fileListContainer.appendChild(fileElement);
@@ -468,10 +489,20 @@ const initFileManager = () => {
             if (!isTooLarge) {
                 downloadBtn.addEventListener('click', (event) => {
                     event.stopPropagation(); // Prevent directory click event
-                    const filePath = event.target.getAttribute('data-path');
+                    const btn = event.target.closest('.download-btn');
+                    const filePath = btn.getAttribute('data-path');
                     downloadFile(filePath);
                 });
             }
+            
+            // Add delete button event listener
+            const deleteBtn = fileElement.querySelector('.delete-btn');
+            deleteBtn.addEventListener('click', (event) => {
+                event.stopPropagation(); // Prevent bubbling
+                const btn = event.target.closest('.delete-btn');
+                const filePath = btn.getAttribute('data-path');
+                deleteFile(filePath, btn);
+            });
         });
     }
     
@@ -500,6 +531,46 @@ const initFileManager = () => {
         
         // Open file in a new tab
         window.open(viewUrl, '_blank');
+    }
+    
+    // Function to delete a file from SD card
+    function deleteFile(path, buttonElement) {
+        // Extract the filename from the path for the confirmation message
+        const filename = path.split('/').pop();
+        
+        // Confirm deletion with user
+        if (!confirm(`Are you sure you want to delete "${filename}"?\n\nThis action cannot be undone.`)) {
+            return;
+        }
+        
+        // Find the file row element before making the request
+        const fileRow = buttonElement.closest('.file-item');
+        
+        // Send delete request
+        fetch(`/api/sd/delete?path=${encodeURIComponent(path)}`, {
+            method: 'DELETE'
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Failed to delete file');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('File deleted successfully:', path);
+            // Remove the file row from DOM with a fade-out effect
+            if (fileRow) {
+                fileRow.style.transition = 'opacity 0.3s ease';
+                fileRow.style.opacity = '0';
+                setTimeout(() => fileRow.remove(), 300);
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting file:', error);
+            alert(`Failed to delete file: ${error.message}`);
+        });
     }
     
     // Fix to ensure SD card operation succeeds after system boot

@@ -4600,8 +4600,9 @@ void setupWebServer()
 
   // SD Card File Manager API endpoint
   server.on("/api/sd/list", HTTP_GET, handleSDListDirectory);
-  // server.on("/api/sd/download", HTTP_GET, handleSDDownloadFile);
-  // server.on("/api/sd/view", HTTP_GET, handleSDViewFile);
+  server.on("/api/sd/download", HTTP_GET, handleSDDownloadFile);
+  server.on("/api/sd/view", HTTP_GET, handleSDViewFile);
+  server.on("/api/sd/delete", HTTP_DELETE, handleSDDeleteFile);
 
   // System reboot endpoint
   server.on("/api/system/reboot", HTTP_POST, []() {
@@ -5713,6 +5714,81 @@ void handleSDViewFile(void) {
   sdLocked = false;
 }
 
+void handleSDDeleteFile(void) {
+  if (sdLocked) {
+    server.send(423, "application/json", "{\"error\":\"SD card is locked\"}");
+    return;
+  }
+  
+  if (!sdInfo.ready) {
+    server.send(503, "application/json", "{\"error\":\"SD card not available\"}");
+    return;
+  }
+  
+  // Get the requested file path from the query parameter
+  String path = server.hasArg("path") ? server.arg("path") : "";
+  
+  if (path.length() == 0) {
+    server.send(400, "application/json", "{\"error\":\"File path not specified\"}");
+    return;
+  }
+  
+  // Make sure path starts with a forward slash
+  if (!path.startsWith("/")) {
+    path = "/" + path;
+  }
+  
+  // Safety check: prevent deletion of root or system directories
+  if (path == "/" || path == "/logs" || path == "/sensor_data") {
+    server.send(403, "application/json", "{\"error\":\"Cannot delete protected path\"}");
+    return;
+  }
+  
+  sdLocked = true;
+  
+  // Check if the file exists
+  if (!sd.exists(path.c_str())) {
+    sdLocked = false;
+    server.send(404, "application/json", "{\"error\":\"File not found\"}");
+    return;
+  }
+  
+  // Check if it's a file or directory
+  FsFile file = sd.open(path.c_str(), O_RDONLY);
+  if (!file) {
+    sdLocked = false;
+    server.send(500, "application/json", "{\"error\":\"Failed to access file\"}");
+    return;
+  }
+  
+  bool isDir = file.isDirectory();
+  file.close();
+  
+  if (isDir) {
+    sdLocked = false;
+    server.send(400, "application/json", "{\"error\":\"Cannot delete directories, only files\"}");
+    return;
+  }
+  
+  // Get the filename for logging
+  String fileName = path;
+  int lastSlash = fileName.lastIndexOf('/');
+  if (lastSlash >= 0) {
+    fileName = fileName.substring(lastSlash + 1);
+  }
+  
+  // Attempt to delete the file
+  if (sd.remove(path.c_str())) {
+    sdLocked = false;
+    log(LOG_INFO, true, "File deleted: %s\n", path.c_str());
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"File deleted successfully\"}");
+  } else {
+    sdLocked = false;
+    log(LOG_ERROR, true, "Failed to delete file: %s\n", path.c_str());
+    server.send(500, "application/json", "{\"error\":\"Failed to delete file\"}");
+  }
+}
+
 // NTP management functions ------------------------------------------------>
 void ntpUpdate(void) {
   static WiFiUDP udp;
@@ -5837,8 +5913,8 @@ void handleSDListDirectory(void) {
   while (file.openNext(&dir)) {
     file.getName(filename, sizeof(filename));
     
-    // Skip hidden files and . and ..
-    if (filename[0] == '.') {
+    // Skip hidden files/directories (. and .., or with hidden attribute)
+    if (filename[0] == '.' || file.isHidden()) {
       file.close();
       continue;
     }
