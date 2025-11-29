@@ -7,7 +7,6 @@
  * Handles:
  * - System status (/api/system/status)
  * - All status aggregation (/api/status/all)
- * - Control updates (/api/controls)
  * - Sensor data (/api/sensors)
  * - System reboot
  * - Recording configuration
@@ -29,7 +28,6 @@ void setupSystemAPI(void);
 // =============================================================================
 
 void handleGetAllStatus(void);
-void handleUpdateControl(void);
 void handleSystemStatus(void);
 void handleGetSensors(void);
 

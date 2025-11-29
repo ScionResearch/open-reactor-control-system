@@ -21,9 +21,6 @@ void setupSystemAPI(void) {
     // Comprehensive status endpoint for the UI
     server.on("/api/status/all", HTTP_GET, handleGetAllStatus);
 
-    // Scalable control endpoint
-    server.on("/api/controls", HTTP_POST, handleUpdateControl);
-
     // System status endpoint for the UI
     server.on("/api/system/status", HTTP_GET, handleSystemStatus);
 
@@ -102,41 +99,6 @@ void handleGetAllStatus() {
     String response;
     serializeJson(doc, response);
     server.send(200, "application/json", response);
-}
-
-void handleUpdateControl() {
-    if (!server.hasArg("plain")) {
-        server.send(400, "application/json", "{\"error\":\"No data received\"}");
-        return;
-    }
-
-    StaticJsonDocument<256> doc;
-    DeserializationError error = deserializeJson(doc, server.arg("plain"));
-    if (error) {
-        server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
-        return;
-    }
-
-    const char* type = doc["type"];
-    JsonObject config = doc["config"];
-
-    if (!type || config.isNull()) {
-        server.send(400, "application/json", "{\"error\":\"Invalid payload structure\"}");
-        return;
-    }
-
-    bool success = false;
-    if (strcmp(type, "temperature") == 0) {
-        success = updateTemperatureControl(config);
-    } else if (strcmp(type, "ph") == 0) {
-        success = updatePhControl(config);
-    }
-
-    if (success) {
-        server.send(200, "application/json", "{\"success\":true}");
-    } else {
-        server.send(500, "application/json", "{\"success\":false, \"error\":\"Failed to apply control update\"}");
-    }
 }
 
 void handleSystemStatus() {

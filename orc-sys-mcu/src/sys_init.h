@@ -33,9 +33,7 @@
 #include "utils/terminalManager.h"
 #include "utils/timeManager.h"
 
-
 #include "storage/sdManager.h"
-#include "controls/controlManager.h"
 
 
 void init_core0(void);
