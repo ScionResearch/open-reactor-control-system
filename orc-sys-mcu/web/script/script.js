@@ -234,6 +234,44 @@ function updateLiveClock() {
 let currentPath = '/';
 let fileManagerActive = false; // Track if file manager tab is active
 let sdStatusInterval = null; // Interval for SD status updates
+let currentSortColumn = 'modified'; // Default sort column
+let currentSortDirection = 'desc'; // Default sort direction (newest first)
+let cachedDirectoryData = null; // Cache for sorting without refetching
+
+// Global function to sort file list
+function sortFileList(column) {
+    // Toggle direction if same column, otherwise reset to desc for modified, asc for others
+    if (column === currentSortColumn) {
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortColumn = column;
+        currentSortDirection = column === 'modified' ? 'desc' : 'asc';
+    }
+    
+    // Update header UI
+    document.querySelectorAll('.file-list-header .sortable').forEach(el => {
+        el.classList.remove('active', 'asc', 'desc');
+        el.querySelector('.sort-icon').textContent = '';
+    });
+    
+    const activeHeader = document.querySelector(`.file-list-header .sortable[data-sort="${column}"]`);
+    if (activeHeader) {
+        activeHeader.classList.add('active', currentSortDirection);
+        activeHeader.querySelector('.sort-icon').textContent = currentSortDirection === 'asc' ? '▲' : '▼';
+    }
+    
+    // Re-render with cached data if available
+    if (window.cachedDirectoryData && window.displayDirectoryContentsSorted) {
+        window.displayDirectoryContentsSorted(window.cachedDirectoryData);
+    }
+}
+
+// Global function to refresh file list (used after backup export)
+function refreshFileList() {
+    if (window.loadDirectoryFunc) {
+        window.loadDirectoryFunc(currentPath);
+    }
+}
 
 const initFileManager = () => {
     if (!document.getElementById('filemanager')) return;
@@ -423,12 +461,15 @@ const initFileManager = () => {
     
     // Function to navigate to a directory
     function navigateTo(path) {
-        currentPath = path;
+        currentPath = path;  // Update module-level variable for backup refresh check
         loadDirectory(path);
     }
     
-    // Function to display directory contents
+    // Function to display directory contents (uses global sort state)
     function displayDirectoryContents(data) {
+        // Cache data globally for sorting
+        window.cachedDirectoryData = data;
+        
         fileListContainer.innerHTML = '';
         
         // Constant for maximum file size (should match server MAX_DOWNLOAD_SIZE)
@@ -440,8 +481,29 @@ const initFileManager = () => {
             return;
         }
         
-        // Display directories first
-        data.directories.forEach(dir => {
+        // Sort files based on current sort settings
+        const sortedFiles = [...data.files].sort((a, b) => {
+            let comparison = 0;
+            switch (currentSortColumn) {
+                case 'name':
+                    comparison = a.name.localeCompare(b.name);
+                    break;
+                case 'size':
+                    comparison = a.size - b.size;
+                    break;
+                case 'modified':
+                    // Parse date strings for comparison (format: YYYY-MM-DD HH:MM:SS)
+                    const dateA = a.modified ? new Date(a.modified.replace(' ', 'T')) : new Date(0);
+                    const dateB = b.modified ? new Date(b.modified.replace(' ', 'T')) : new Date(0);
+                    comparison = dateA - dateB;
+                    break;
+            }
+            return currentSortDirection === 'asc' ? comparison : -comparison;
+        });
+        
+        // Display directories first (always sorted by name)
+        const sortedDirs = [...data.directories].sort((a, b) => a.name.localeCompare(b.name));
+        sortedDirs.forEach(dir => {
             const dirElement = document.createElement('div');
             dirElement.className = 'directory-item';
             dirElement.innerHTML = `
@@ -454,8 +516,8 @@ const initFileManager = () => {
             fileListContainer.appendChild(dirElement);
         });
         
-        // Then display files
-        data.files.forEach(file => {
+        // Then display sorted files
+        sortedFiles.forEach(file => {
             const fileElement = document.createElement('div');
             fileElement.className = 'file-item';
             
@@ -669,6 +731,10 @@ const initFileManager = () => {
     
     // Initialize with our improved function
     checkAndLoadDirectory();
+    
+    // Expose functions globally for sorting and refresh
+    window.loadDirectoryFunc = loadDirectory;
+    window.displayDirectoryContentsSorted = displayDirectoryContents;
 };
 
 // Navigation
@@ -2648,7 +2714,7 @@ async function showDACConfig(index) {
     currentDACIndex = index;
     
     try {
-        const response = await fetch(`/api/dac/${index}/config`);
+        const response = await fetch(`/api/config/dac/${index}`);
         if (!response.ok) throw new Error('Failed to load DAC config');
         
         dacConfigData = await response.json();
@@ -2707,7 +2773,7 @@ async function saveDACConfig() {
     };
     
     try {
-        const response = await fetch(`/api/dac/${currentDACIndex}/config`, {
+        const response = await fetch(`/api/config/dac/${currentDACIndex}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(configData)
@@ -9036,6 +9102,19 @@ async function exportBackup(destination) {
             }
             
             showBackupResult(true, 'Backup Saved to SD', `Configuration saved as /backups/${filename}`);
+            
+            // Always refresh file list after SD backup if file manager is initialized
+            // This ensures the new backup appears immediately in the /backups folder
+            if (window.loadDirectoryFunc) {
+                // Small delay to ensure file is fully written
+                setTimeout(() => {
+                    const normalizedPath = currentPath.replace(/\/$/, '');
+                    console.log('[BACKUP] Refreshing file list, currentPath:', normalizedPath);
+                    // Force refresh to /backups since that's where backups are stored
+                    currentPath = '/backups';
+                    window.loadDirectoryFunc('/backups');
+                }, 500);
+            }
         }
         
     } catch (error) {

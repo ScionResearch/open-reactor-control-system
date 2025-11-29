@@ -307,10 +307,18 @@ void handleGetTempControllerConfig(uint8_t index) {
     StaticJsonDocument<512> doc;
     doc["index"] = index;
     doc["name"] = ioConfig.tempControllers[idx].name;
+    doc["showOnDashboard"] = ioConfig.tempControllers[idx].showOnDashboard;
     doc["setpoint"] = ioConfig.tempControllers[idx].setpoint;
     doc["controlMethod"] = (uint8_t)ioConfig.tempControllers[idx].controlMethod;
     doc["pvSourceIndex"] = ioConfig.tempControllers[idx].pvSourceIndex;
     doc["outputIndex"] = ioConfig.tempControllers[idx].outputIndex;
+    doc["hysteresis"] = ioConfig.tempControllers[idx].hysteresis;
+    doc["kP"] = ioConfig.tempControllers[idx].kP;
+    doc["kI"] = ioConfig.tempControllers[idx].kI;
+    doc["kD"] = ioConfig.tempControllers[idx].kD;
+    doc["integralWindup"] = ioConfig.tempControllers[idx].integralWindup;
+    doc["outputMin"] = ioConfig.tempControllers[idx].outputMin;
+    doc["outputMax"] = ioConfig.tempControllers[idx].outputMax;
     String response;
     serializeJson(doc, response);
     server.send(200, "application/json", response);

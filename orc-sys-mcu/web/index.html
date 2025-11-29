@@ -203,9 +203,9 @@
                     
                     <div class="file-list">
                         <div class="file-list-header">
-                            <div>Name</div>
-                            <div>Size</div>
-                            <div>Modified</div>
+                            <div class="sortable" data-sort="name" onclick="sortFileList('name')">Name <span class="sort-icon"></span></div>
+                            <div class="sortable" data-sort="size" onclick="sortFileList('size')">Size <span class="sort-icon"></span></div>
+                            <div class="sortable active desc" data-sort="modified" onclick="sortFileList('modified')">Modified <span class="sort-icon">▼</span></div>
                             <div>Actions</div>
                         </div>
                         <div id="file-list-items" class="file-list-items">

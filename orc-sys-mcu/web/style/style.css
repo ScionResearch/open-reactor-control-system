@@ -1054,6 +1054,31 @@ input:checked + .slider:before { transform: translateX(26px); }
     border-bottom: 1px solid #ddd;
 }
 
+.file-list-header .sortable {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.file-list-header .sortable:hover {
+    color: var(--accent-color);
+}
+
+.file-list-header .sortable.active {
+    color: var(--accent-color);
+}
+
+.file-list-header .sort-icon {
+    font-size: 0.8em;
+    opacity: 0.5;
+}
+
+.file-list-header .sortable.active .sort-icon {
+    opacity: 1;
+}
+
 .file-list-items {
     max-height: 500px;
     overflow-y: auto;
