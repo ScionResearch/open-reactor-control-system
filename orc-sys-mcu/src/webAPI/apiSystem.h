@@ -32,3 +32,9 @@ void handleSystemStatus(void);
 // Recording configuration
 void handleGetRecordingConfig(void);
 void handleSaveRecordingConfig(void);
+
+// Backup/Restore
+void handleGetConfigBackup(void);
+void handleRestoreConfig(void);
+void handleSaveBackupToSD(void);
+void handleListSDBackups(void);

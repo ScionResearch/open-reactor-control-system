@@ -117,6 +117,9 @@ bool writeDeviceHeader(uint8_t index, const char* name);
 bool appendToCSV(const char* path, const String& line);
 void archiveRecordingFile(const char* path, const char* archivePrefix);
 
+// Terminal backup
+bool createTerminalBackup(void);
+
 // ============================================================================
 // EXTERNAL VARIABLES
 // ============================================================================

@@ -5429,6 +5429,9 @@ if (document.readyState === 'loading') {
 
 // Hook into tab switching to start/stop polling
 function initDevicesTab() {
+    // Re-render device cards when tab is opened (needed after config restore)
+    loadDevices();
+    
     // Use PollingManager - polls every 2 seconds while devices tab is active
     PollingManager.startPolling('devices-api', fetchDeviceControlData, 2000);
     console.log('[DEVICES] Polling started via PollingManager');
@@ -8891,3 +8894,400 @@ window.switchDOProfile = switchDOProfile;
 window.toggleDOStirrerFields = toggleDOStirrerFields;
 window.toggleDOMFCFields = toggleDOMFCFields;
 window.updateDOStirrerOptions = updateDOStirrerOptions;
+
+// ============================================================================
+// BACKUP/RESTORE FUNCTIONALITY
+// ============================================================================
+
+let backupCurrentStep = 1;
+let backupAction = null;
+let pendingBackupData = null;
+let pendingBackupFilename = null;
+let backupStepHistory = [];
+
+function openBackupRestoreModal() {
+    const modal = document.getElementById('backupRestoreModal');
+    if (modal) {
+        modal.classList.add('active');
+        resetBackupModal();
+        checkSDCardForBackup();
+    }
+}
+
+function closeBackupRestoreModal() {
+    const modal = document.getElementById('backupRestoreModal');
+    if (modal) {
+        modal.classList.remove('active');
+        resetBackupModal();
+    }
+}
+
+function resetBackupModal() {
+    backupCurrentStep = 1;
+    backupAction = null;
+    pendingBackupData = null;
+    pendingBackupFilename = null;
+    backupStepHistory = [];
+    
+    document.querySelectorAll('.backup-step').forEach(s => s.classList.remove('active'));
+    const step1 = document.getElementById('backupStep1');
+    if (step1) step1.classList.add('active');
+    
+    const ioOnlyRadio = document.querySelector('input[name="importScope"][value="io_only"]');
+    if (ioOnlyRadio) ioOnlyRadio.checked = true;
+    
+    const rebootWarning = document.getElementById('rebootWarning');
+    if (rebootWarning) rebootWarning.style.display = 'none';
+}
+
+function checkSDCardForBackup() {
+    fetch('/api/system/status')
+        .then(response => response.json())
+        .then(data => {
+            const sdReady = data.sd && data.sd.inserted && data.sd.ready;
+            
+            const exportToSD = document.getElementById('exportToSDBtn');
+            const importFromSD = document.getElementById('importFromSDBtn');
+            
+            if (exportToSD) {
+                exportToSD.disabled = !sdReady;
+                exportToSD.title = sdReady ? 'Save to SD card' : 'SD card not available';
+            }
+            if (importFromSD) {
+                importFromSD.disabled = !sdReady;
+                importFromSD.title = sdReady ? 'Load from SD card' : 'SD card not available';
+            }
+        })
+        .catch(() => {
+            const exportToSD = document.getElementById('exportToSDBtn');
+            const importFromSD = document.getElementById('importFromSDBtn');
+            if (exportToSD) exportToSD.disabled = true;
+            if (importFromSD) importFromSD.disabled = true;
+        });
+}
+
+function showBackupStep(stepId) {
+    document.querySelectorAll('.backup-step').forEach(s => s.classList.remove('active'));
+    const step = document.getElementById(stepId);
+    if (step) step.classList.add('active');
+}
+
+function selectBackupAction(action) {
+    backupAction = action;
+    backupStepHistory.push('backupStep1');
+    
+    if (action === 'export') {
+        showBackupStep('backupStep2Export');
+    } else {
+        showBackupStep('backupStep2Import');
+    }
+}
+
+function backupGoBack() {
+    const prevStep = backupStepHistory.pop();
+    if (prevStep) {
+        showBackupStep(prevStep);
+    } else {
+        showBackupStep('backupStep1');
+    }
+}
+
+async function exportBackup(destination) {
+    showBackupStep('backupStep4Result');
+    document.getElementById('backupResultContent').innerHTML = '<div class="loading">Generating backup...</div>';
+    
+    try {
+        const response = await fetch('/api/config/backup');
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: 'Failed to generate backup' }));
+            throw new Error(error.error || 'Failed to generate backup');
+        }
+        
+        const backupData = await response.json();
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+        
+        if (destination === 'download') {
+            const filename = `orc_backup_${timestamp}.json`;
+            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showBackupResult(true, 'Backup Downloaded', `Configuration saved as ${filename}`);
+        } else {
+            const filename = `backup_${timestamp}.json`;
+            
+            const saveResponse = await fetch('/api/config/backup/sd', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename, data: backupData })
+            });
+            
+            if (!saveResponse.ok) {
+                const error = await saveResponse.json().catch(() => ({ error: 'Failed to save to SD card' }));
+                throw new Error(error.error || 'Failed to save to SD card');
+            }
+            
+            showBackupResult(true, 'Backup Saved to SD', `Configuration saved as /backups/${filename}`);
+        }
+        
+    } catch (error) {
+        console.error('[BACKUP] Export error:', error);
+        showBackupResult(false, 'Export Failed', error.message);
+    }
+}
+
+function importBackup(source) {
+    if (source === 'upload') {
+        document.getElementById('backupFileInput').click();
+    }
+}
+
+function handleBackupFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            pendingBackupData = JSON.parse(e.target.result);
+            pendingBackupFilename = file.name;
+            
+            if (!pendingBackupData.io_config) {
+                throw new Error('Invalid backup file: missing io_config section');
+            }
+            
+            showImportOptions();
+        } catch (error) {
+            console.error('[BACKUP] Parse error:', error);
+            showToast('error', 'Invalid File', error.message);
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+}
+
+async function showSDBackupList() {
+    backupStepHistory.push('backupStep2Import');
+    showBackupStep('backupStep3SDList');
+    
+    const listContainer = document.getElementById('sdBackupList');
+    listContainer.innerHTML = '<div class="loading">Loading backups...</div>';
+    
+    try {
+        const response = await fetch('/api/config/backup/sd/list');
+        if (!response.ok) {
+            throw new Error('Failed to load backup list');
+        }
+        
+        const data = await response.json();
+        
+        if (!data.backups || data.backups.length === 0) {
+            listContainer.innerHTML = '<div class="empty-message">No backup files found in /backups folder</div>';
+            return;
+        }
+        
+        listContainer.innerHTML = data.backups.map(backup => `
+            <div class="sd-backup-item" onclick="selectSDBackup('${backup.path}', '${backup.name}')">
+                <div>
+                    <div class="backup-name">${backup.name}</div>
+                    <div class="backup-date">${backup.modified || ''}</div>
+                </div>
+                <div class="backup-size">${formatFileSizeBackup(backup.size)}</div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('[BACKUP] List error:', error);
+        listContainer.innerHTML = `<div class="error-message">${error.message}</div>`;
+    }
+}
+
+function formatFileSizeBackup(bytes) {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + units[i];
+}
+
+async function selectSDBackup(path, name) {
+    showBackupStep('backupStep4Result');
+    document.getElementById('backupResultContent').innerHTML = '<div class="loading">Loading backup file...</div>';
+    
+    try {
+        const response = await fetch(`/api/sd/view?path=${encodeURIComponent(path)}`);
+        if (!response.ok) {
+            throw new Error('Failed to load backup file');
+        }
+        
+        const text = await response.text();
+        pendingBackupData = JSON.parse(text);
+        pendingBackupFilename = name;
+        
+        if (!pendingBackupData.io_config) {
+            throw new Error('Invalid backup file: missing io_config section');
+        }
+        
+        showImportOptions();
+        
+    } catch (error) {
+        console.error('[BACKUP] Load error:', error);
+        showBackupResult(false, 'Load Failed', error.message);
+    }
+}
+
+function showImportOptions() {
+    backupStepHistory.push(backupStepHistory[backupStepHistory.length - 1] === 'backupStep2Import' ? 'backupStep2Import' : 'backupStep3SDList');
+    showBackupStep('backupStep3ImportOptions');
+    
+    const fileInfo = document.getElementById('backupFileInfo');
+    const hasSystemConfig = !!pendingBackupData.system_config;
+    
+    fileInfo.innerHTML = `
+        <div class="file-name">${pendingBackupFilename}</div>
+        <div class="file-details">
+            Contains: IO Configuration${hasSystemConfig ? ' + System Configuration' : ' only'}
+        </div>
+    `;
+    
+    const bothRadio = document.querySelector('input[name="importScope"][value="both"]');
+    const bothLabel = bothRadio ? bothRadio.closest('.import-option') : null;
+    if (bothRadio && bothLabel) {
+        if (!hasSystemConfig) {
+            bothRadio.disabled = true;
+            bothLabel.style.opacity = '0.5';
+            bothLabel.style.cursor = 'not-allowed';
+        } else {
+            bothRadio.disabled = false;
+            bothLabel.style.opacity = '1';
+            bothLabel.style.cursor = 'pointer';
+        }
+    }
+    
+    document.querySelectorAll('input[name="importScope"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            const rebootWarning = document.getElementById('rebootWarning');
+            if (rebootWarning) {
+                rebootWarning.style.display = this.value === 'both' ? 'flex' : 'none';
+            }
+        });
+    });
+}
+
+async function confirmImport() {
+    const importScope = document.querySelector('input[name="importScope"]:checked').value;
+    const importBoth = importScope === 'both';
+    
+    if (importBoth) {
+        if (!confirm('Importing system configuration will cause the system to reboot. Continue?')) {
+            return;
+        }
+    }
+    
+    showBackupStep('backupStep4Result');
+    document.getElementById('backupResultContent').innerHTML = '<div class="loading">Restoring configuration...</div>';
+    
+    try {
+        const response = await fetch('/api/config/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                data: pendingBackupData,
+                import_system: importBoth
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: 'Restore failed' }));
+            throw new Error(error.error || 'Restore failed');
+        }
+        
+        const result = await response.json();
+        
+        if (importBoth && result.reboot) {
+            showBackupResult(true, 'Configuration Restored', 'System is rebooting to apply changes...');
+            setTimeout(() => {
+                closeBackupRestoreModal();
+                showReconnectMessage();
+            }, 2000);
+        } else {
+            showBackupResult(true, 'Configuration Restored', 'IO configuration restored successfully. Changes are active immediately.');
+        }
+        
+    } catch (error) {
+        console.error('[BACKUP] Restore error:', error);
+        showBackupResult(false, 'Restore Failed', error.message);
+    }
+}
+
+function showBackupResult(success, title, message) {
+    const resultContent = document.getElementById('backupResultContent');
+    resultContent.className = 'backup-result ' + (success ? 'success' : 'error');
+    resultContent.innerHTML = `
+        <span class="mdi ${success ? 'mdi-check-circle' : 'mdi-alert-circle'}"></span>
+        <div class="result-title">${title}</div>
+        <div class="result-message">${message}</div>
+    `;
+}
+
+function showReconnectMessage() {
+    if (typeof window.showReconnectCountdown === 'function') {
+        window.showReconnectCountdown();
+        return;
+    }
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+        <div class="confirmation-modal">
+            <h3>System Rebooting</h3>
+            <p>Reconnecting in <span id="reconnectCountdown">15</span> seconds...</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    
+    let countdown = 15;
+    const countdownEl = document.getElementById('reconnectCountdown');
+    
+    const interval = setInterval(() => {
+        countdown--;
+        if (countdownEl) countdownEl.textContent = countdown;
+        
+        if (countdown <= 0) {
+            clearInterval(interval);
+            window.location.reload();
+        }
+    }, 1000);
+}
+
+function loadConfigFromFile(path) {
+    if (!confirm('Load this configuration file? This will restore the configuration from this backup.')) {
+        return;
+    }
+    openBackupRestoreModal();
+    selectSDBackup(path, path.split('/').pop());
+}
+
+function getLoadConfigIconSVG() {
+    return `<svg viewBox="0 0 24 24"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,19L8,15H10.5V12H13.5V15H16L12,19Z" /></svg>`;
+}
+
+window.openBackupRestoreModal = openBackupRestoreModal;
+window.closeBackupRestoreModal = closeBackupRestoreModal;
+window.selectBackupAction = selectBackupAction;
+window.backupGoBack = backupGoBack;
+window.exportBackup = exportBackup;
+window.importBackup = importBackup;
+window.handleBackupFileSelect = handleBackupFileSelect;
+window.showSDBackupList = showSDBackupList;
+window.selectSDBackup = selectSDBackup;
+window.confirmImport = confirmImport;
+window.loadConfigFromFile = loadConfigFromFile;
+window.getLoadConfigIconSVG = getLoadConfigIconSVG;

@@ -2,6 +2,8 @@
 #include "utils/objectCache.h"
 #include "config/ioConfig.h"
 #include "sdManager.h"
+#include <ArduinoJson.h>
+#include <LittleFS.h>
 
 SdFs sd;
 FsFile file;
@@ -1079,4 +1081,96 @@ bool writeDevicesRecord(void) {
     }
     
     return anyWritten;
+}
+
+// =============================================================================
+// TERMINAL BACKUP
+// =============================================================================
+
+bool createTerminalBackup() {
+    if (!sdInfo.ready) {
+        return false;
+    }
+    
+    // Generate timestamp for filename
+    char timestamp[20];
+    snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02d_%02d-%02d-%02d",
+             globalDateTime.year, globalDateTime.month, globalDateTime.day,
+             globalDateTime.hour, globalDateTime.minute, globalDateTime.second);
+    
+    // Build filename
+    char filename[64];
+    snprintf(filename, sizeof(filename), "/backups/backup_%s.json", timestamp);
+    
+    log(LOG_INFO, false, "Creating backup: %s\n", filename);
+    
+    // Ensure /backups directory exists
+    if (!sd.exists("/backups")) {
+        if (!sd.mkdir("/backups")) {
+            log(LOG_ERROR, false, "Failed to create /backups directory\n");
+            return false;
+        }
+    }
+    
+    // Create JSON document - read config files directly from flash
+    DynamicJsonDocument doc(32768);
+    
+    // Add backup metadata
+    doc["backup_version"] = 1;
+    doc["backup_timestamp"] = timestamp;
+    doc["backup_source"] = "terminal";
+    
+    // Read system_config.json directly from flash
+    File sysFile = LittleFS.open(CONFIG_FILENAME, "r");
+    if (sysFile) {
+        DynamicJsonDocument sysDoc(2048);
+        DeserializationError error = deserializeJson(sysDoc, sysFile);
+        sysFile.close();
+        
+        if (!error) {
+            doc["system_config"] = sysDoc.as<JsonObject>();
+        } else {
+            log(LOG_WARNING, false, "Failed to parse system config: %s\n", error.c_str());
+            return false;
+        }
+    } else {
+        log(LOG_WARNING, false, "System config file not found\n");
+        return false;
+    }
+    
+    // Read io_config.json directly from flash
+    File ioFile = LittleFS.open(IO_CONFIG_FILENAME, "r");
+    if (ioFile) {
+        DynamicJsonDocument ioDoc(16384);
+        DeserializationError error = deserializeJson(ioDoc, ioFile);
+        ioFile.close();
+        
+        if (!error) {
+            doc["io_config"] = ioDoc.as<JsonObject>();
+        } else {
+            log(LOG_WARNING, false, "Failed to parse IO config: %s\n", error.c_str());
+            return false;
+        }
+    } else {
+        log(LOG_WARNING, false, "IO config file not found\n");
+        return false;
+    }
+    
+    // Write to SD card
+    FsFile backupFile = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
+    if (!backupFile) {
+        log(LOG_ERROR, false, "Failed to create backup file\n");
+        return false;
+    }
+    
+    size_t written = serializeJsonPretty(doc, backupFile);
+    backupFile.close();
+    
+    if (written == 0) {
+        log(LOG_ERROR, false, "Failed to write backup data\n");
+        return false;
+    }
+    
+    log(LOG_INFO, false, "Backup saved: %s (%d bytes)\n", filename, written);
+    return true;
 }

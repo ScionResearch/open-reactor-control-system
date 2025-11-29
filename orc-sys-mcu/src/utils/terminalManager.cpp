@@ -16,7 +16,7 @@ void manageTerminal(void)
   serialLocked = true;
   if (Serial.available())
   {
-    char serialString[10];  // Buffer for incoming serial data
+    char serialString[20];  // Buffer for incoming serial data
     memset(serialString, 0, sizeof(serialString));
     int bytesRead = Serial.readBytesUntil('\n', serialString, sizeof(serialString) - 1); // Leave room for null terminator
     serialLocked = false;
@@ -37,6 +37,19 @@ void manageTerminal(void)
       else if (strcmp(serialString, "sd") == 0) {
         log(LOG_INFO, false, "Getting SD card info...\n");
         printSDInfo();
+      }
+      else if (strcmp(serialString, "backup") == 0) {
+        log(LOG_INFO, true, "Creating configuration backup to SD card...\n");
+        if (!sdInfo.ready) {
+          log(LOG_ERROR, false, "Backup failed: SD card not ready\n");
+        } else {
+          // Create backup using the terminal backup function
+          if (createTerminalBackup()) {
+            log(LOG_INFO, false, "Backup completed successfully\n");
+          } else {
+            log(LOG_ERROR, false, "Backup failed - check SD card\n");
+          }
+        }
       }
       else if (strcmp(serialString, "status") == 0) {
         log(LOG_INFO, false, "Getting status...\n");
@@ -169,6 +182,7 @@ void manageTerminal(void)
         log(LOG_INFO, false, "Available commands:\n");
         log(LOG_INFO, false, "  ip          - Print IP address\n");
         log(LOG_INFO, false, "  sd          - Print SD card info\n");
+        log(LOG_INFO, false, "  backup      - Save config backup to SD card\n");
         log(LOG_INFO, false, "  status      - Print system status\n");
         log(LOG_INFO, false, "  ping        - Send PING to SAME51\n");
         log(LOG_INFO, false, "  hello       - Send HELLO to SAME51 (initiate handshake)\n");

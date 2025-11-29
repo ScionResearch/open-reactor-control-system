@@ -211,7 +211,6 @@ bool loadNetworkConfig()
     // Check if config file exists
     if (!LittleFS.exists(CONFIG_FILENAME)) {
         log(LOG_WARNING, true, "Config file not found\n");
-        LittleFS.end();
         return false;
     }
 
@@ -219,7 +218,6 @@ bool loadNetworkConfig()
     File configFile = LittleFS.open(CONFIG_FILENAME, "r");
     if (!configFile) {
         log(LOG_WARNING, true, "Failed to open config file\n");
-        LittleFS.end();
         return false;
     }
 
@@ -230,7 +228,6 @@ bool loadNetworkConfig()
 
     if (error) {
         log(LOG_WARNING, true, "Failed to parse config file: %s\n", error.c_str());
-        LittleFS.end();
         return false;
     } else {
         log(LOG_INFO, false, "Deserialized network config file: %d bytes\n", doc.memoryUsage());
@@ -241,7 +238,6 @@ bool loadNetworkConfig()
     log(LOG_INFO, true, "Magic number: %x\n", magicNumber);
     if (magicNumber != CONFIG_MAGIC_NUMBER) {
         log(LOG_WARNING, true, "Invalid magic number\n");
-        LittleFS.end();
         return false;
     }
 
@@ -324,7 +320,6 @@ bool loadNetworkConfig()
             recordingConfig.enabled ? "enabled" : "disabled");
     }
 
-    LittleFS.end();
     return true;
 }
 
@@ -408,7 +403,6 @@ void saveNetworkConfig()
     File configFile = LittleFS.open(CONFIG_FILENAME, "w");
     if (!configFile) {
         log(LOG_WARNING, true, "Failed to open config file for writing\n");
-        LittleFS.end();
         return;
     }
     

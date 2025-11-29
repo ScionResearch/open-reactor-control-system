@@ -189,7 +189,12 @@
             <!-- File Manager Tab -->
             <div id="filemanager" class="tab-content">
                 <h2>SD Card File Manager</h2>
-                <p class="page-description">Browse and download files from the device's SD card.</p>
+                <div class="file-manager-header">
+                    <p class="page-description">Browse and download files from the device's SD card.</p>
+                    <button class="backup-restore-btn" onclick="openBackupRestoreModal()">
+                        <span class="mdi mdi-database-sync"></span> Backup / Restore
+                    </button>
+                </div>
                 
                 <div class="file-manager">
                     <div id="sd-status" class="status-message"></div>
@@ -1389,6 +1394,126 @@
             </div>
         </div>
     </div>
+    
+    <!-- Backup/Restore Modal -->
+    <div id="backupRestoreModal" class="modal-overlay">
+        <div class="config-modal backup-restore-modal">
+            <h3><span class="mdi mdi-database-sync"></span> Configuration Backup & Restore</h3>
+            
+            <!-- Step 1: Choose Action -->
+            <div id="backupStep1" class="backup-step active">
+                <p class="backup-description">Create a backup of your system configuration or restore from a previous backup.</p>
+                <div class="backup-action-grid">
+                    <button class="backup-action-btn" onclick="selectBackupAction('export')">
+                        <span class="mdi mdi-database-export"></span>
+                        <span class="action-title">Export Backup</span>
+                        <span class="action-desc">Save configuration to a backup file</span>
+                    </button>
+                    <button class="backup-action-btn" onclick="selectBackupAction('import')">
+                        <span class="mdi mdi-database-import"></span>
+                        <span class="action-title">Import Backup</span>
+                        <span class="action-desc">Restore configuration from a backup</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Step 2: Export Options -->
+            <div id="backupStep2Export" class="backup-step">
+                <p class="backup-description">Choose where to save your backup:</p>
+                <div class="backup-action-grid">
+                    <button class="backup-action-btn" onclick="exportBackup('download')">
+                        <span class="mdi mdi-download"></span>
+                        <span class="action-title">Download File</span>
+                        <span class="action-desc">Save to your computer</span>
+                    </button>
+                    <button class="backup-action-btn" id="exportToSDBtn" onclick="exportBackup('sd')">
+                        <span class="mdi mdi-sd"></span>
+                        <span class="action-title">Save to SD Card</span>
+                        <span class="action-desc">Store in /backups folder</span>
+                    </button>
+                </div>
+                <div class="backup-nav">
+                    <button class="btn btn-secondary" onclick="backupGoBack()">Back</button>
+                </div>
+            </div>
+            
+            <!-- Step 2: Import Options -->
+            <div id="backupStep2Import" class="backup-step">
+                <p class="backup-description">Choose the source of your backup:</p>
+                <div class="backup-action-grid">
+                    <button class="backup-action-btn" onclick="importBackup('upload')">
+                        <span class="mdi mdi-upload"></span>
+                        <span class="action-title">Upload File</span>
+                        <span class="action-desc">Choose from your computer</span>
+                    </button>
+                    <button class="backup-action-btn" id="importFromSDBtn" onclick="showSDBackupList()">
+                        <span class="mdi mdi-sd"></span>
+                        <span class="action-title">Load from SD Card</span>
+                        <span class="action-desc">Restore from /backups folder</span>
+                    </button>
+                </div>
+                <div class="backup-nav">
+                    <button class="btn btn-secondary" onclick="backupGoBack()">Back</button>
+                </div>
+            </div>
+            
+            <!-- Step 3: SD Backup List (for Import) -->
+            <div id="backupStep3SDList" class="backup-step">
+                <p class="backup-description">Select a backup file to restore:</p>
+                <div id="sdBackupList" class="sd-backup-list">
+                    <div class="loading">Loading backups...</div>
+                </div>
+                <div class="backup-nav">
+                    <button class="btn btn-secondary" onclick="backupGoBack()">Back</button>
+                </div>
+            </div>
+            
+            <!-- Step 3: Import Options (what to import) -->
+            <div id="backupStep3ImportOptions" class="backup-step">
+                <p class="backup-description">Choose what to restore:</p>
+                <div id="backupFileInfo" class="backup-file-info"></div>
+                <div class="import-options">
+                    <label class="import-option">
+                        <input type="radio" name="importScope" value="io_only" checked>
+                        <span class="option-label">
+                            <strong>IO Configuration Only</strong>
+                            <span class="option-desc">Inputs, outputs, sensors, controllers, and devices</span>
+                        </span>
+                    </label>
+                    <label class="import-option">
+                        <input type="radio" name="importScope" value="both">
+                        <span class="option-label">
+                            <strong>Full Configuration</strong>
+                            <span class="option-desc">Includes network, NTP, and MQTT settings (requires reboot)</span>
+                        </span>
+                    </label>
+                </div>
+                <div class="backup-warning" id="rebootWarning" style="display: none;">
+                    <span class="mdi mdi-alert"></span>
+                    <span>Restoring system configuration will require a system reboot to apply changes.</span>
+                </div>
+                <div class="backup-nav">
+                    <button class="btn btn-secondary" onclick="backupGoBack()">Back</button>
+                    <button class="btn btn-primary" onclick="confirmImport()">Restore Configuration</button>
+                </div>
+            </div>
+            
+            <!-- Step 4: Processing/Result -->
+            <div id="backupStep4Result" class="backup-step">
+                <div id="backupResultContent" class="backup-result">
+                    <div class="loading">Processing...</div>
+                </div>
+                <div class="backup-nav">
+                    <button class="btn btn-primary" onclick="closeBackupRestoreModal()">Close</button>
+                </div>
+            </div>
+            
+            <button class="modal-close-x" onclick="closeBackupRestoreModal()">&times;</button>
+        </div>
+    </div>
+    
+    <!-- Hidden file input for backup import -->
+    <input type="file" id="backupFileInput" accept=".json" style="display: none;" onchange="handleBackupFileSelect(event)">
     
     <!-- Chart.js for DO Profile visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>

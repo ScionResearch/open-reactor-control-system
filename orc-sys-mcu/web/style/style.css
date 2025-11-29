@@ -2897,3 +2897,349 @@ input:checked + .slider:before { transform: translateX(26px); }
 #recordingStatus.error {
     color: #e74c3c;
 }
+
+/* ============================================================================
+   BACKUP/RESTORE STYLES
+   ============================================================================ */
+
+.file-manager-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.file-manager-header .page-description {
+    margin: 0;
+}
+
+.backup-restore-btn {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 1em;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.2s;
+}
+
+.backup-restore-btn:hover {
+    background-color: #2980b9;
+}
+
+.backup-restore-btn .mdi {
+    font-size: 1.3em;
+}
+
+.backup-restore-modal {
+    max-width: 550px;
+    position: relative;
+}
+
+.backup-restore-modal h3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.backup-restore-modal h3 .mdi {
+    font-size: 1.4em;
+    color: #3498db;
+}
+
+.modal-close-x {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 1.8em;
+    color: #999;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+}
+
+.modal-close-x:hover {
+    color: #333;
+}
+
+.backup-step {
+    display: none;
+}
+
+.backup-step.active {
+    display: block;
+}
+
+.backup-description {
+    color: #666;
+    margin-bottom: 20px;
+    font-size: 1.05em;
+}
+
+.backup-action-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.backup-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 25px 20px;
+    background: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+
+.backup-action-btn:hover {
+    background: #e9f7fe;
+    border-color: #3498db;
+    transform: translateY(-2px);
+}
+
+.backup-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+    background: #f0f0f0 !important;
+    border-color: #ddd !important;
+}
+
+.backup-action-btn .mdi {
+    font-size: 2.5em;
+    color: #3498db;
+    margin-bottom: 10px;
+}
+
+.backup-action-btn .action-title {
+    font-weight: 600;
+    font-size: 1.1em;
+    color: #333;
+    margin-bottom: 5px;
+}
+
+.backup-action-btn .action-desc {
+    font-size: 0.85em;
+    color: #666;
+}
+
+.backup-nav {
+    display: flex;
+    justify-content: flex-start;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+.backup-nav button {
+    padding: 10px 25px;
+    min-width: 100px;
+}
+
+.backup-nav .btn {
+    margin-top: 0;
+    margin-left: 0;
+    min-width: 100px;
+    max-width: none;
+}
+
+.backup-nav .btn.btn-primary {
+    margin-left: auto;
+}
+
+/* SD Backup List */
+.sd-backup-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #f9f9f9;
+}
+
+.sd-backup-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.sd-backup-item:last-child {
+    border-bottom: none;
+}
+
+.sd-backup-item:hover {
+    background-color: #e9f7fe;
+}
+
+.sd-backup-item .backup-name {
+    font-weight: 500;
+    color: #333;
+}
+
+.sd-backup-item .backup-date {
+    font-size: 0.85em;
+    color: #666;
+}
+
+.sd-backup-item .backup-size {
+    font-size: 0.85em;
+    color: #999;
+}
+
+/* Import Options */
+.import-options {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 20px 0;
+}
+
+.import-option {
+    display: flex;
+    align-items: flex-start;
+    padding: 15px;
+    background: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.import-option:hover {
+    border-color: #3498db;
+    background: #f0f8ff;
+}
+
+.import-option input[type="radio"] {
+    margin-right: 12px;
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+}
+
+.import-option .option-label {
+    display: flex;
+    flex-direction: column;
+}
+
+.import-option .option-label strong {
+    color: #333;
+    margin-bottom: 3px;
+}
+
+.import-option .option-desc {
+    font-size: 0.9em;
+    color: #666;
+}
+
+/* Backup Warning */
+.backup-warning {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 15px;
+    background: #fff8e1;
+    border: 1px solid #ffcc02;
+    border-radius: 8px;
+    color: #856404;
+    margin-top: 15px;
+}
+
+.backup-warning .mdi {
+    font-size: 1.5em;
+    color: #ff9800;
+}
+
+/* Backup File Info */
+.backup-file-info {
+    padding: 12px 15px;
+    background: #e8f5e9;
+    border: 1px solid #c8e6c9;
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+
+.backup-file-info .file-name {
+    font-weight: 600;
+    color: #2e7d32;
+    margin-bottom: 5px;
+}
+
+.backup-file-info .file-details {
+    font-size: 0.9em;
+    color: #666;
+}
+
+/* Backup Result */
+.backup-result {
+    text-align: center;
+    padding: 30px 20px;
+}
+
+.backup-result .mdi {
+    font-size: 4em;
+    margin-bottom: 15px;
+}
+
+.backup-result.success .mdi {
+    color: #27ae60;
+}
+
+.backup-result.error .mdi {
+    color: #e74c3c;
+}
+
+.backup-result .result-title {
+    font-size: 1.3em;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.backup-result .result-message {
+    color: #666;
+}
+
+/* Load Config Button in File List */
+.load-config-btn {
+    background: none;
+    border: none;
+    padding: 6px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease;
+    fill: #3498db;
+}
+
+.load-config-btn:hover {
+    background-color: rgba(52, 152, 219, 0.15);
+}
+
+.load-config-btn svg {
+    width: 20px;
+    height: 20px;
+}

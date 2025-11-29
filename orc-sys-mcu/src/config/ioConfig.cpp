@@ -287,7 +287,6 @@ bool loadIOConfig() {
     // Check if config file exists
     if (!LittleFS.exists(IO_CONFIG_FILENAME)) {
         log(LOG_WARNING, true, "IO config file not found, using defaults\n");
-        LittleFS.end();
         return false;
     }
     
@@ -295,7 +294,6 @@ bool loadIOConfig() {
     File configFile = LittleFS.open(IO_CONFIG_FILENAME, "r");
     if (!configFile) {
         log(LOG_WARNING, true, "Failed to open IO config file\n");
-        LittleFS.end();
         return false;
     }
     
@@ -303,7 +301,6 @@ bool loadIOConfig() {
     DynamicJsonDocument doc(16384);
     DeserializationError error = deserializeJson(doc, configFile);
     configFile.close();
-    LittleFS.end();
     
     if (error) {
         log(LOG_WARNING, true, "Failed to parse IO config: %s\n", error.c_str());
