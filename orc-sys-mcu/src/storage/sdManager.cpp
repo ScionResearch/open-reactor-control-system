@@ -878,6 +878,107 @@ bool writeEnergyRecord(void) {
     return appendToCSV(path, line);
 }
 
+// Helper function to get a good name for recording, with sensible defaults
+// Always includes index number for unnamed objects to ensure unique filenames
+static String getRecordingName(uint8_t index, uint8_t objectType) {
+    // First try the configured name from ioConfig
+    const char* configName = getObjectNameByIndex(index);
+    if (configName && configName[0] != '\0') {
+        // User-provided name - append index to ensure uniqueness if multiple have same name
+        char nameWithIndex[64];
+        snprintf(nameWithIndex, sizeof(nameWithIndex), "%s_%d", configName, index);
+        return String(nameWithIndex);
+    }
+    
+    // Generate sensible default names based on object type
+    // Always include the actual index to guarantee uniqueness
+    char defaultName[48];
+    switch (objectType) {
+        // Controllers (40-49)
+        case OBJ_T_TEMPERATURE_CONTROL:
+            snprintf(defaultName, sizeof(defaultName), "Temperature_Controller_%d", index);
+            break;
+        case OBJ_T_PH_CONTROL:
+            snprintf(defaultName, sizeof(defaultName), "pH_Controller_%d", index);
+            break;
+        case OBJ_T_FLOW_CONTROL:
+            snprintf(defaultName, sizeof(defaultName), "Flow_Controller_%d", index);
+            break;
+        case OBJ_T_DISSOLVED_OXYGEN_CONTROL:
+            snprintf(defaultName, sizeof(defaultName), "DO_Controller_%d", index);
+            break;
+        case OBJ_T_OPTICAL_DENSITY_CONTROL:
+            snprintf(defaultName, sizeof(defaultName), "OD_Controller_%d", index);
+            break;
+        case OBJ_T_GAS_FLOW_CONTROL:
+            snprintf(defaultName, sizeof(defaultName), "Gas_Flow_Controller_%d", index);
+            break;
+        case OBJ_T_STIRRER_CONTROL:
+            snprintf(defaultName, sizeof(defaultName), "Stirrer_Controller_%d", index);
+            break;
+        case OBJ_T_PUMP_CONTROL:
+            snprintf(defaultName, sizeof(defaultName), "Pump_Controller_%d", index);
+            break;
+        
+        // Devices (50-69)
+        case OBJ_T_ALICAT_MFC:
+            snprintf(defaultName, sizeof(defaultName), "Alicat_MFC_%d", index);
+            break;
+        case OBJ_T_HAMILTON_PH_PROBE:
+            snprintf(defaultName, sizeof(defaultName), "Hamilton_pH_Probe_%d", index);
+            break;
+        case OBJ_T_HAMILTON_DO_PROBE:
+            snprintf(defaultName, sizeof(defaultName), "Hamilton_DO_Probe_%d", index);
+            break;
+        case OBJ_T_HAMILTON_OD_PROBE:
+            snprintf(defaultName, sizeof(defaultName), "Hamilton_OD_Probe_%d", index);
+            break;
+        
+        // Device sensors (70-89)
+        case OBJ_T_FLOW_SENSOR:
+            snprintf(defaultName, sizeof(defaultName), "Flow_Sensor_%d", index);
+            break;
+        case OBJ_T_PRESSURE_SENSOR:
+            snprintf(defaultName, sizeof(defaultName), "Pressure_Sensor_%d", index);
+            break;
+        case OBJ_T_DISSOLVED_OXYGEN_SENSOR:
+            snprintf(defaultName, sizeof(defaultName), "DO_Sensor_%d", index);
+            break;
+        case OBJ_T_PH_SENSOR:
+            snprintf(defaultName, sizeof(defaultName), "pH_Sensor_%d", index);
+            break;
+        case OBJ_T_OPTICAL_DENSITY_SENSOR:
+            snprintf(defaultName, sizeof(defaultName), "OD_Sensor_%d", index);
+            break;
+        case OBJ_T_TEMPERATURE_SENSOR:
+            snprintf(defaultName, sizeof(defaultName), "Temperature_Sensor_%d", index);
+            break;
+        
+        default:
+            snprintf(defaultName, sizeof(defaultName), "Object_%d", index);
+            break;
+    }
+    return String(defaultName);
+}
+
+// Helper to make a filename-safe version of a name
+static String sanitizeFilename(const String& name) {
+    String safe = name;
+    // Replace spaces and special characters with underscores
+    for (size_t i = 0; i < safe.length(); i++) {
+        char c = safe.charAt(i);
+        if (c == ' ' || c == '/' || c == '\\' || c == ':' || c == '*' || 
+            c == '?' || c == '"' || c == '<' || c == '>' || c == '|') {
+            safe.setCharAt(i, '_');
+        }
+    }
+    // Truncate to reasonable length for FAT32
+    if (safe.length() > 32) {
+        safe = safe.substring(0, 32);
+    }
+    return safe;
+}
+
 bool writeControllersRecord(void) {
     bool anyWritten = false;
     int controllersFound = 0;
@@ -888,21 +989,17 @@ bool writeControllersRecord(void) {
         if (obj && obj->valid) {
             controllersFound++;
             
-            // Use name if available, otherwise generate from type+index
-            char filename[48];
-            if (strlen(obj->name) > 0) {
-                snprintf(filename, sizeof(filename), "%s", obj->name);
-            } else {
-                snprintf(filename, sizeof(filename), "controller_%d_type%d", i, obj->objectType);
-            }
+            // Get a good name using the helper (checks ioConfig first, then generates default)
+            String name = getRecordingName(i, obj->objectType);
+            String safeFilename = sanitizeFilename(name);
             
             char path[64];
-            snprintf(path, sizeof(path), "%s/%s.csv", CONTROLLERS_DIR, filename);
+            snprintf(path, sizeof(path), "%s/%s.csv", CONTROLLERS_DIR, safeFilename.c_str());
             
             // Check if header needs to be written (file doesn't exist)
             uint64_t fileSize = getFileSize(path);
             if (fileSize == 0) {
-                writeControllerHeader(i, filename);
+                writeControllerHeader(i, safeFilename.c_str());
             }
             
             String line = getRecordingTimestamp();
@@ -944,21 +1041,17 @@ bool writeDevicesRecord(void) {
         if (obj && obj->valid) {
             devicesFound++;
             
-            // Use name if available, otherwise generate from type+index
-            char filename[48];
-            if (strlen(obj->name) > 0) {
-                snprintf(filename, sizeof(filename), "%s", obj->name);
-            } else {
-                snprintf(filename, sizeof(filename), "device_%d_type%d", i, obj->objectType);
-            }
+            // Get a good name using the helper (checks ioConfig first, then generates default)
+            String name = getRecordingName(i, obj->objectType);
+            String safeFilename = sanitizeFilename(name);
             
             char path[64];
-            snprintf(path, sizeof(path), "%s/%s.csv", DEVICES_DIR, filename);
+            snprintf(path, sizeof(path), "%s/%s.csv", DEVICES_DIR, safeFilename.c_str());
             
             // Check if header needs to be written (file doesn't exist or is empty)
             uint64_t fileSize = getFileSize(path);
             if (fileSize == 0) {
-                writeDeviceHeader(i, filename);
+                writeDeviceHeader(i, safeFilename.c_str());
             }
             
             String line = getRecordingTimestamp();
