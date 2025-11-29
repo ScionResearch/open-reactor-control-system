@@ -27,9 +27,7 @@ void setupSystemAPI(void);
 // Handler Functions
 // =============================================================================
 
-void handleGetAllStatus(void);
 void handleSystemStatus(void);
-void handleGetSensors(void);
 
 // Recording configuration
 void handleGetRecordingConfig(void);

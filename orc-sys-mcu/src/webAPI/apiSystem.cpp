@@ -18,14 +18,8 @@
 // =============================================================================
 
 void setupSystemAPI(void) {
-    // Comprehensive status endpoint for the UI
-    server.on("/api/status/all", HTTP_GET, handleGetAllStatus);
-
     // System status endpoint for the UI
     server.on("/api/system/status", HTTP_GET, handleSystemStatus);
-
-    // Sensors endpoint for the control tab
-    server.on("/api/sensors", HTTP_GET, handleGetSensors);
 
     // System reboot endpoint
     server.on("/api/system/reboot", HTTP_POST, []() {
@@ -52,54 +46,6 @@ void setupSystemAPI(void) {
 // =============================================================================
 // Status Handlers
 // =============================================================================
-
-void handleGetAllStatus() {
-    if (statusLocked) {
-        server.send(503, "application/json", "{\"error\":\"Status temporarily unavailable\"}");
-        return;
-    }
-    statusLocked = true;
-
-    StaticJsonDocument<2048> doc;
-
-    // System info
-    doc["hostname"] = networkConfig.hostname;
-    doc["mac"] = deviceMacAddress;
-
-    // Internal Status
-    JsonObject internal = doc.createNestedObject("internal");
-    internal["psuOK"] = status.psuOK;
-    internal["v20OK"] = status.V20OK;
-    internal["v5OK"] = status.V5OK;
-    internal["sdCardOK"] = status.sdCardOK;
-    internal["ipcOK"] = status.ipcOK;
-    internal["ipcConnected"] = status.ipcConnected;
-    internal["ipcTimeout"] = status.ipcTimeout;
-    internal["rtcOK"] = status.rtcOK;
-    internal["mqttConnected"] = status.mqttConnected;
-
-    // Sensor Readings
-    JsonObject sensors = doc.createNestedObject("sensors");
-    sensors["temperature"] = status.temperatureSensor.celcius;
-    sensors["ph"] = status.phSensor.pH;
-    sensors["do"] = status.doSensor.oxygen;
-
-    // Control Setpoints
-    JsonObject controls = doc.createNestedObject("controls");
-    JsonObject tempControl = controls.createNestedObject("temperature");
-    tempControl["setpoint"] = status.temperatureControl.sp_celcius;
-    tempControl["enabled"] = status.temperatureControl.enabled;
-
-    JsonObject phControl = controls.createNestedObject("ph");
-    phControl["setpoint"] = status.phControl.sp_pH;
-    phControl["enabled"] = status.phControl.enabled;
-
-    statusLocked = false;
-
-    String response;
-    serializeJson(doc, response);
-    server.send(200, "application/json", response);
-}
 
 void handleSystemStatus() {
     // NOTE: This handler only READS from status/sdInfo structs, it doesn't write.

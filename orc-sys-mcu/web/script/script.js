@@ -703,180 +703,6 @@ let sensorHistory = {
 // Network and sensor data updates
 let sensorDataUpdating = false; // Flag to prevent multiple simultaneous calls
 
-async function updateSensorData() {
-    // Prevent multiple simultaneous calls
-    if (sensorDataUpdating) {
-        return;
-    }
-    
-    sensorDataUpdating = true;
-    
-    try {
-        const response = await fetch('/api/sensors');
-        
-        // Check if response is ok before trying to parse JSON
-        if (!response.ok) {
-            // If it's a 404, the API doesn't exist yet - this is expected
-            if (response.status === 404) {
-                // Show placeholder data or "API not available" message
-                updateSensorPlaceholders();
-                return;
-            }
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        // Check if response is JSON
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            throw new Error('Response is not JSON');
-        }
-        
-        const data = await response.json();
-        
-        // Update each sensor value and calculate trends
-        if (data.temp !== undefined) {
-            const tempElement = document.getElementById('temp-reading');
-            const tempControlElement = document.getElementById('current-temp');
-            if (tempElement) {
-                const oldTemp = parseFloat(tempElement.textContent) || 0;
-                tempElement.textContent = data.temp.toFixed(1);
-                
-                // Update trend indicator
-                updateTrend('temp-trend', data.temp, oldTemp);
-                
-                // Add to history
-                sensorHistory.temp.push(data.temp);
-                if (sensorHistory.temp.length > 50) sensorHistory.temp.shift();
-            }
-            if (tempControlElement) {
-                tempControlElement.textContent = data.temp.toFixed(1) + ' °C';
-            }
-        }
-        
-        if (data.ph !== undefined) {
-            const phElement = document.getElementById('ph-reading');
-            const phControlElement = document.getElementById('current-ph');
-            if (phElement) {
-                const oldPh = parseFloat(phElement.textContent) || 0;
-                phElement.textContent = data.ph.toFixed(2);
-                
-                // Update trend indicator
-                updateTrend('ph-trend', data.ph, oldPh);
-                
-                // Add to history
-                sensorHistory.ph.push(data.ph);
-                if (sensorHistory.ph.length > 50) sensorHistory.ph.shift();
-            }
-            if (phControlElement) {
-                phControlElement.textContent = data.ph.toFixed(2);
-            }
-        }
-        
-        if (data.do !== undefined) {
-            const doElement = document.getElementById('do-reading');
-            const doControlElement = document.getElementById('current-do');
-            if (doElement) {
-                const oldDo = parseFloat(doElement.textContent) || 0;
-                doElement.textContent = data.do.toFixed(1);
-                
-                // Update trend indicator
-                updateTrend('do-trend', data.do, oldDo);
-                
-                // Add to history
-                sensorHistory.do.push(data.do);
-                if (sensorHistory.do.length > 50) sensorHistory.do.shift();
-            }
-            if (doControlElement) {
-                doControlElement.textContent = data.do.toFixed(1) + '%';
-            }
-        }
-        
-        if (data.stirrer !== undefined) {
-            const stirrerElement = document.getElementById('stirrer-reading');
-            const stirrerControlElement = document.getElementById('current-stirrer-rpm');
-            if (stirrerElement) {
-                stirrerElement.textContent = data.stirrer.toFixed(0);
-                
-                // Add to history
-                sensorHistory.stirrer.push(data.stirrer);
-                if (sensorHistory.stirrer.length > 50) sensorHistory.stirrer.shift();
-            }
-            if (stirrerControlElement) {
-                stirrerControlElement.textContent = data.stirrer.toFixed(0) + ' RPM';
-            }
-        }
-        
-        // Update new sensor parameters
-        if (data.gasFlow !== undefined) {
-            const gasFlowElement = document.getElementById('current-gasflow');
-            if (gasFlowElement) {
-                gasFlowElement.textContent = data.gasFlow.toFixed(1) + ' mL/min';
-            }
-        }
-        
-        if (data.pressure !== undefined) {
-            const pressureElement = document.getElementById('current-pressure');
-            if (pressureElement) {
-                pressureElement.textContent = data.pressure.toFixed(1) + ' kPa';
-            }
-        }
-        
-        if (data.weight !== undefined) {
-            const weightElement = document.getElementById('current-weight');
-            if (weightElement) {
-                weightElement.textContent = data.weight.toFixed(1) + ' g';
-            }
-        }
-        
-        if (data.opticalDensity !== undefined) {
-            const odElement = document.getElementById('current-od');
-            if (odElement) {
-                odElement.textContent = data.opticalDensity.toFixed(3) + ' OD';
-            }
-        }
-        
-        // Update power sensor readings
-        if (data.powerVolts !== undefined) {
-            const powerVoltsElement = document.getElementById('current-power-volts');
-            if (powerVoltsElement) {
-                powerVoltsElement.textContent = data.powerVolts.toFixed(1) + ' V';
-            }
-        }
-        
-        if (data.powerAmps !== undefined) {
-            const powerAmpsElement = document.getElementById('current-power-amps');
-            if (powerAmpsElement) {
-                powerAmpsElement.textContent = data.powerAmps.toFixed(2) + ' A';
-            }
-        }
-        
-        if (data.powerWatts !== undefined) {
-            const powerWattsElement = document.getElementById('current-power-watts');
-            if (powerWattsElement) {
-                powerWattsElement.textContent = data.powerWatts.toFixed(1) + ' W';
-            }
-        }
-        
-        // Update last update time
-        const lastUpdateElement = document.getElementById('lastUpdate');
-        if (lastUpdateElement) {
-            lastUpdateElement.textContent = new Date().toLocaleString();
-        }
-
-        // Removed system-status update (Sensors Online/Offline)
-        // const systemStatusElement = document.getElementById('system-status');
-        // if (systemStatusElement) {
-        //     systemStatusElement.innerHTML = '<span class="status ok">Sensors Online</span>';
-        // }
-        
-    } catch (error) {
-        console.error('Error updating sensor data:', error);
-        updateSensorPlaceholders();
-    } finally {
-        sensorDataUpdating = false;
-    }
-}
-
 // Function to show placeholder data when sensors are not available
 function updateSensorPlaceholders() {
     // Update sensor readings with placeholder values
@@ -1073,7 +899,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadMqttSettings();     // Load initial MQTT settings
     loadControlSettings();  // Load initial control settings (no API call)
     updateLiveClock();
-    // NOTE: updateSensorData and updateNetworkInfo removed - now tab-specific via PollingManager
     
     // Set initial state for static fields after network settings loaded
     updateStaticFields();
@@ -1212,10 +1037,6 @@ async function saveTimeSettings() {
 
 // Update intervals - ONLY clock runs globally, other polling is tab-specific
 setInterval(updateLiveClock, 1000);    // Update clock every second
-
-// NOTE: Removed global setInterval for updateSensorData and updateNetworkInfo
-// These are now handled by tab-specific polling via PollingManager to reduce
-// unnecessary network traffic on the resource-constrained embedded server
 
 function updateTrend(elementId, newValue, oldValue) {
     // This function is called but not defined - adding a placeholder
