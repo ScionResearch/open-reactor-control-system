@@ -21,7 +21,8 @@
 
 #include "config/ioConfig.h"
 
-#include "network/network.h"
+#include "network/networkManager.h"
+#include "webAPI/webServer.h"
 #include "mqtt/mqttManager.h"
 
 #include "utils/ipcManager.h"

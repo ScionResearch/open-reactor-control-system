@@ -319,7 +319,7 @@ static void mqttPublishAllSensorData() {
     snprintf(consolidatedTopic, sizeof(consolidatedTopic), "%s/%s", deviceTopicPrefix, "sensors/all");
     mqttClient.publish(consolidatedTopic, jsonString.c_str());
 
-    log(LOG_INFO, false, "Published MQTT sensor data with ISO8601 timestamps\n");
+    //log(LOG_INFO, false, "Published MQTT sensor data with ISO8601 timestamps\n");
 }
 
 /**
@@ -515,9 +515,9 @@ static void mqttPublishIPCSensors() {
     // Debug
     uint32_t te = millis();
 
-    if (publishCount > 0) {
+    /*if (publishCount > 0) {
         log(LOG_INFO, false, "Published %d IPC sensor readings to MQTT in %dms\n", publishCount, te-ts);
-    }
+    }*/
 }
 
     /**
