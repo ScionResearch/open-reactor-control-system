@@ -16,7 +16,12 @@ body {
     background-color: var(--bg-color);
     color: var(--text-color);
     margin: 0;
-    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+main {
+    flex-grow: 1;
 }
 .btn {
     background-color: var(--accent-color);
@@ -476,7 +481,8 @@ input:checked + .slider:before { transform: translateX(26px); }
 
 .live-clock {
     background-color: #f8f9fa;
-    border-radius: 8px;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
     margin-bottom: 20px;
     text-align: left;
     padding: 15px;
@@ -1456,12 +1462,13 @@ input:checked + .slider:before { transform: translateX(26px); }
     /* Checkbox group styling */
     .checkbox-group {
         margin-top: 20px;
-        padding: 12px;
+        margin-bottom: 12px;
+        padding: 15px;
         background-color: #f8f9fa;
         border-radius: 6px;
         border: 1px solid #e0e0e0;
     }
-    
+
     .checkbox-group label {
         display: flex;
         align-items: center;
@@ -1471,8 +1478,8 @@ input:checked + .slider:before { transform: translateX(26px); }
     }
     
     .checkbox-group input[type="checkbox"] {
-        width: 20px;
-        height: 20px;
+        width: 18px;
+        height: 18px;
         margin-right: 10px;
         cursor: pointer;
     }
@@ -2831,27 +2838,6 @@ input:checked + .slider:before { transform: translateX(26px); }
     margin-bottom: 15px;
 }
 
-.recording-master {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 15px;
-    background-color: #f8f9fa;
-    border-radius: 8px;
-    margin-bottom: 20px;
-}
-
-.recording-master label {
-    font-weight: 600;
-    font-size: 1.1em;
-}
-
-.recording-master input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
-    cursor: pointer;
-}
-
 .recording-types {
     display: flex;
     flex-direction: column;
@@ -3267,4 +3253,39 @@ input:checked + .slider:before { transform: translateX(26px); }
 .load-config-btn svg {
     width: 20px;
     height: 20px;
+}
+
+.footer-info {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.version-info {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.github-link {
+    color: #6e6e6e;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.github-link:hover {
+    color: #3498db;
+    text-decoration: underline;
+}
+
+.github-link .github-icon {
+    vertical-align: middle;
+    margin-left: 20px 0;
 }

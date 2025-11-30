@@ -376,6 +376,7 @@ void handleRestoreConfig() {
         networkConfig.dstEnabled = sysConfig["dst_enabled"] | false;
         
         // MQTT
+        networkConfig.mqttEnabled = sysConfig["mqtt_enabled"] | false;
         strlcpy(networkConfig.mqttBroker, sysConfig["mqtt_broker"] | "", sizeof(networkConfig.mqttBroker));
         networkConfig.mqttPort = sysConfig["mqtt_port"] | 1883;
         strlcpy(networkConfig.mqttUsername, sysConfig["mqtt_username"] | "", sizeof(networkConfig.mqttUsername));

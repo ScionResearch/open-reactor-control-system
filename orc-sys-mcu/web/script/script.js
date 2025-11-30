@@ -904,13 +904,24 @@ async function loadMqttSettings() {
         const response = await fetch('/api/mqtt');
         const data = await response.json();
         
+        document.getElementById('mqttEnabled').checked = data.mqttEnabled || false;
         document.getElementById('mqttBroker').value = data.mqttBroker || '';
         document.getElementById('mqttPort').value = data.mqttPort || '1883';
         document.getElementById('mqttUsername').value = data.mqttUsername || '';
         document.getElementById('mqttPassword').value = data.mqttPassword || '';
+        
+        // Update broker field required state based on enabled checkbox
+        updateMqttBrokerRequired();
     } catch (error) {
         console.error('Error loading MQTT settings:', error);
     }
+}
+
+// Update broker field required state
+function updateMqttBrokerRequired() {
+    const enabled = document.getElementById('mqttEnabled').checked;
+    const brokerInput = document.getElementById('mqttBroker');
+    brokerInput.required = enabled;
 }
 
 // Function to load control settings
@@ -1426,12 +1437,25 @@ document.getElementById('networkForm').addEventListener('submit', async function
     }
 });
 
+// Add MQTT enabled checkbox change listener
+document.getElementById('mqttEnabled').addEventListener('change', updateMqttBrokerRequired);
+
 // Add MQTT form submission handler
 document.getElementById('mqttForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
+    const mqttEnabled = document.getElementById('mqttEnabled').checked;
+    const mqttBroker = document.getElementById('mqttBroker').value;
+    
+    // Validate broker address if MQTT is enabled
+    if (mqttEnabled && !mqttBroker.trim()) {
+        showToast('error', 'Validation Error', 'Broker address is required when MQTT is enabled');
+        return;
+    }
+    
     const mqttData = {
-        mqttBroker: document.getElementById('mqttBroker').value,
+        mqttEnabled: mqttEnabled,
+        mqttBroker: mqttBroker,
         mqttPort: parseInt(document.getElementById('mqttPort').value) || 1883,
         mqttUsername: document.getElementById('mqttUsername').value,
         mqttPassword: document.getElementById('mqttPassword').value
@@ -1457,7 +1481,8 @@ document.getElementById('mqttForm').addEventListener('submit', async (e) => {
         if (response.ok) {
             showToast('success', 'Success', 'MQTT settings saved successfully');
         } else {
-            throw new Error('Failed to save MQTT settings');
+            const result = await response.json().catch(() => ({ error: 'Failed to save MQTT settings' }));
+            throw new Error(result.error || 'Failed to save MQTT settings');
         }
     } catch (error) {
         console.error('Error saving MQTT settings:', error);
@@ -1467,7 +1492,7 @@ document.getElementById('mqttForm').addEventListener('submit', async (e) => {
             loadingToast.parentNode.removeChild(loadingToast);
         }
         
-        showToast('error', 'Error', 'Failed to save MQTT settings');
+        showToast('error', 'Error', error.message || 'Failed to save MQTT settings');
     }
 });
 

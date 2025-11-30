@@ -261,6 +261,7 @@ bool loadNetworkConfig()
     networkConfig.dstEnabled = doc["dst_enabled"] | false;
     
     // Parse MQTT configuration
+    networkConfig.mqttEnabled = doc["mqtt_enabled"] | false;
     strlcpy(networkConfig.mqttBroker, doc["mqtt_broker"] | "", sizeof(networkConfig.mqttBroker));
     networkConfig.mqttPort = doc["mqtt_port"] | 1883;
     strlcpy(networkConfig.mqttUsername, doc["mqtt_username"] | "", sizeof(networkConfig.mqttUsername));
@@ -359,6 +360,7 @@ void saveNetworkConfig()
     doc["dst_enabled"] = networkConfig.dstEnabled;
     
     // Store MQTT configuration
+    doc["mqtt_enabled"] = networkConfig.mqttEnabled;
     doc["mqtt_broker"] = networkConfig.mqttBroker;
     doc["mqtt_port"] = networkConfig.mqttPort;
     doc["mqtt_username"] = networkConfig.mqttUsername;

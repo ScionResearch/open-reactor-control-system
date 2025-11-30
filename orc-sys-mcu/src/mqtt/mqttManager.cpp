@@ -198,7 +198,8 @@ void init_mqttManager() {
 }
 
 void manageMqtt() {
-    if (!ethernetConnected || strlen(networkConfig.mqttBroker) == 0) {
+    // Skip MQTT management if not enabled or no broker configured
+    if (!ethernetConnected || !networkConfig.mqttEnabled || strlen(networkConfig.mqttBroker) == 0) {
         if (status.mqttConnected) {
             if (!statusLocked) {
                 statusLocked = true;

@@ -12,6 +12,7 @@ void setupMqttAPI()
 {
     server.on("/api/mqtt", HTTP_GET, []() {
         StaticJsonDocument<512> doc;
+        doc["mqttEnabled"] = networkConfig.mqttEnabled;
         doc["mqttBroker"] = networkConfig.mqttBroker;
         doc["mqttPort"] = networkConfig.mqttPort;
         doc["mqttUsername"] = networkConfig.mqttUsername;
@@ -34,7 +35,19 @@ void setupMqttAPI()
             server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
             return;
         }
-        strlcpy(networkConfig.mqttBroker, doc["mqttBroker"] | "", sizeof(networkConfig.mqttBroker));
+        
+        // Parse enabled flag
+        bool enabled = doc["mqttEnabled"] | false;
+        const char* broker = doc["mqttBroker"] | "";
+        
+        // Validate: if enabled, broker address is required
+        if (enabled && strlen(broker) == 0) {
+            server.send(400, "application/json", "{\"error\":\"MQTT broker address is required when MQTT is enabled\"}");
+            return;
+        }
+        
+        networkConfig.mqttEnabled = enabled;
+        strlcpy(networkConfig.mqttBroker, broker, sizeof(networkConfig.mqttBroker));
         networkConfig.mqttPort = doc["mqttPort"] | 1883;
         strlcpy(networkConfig.mqttUsername, doc["mqttUsername"] | "", sizeof(networkConfig.mqttUsername));
         const char* newPassword = doc["mqttPassword"] | "";
