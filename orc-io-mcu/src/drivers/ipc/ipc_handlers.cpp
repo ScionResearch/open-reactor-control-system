@@ -688,12 +688,12 @@ bool ipc_sendSensorData(uint16_t index, uint16_t transactionId) {
                 ctrl->newMessage = false;
             }
             
-            // Add output and PID gains as additional values
+            // Additional values: [output, kp, ki, kd] - must match web API expectations
             data.valueCount = 4;
             data.additionalValues[0] = ctrl->currentOutput;  // Output percentage
-            data.additionalValues[1] = ctrl->kp;             // PID gains
-            data.additionalValues[2] = ctrl->ki;
-            data.additionalValues[3] = ctrl->kd;
+            data.additionalValues[1] = ctrl->kp;             // Proportional gain
+            data.additionalValues[2] = ctrl->ki;             // Integral gain
+            data.additionalValues[3] = ctrl->kd;             // Derivative gain
             strncpy(data.additionalUnits[0], "%", sizeof(data.additionalUnits[0]) - 1);
             strncpy(data.additionalUnits[1], "", sizeof(data.additionalUnits[1]) - 1);
             strncpy(data.additionalUnits[2], "", sizeof(data.additionalUnits[2]) - 1);
@@ -706,11 +706,14 @@ bool ipc_sendSensorData(uint16_t index, uint16_t transactionId) {
             data.value = ctrl->currentpH;  // Process value (pH)
             strncpy(data.unit, "pH", sizeof(data.unit) - 1);
             
-            // Add additional values: currentOutput, acidVolumeTotal, alkalineVolumeTotal
+            // Additional values: [output, acidVol, alkalineVol] - must match web API expectations
             data.valueCount = 3;
-            data.additionalValues[0] = ctrl->currentOutput;  // 0=off, 1=dosing acid, 2=dosing alkaline
-            data.additionalValues[1] = ctrl->acidCumulativeVolume_mL;
-            data.additionalValues[2] = ctrl->alkalineCumulativeVolume_mL;
+            data.additionalValues[0] = ctrl->currentOutput;              // 0=off, 1=dosing acid, 2=dosing alkaline
+            data.additionalValues[1] = ctrl->acidCumulativeVolume_mL;    // Total acid dosed
+            data.additionalValues[2] = ctrl->alkalineCumulativeVolume_mL; // Total base dosed
+            strncpy(data.additionalUnits[0], "", sizeof(data.additionalUnits[0]) - 1);
+            strncpy(data.additionalUnits[1], "mL", sizeof(data.additionalUnits[1]) - 1);
+            strncpy(data.additionalUnits[2], "mL", sizeof(data.additionalUnits[2]) - 1);
             
             if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
             if (ctrl->enabled) data.flags |= IPC_SENSOR_FLAG_RUNNING;  // Report enabled state
@@ -724,14 +727,19 @@ bool ipc_sendSensorData(uint16_t index, uint16_t transactionId) {
         
         case OBJ_T_FLOW_CONTROL: {
             FlowControl_t *ctrl = (FlowControl_t*)obj;
-            data.value = ctrl->flowRate_mL_min;  // Setpoint (flow rate)
+            // Primary value is setpoint (target flow rate)
+            data.value = ctrl->flowRate_mL_min;
             strncpy(data.unit, "mL/min", sizeof(data.unit) - 1);
             
-            // Add additional values: currentOutput, calculatedInterval, cumulativeVolume
+            // Additional values: [currentOutput, interval, cumulativeVol]
+            // Note: flowRate IS the setpoint for this controller type
             data.valueCount = 3;
-            data.additionalValues[0] = ctrl->currentOutput;  // 0=off, 1=dosing
-            data.additionalValues[1] = (float)ctrl->calculatedInterval_ms;  // Interval in ms
-            data.additionalValues[2] = ctrl->cumulativeVolume_mL;  // Total volume pumped
+            data.additionalValues[0] = ctrl->currentOutput;              // 0=off, 1=dosing
+            data.additionalValues[1] = (float)ctrl->calculatedInterval_ms;  // Pump interval
+            data.additionalValues[2] = ctrl->cumulativeVolume_mL;        // Total volume pumped
+            strncpy(data.additionalUnits[0], "", sizeof(data.additionalUnits[0]) - 1);
+            strncpy(data.additionalUnits[1], "ms", sizeof(data.additionalUnits[1]) - 1);
+            strncpy(data.additionalUnits[2], "mL", sizeof(data.additionalUnits[2]) - 1);
             
             if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;
             if (ctrl->enabled) data.flags |= IPC_SENSOR_FLAG_RUNNING;  // Report enabled state

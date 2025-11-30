@@ -457,56 +457,194 @@ static void mqttPublishIPCSensors() {
         char fullTopic[192];
         snprintf(fullTopic, sizeof(fullTopic), "%s/%s/%d", deviceTopicPrefix, topicPath, obj->index);
 
-        // Create JSON payload
-        StaticJsonDocument<256> doc;
+        // Create JSON payload - use larger buffer for complex objects
+        StaticJsonDocument<384> doc;
         doc["timestamp"] = timestamp;
-        doc["value"] = obj->value;
-        doc["unit"] = obj->unit;
         
         // Get name from ioConfig (names are stored on SYS MCU, not transmitted via IPC)
         const char* name = getObjectNameByIndex(obj->index);
         doc["name"] = (name && name[0] != '\0') ? name : obj->name;
         
-        // Add flags
+        // Add fault flag if present
         if (obj->flags & IPC_SENSOR_FLAG_FAULT) {
             doc["fault"] = true;
-        }
-        if (obj->flags & IPC_SENSOR_FLAG_RUNNING) {
-            doc["running"] = true;
-        }
-        if (obj->flags & IPC_SENSOR_FLAG_DIRECTION) {
-            doc["direction"] = "forward";
-        } else if (obj->objectType == OBJ_T_STEPPER_MOTOR || obj->objectType == OBJ_T_BDC_MOTOR) {
-            doc["direction"] = "reverse";
-        }
-        
-        // For controllers, primary value is process value, additional values are setpoint & output
-        bool isController = (obj->objectType >= OBJ_T_TEMPERATURE_CONTROL && obj->objectType <= OBJ_T_DEVICE_CONTROL);
-        if (isController && obj->valueCount >= 2) {
-            doc["processValue"] = obj->value;
-            doc["setpoint"] = obj->additionalValues[0];
-            doc["output"] = obj->additionalValues[1];
-            // Remove generic "value" field for controllers
-            doc.remove("value");
         }
         
         // Add message if present
         if ((obj->flags & IPC_SENSOR_FLAG_NEW_MSG) && strlen(obj->message) > 0) {
             doc["message"] = obj->message;
         }
-
-        // Add additional values if present (e.g., energy monitor) - skip for controllers (already added above)
-        if (obj->valueCount > 0 && !isController) {
-            JsonArray additionalValues = doc.createNestedArray("additionalValues");
-            JsonArray additionalUnits = doc.createNestedArray("additionalUnits");
-            for (uint8_t j = 0; j < obj->valueCount && j < 4; j++) {
-                additionalValues.add(obj->additionalValues[j]);
-                additionalUnits.add(obj->additionalUnits[j]);
+        
+        // Type-specific payload formatting
+        switch (obj->objectType) {
+            // ================================================================
+            // ENERGY MONITORS - Separate named fields for V, A, W
+            // ================================================================
+            case OBJ_T_ENERGY_SENSOR:
+                doc["voltage"] = obj->value;
+                doc["voltageUnit"] = obj->unit;
+                if (obj->valueCount >= 2) {
+                    doc["current"] = obj->additionalValues[0];
+                    doc["currentUnit"] = obj->additionalUnits[0];
+                    doc["power"] = obj->additionalValues[1];
+                    doc["powerUnit"] = obj->additionalUnits[1];
+                }
+                break;
+            
+            // ================================================================
+            // DC MOTORS - Named current field + running status
+            // ================================================================
+            case OBJ_T_BDC_MOTOR:
+                doc["power"] = obj->value;
+                doc["powerUnit"] = obj->unit;
+                doc["running"] = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+                doc["direction"] = (obj->flags & IPC_SENSOR_FLAG_DIRECTION) ? "forward" : "reverse";
+                if (obj->valueCount >= 1) {
+                    doc["current"] = obj->additionalValues[0];
+                    doc["currentUnit"] = obj->additionalUnits[0];
+                }
+                break;
+            
+            // ================================================================
+            // STEPPER MOTOR - Add running status
+            // ================================================================
+            case OBJ_T_STEPPER_MOTOR:
+                doc["value"] = obj->value;
+                doc["unit"] = obj->unit;
+                doc["running"] = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+                doc["direction"] = (obj->flags & IPC_SENSOR_FLAG_DIRECTION) ? "forward" : "reverse";
+                break;
+            
+            // ================================================================
+            // TEMPERATURE CONTROLLER - additionalValues: [output, kp, ki, kd]
+            // Setpoint comes from ioConfig (not transmitted via IPC to save bandwidth)
+            // ================================================================
+            case OBJ_T_TEMPERATURE_CONTROL: {
+                int ctrlIdx = obj->index - 40;
+                doc["processValue"] = obj->value;
+                doc["unit"] = obj->unit;
+                doc["running"] = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+                doc["tuning"] = (obj->flags & 0x10) ? true : false;
+                
+                if (ctrlIdx >= 0 && ctrlIdx < MAX_TEMP_CONTROLLERS) {
+                    doc["setpoint"] = ioConfig.tempControllers[ctrlIdx].setpoint;
+                    doc["controlMethod"] = (uint8_t)ioConfig.tempControllers[ctrlIdx].controlMethod;
+                    
+                    // For PID mode (1), include PID values
+                    if (ioConfig.tempControllers[ctrlIdx].controlMethod == CONTROL_METHOD_PID) {
+                        if (obj->valueCount >= 4) {
+                            doc["output"] = obj->additionalValues[0];
+                            doc["kp"] = obj->additionalValues[1];
+                            doc["ki"] = obj->additionalValues[2];
+                            doc["kd"] = obj->additionalValues[3];
+                        }
+                        doc["integralWindup"] = ioConfig.tempControllers[ctrlIdx].integralWindup;
+                    } else {
+                        // For On/Off mode (0), include hysteresis
+                        if (obj->valueCount >= 1) {
+                            doc["output"] = obj->additionalValues[0];
+                        }
+                        doc["hysteresis"] = ioConfig.tempControllers[ctrlIdx].hysteresis;
+                    }
+                }
+                break;
             }
+            
+            // ================================================================
+            // pH CONTROLLER - additionalValues: [output, acidVol, alkalineVol]
+            // Setpoint comes from ioConfig
+            // ================================================================
+            case OBJ_T_PH_CONTROL:
+                doc["processValue"] = obj->value;
+                doc["unit"] = obj->unit;
+                doc["running"] = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+                doc["setpoint"] = ioConfig.phController.setpoint;
+                doc["deadband"] = ioConfig.phController.deadband;
+                if (obj->valueCount >= 3) {
+                    doc["output"] = (int)obj->additionalValues[0];  // 0=off, 1=acid, 2=base
+                    doc["acidDosed"] = obj->additionalValues[1];
+                    doc["baseDosed"] = obj->additionalValues[2];
+                    doc["dosedUnit"] = "mL";
+                }
+                break;
+            
+            // ================================================================
+            // FLOW CONTROLLER - primary=setpoint, additionalValues: [output, interval, totalVol]
+            // ================================================================
+            case OBJ_T_FLOW_CONTROL:
+                doc["setpoint"] = obj->value;  // Flow rate is the setpoint
+                doc["unit"] = obj->unit;
+                doc["running"] = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+                if (obj->valueCount >= 3) {
+                    doc["output"] = (int)obj->additionalValues[0];  // 0=off, 1=dosing
+                    doc["pumpInterval"] = obj->additionalValues[1];
+                    doc["totalDosed"] = obj->additionalValues[2];
+                    doc["totalDosedUnit"] = "mL";
+                }
+                break;
+            
+            // ================================================================
+            // DO CONTROLLER - additionalValues: [stirrerOut, mfcOut, error, setpoint]
+            // ================================================================
+            case OBJ_T_DISSOLVED_OXYGEN_CONTROL:
+                doc["processValue"] = obj->value;
+                doc["unit"] = obj->unit;
+                doc["running"] = (obj->flags & IPC_SENSOR_FLAG_RUNNING) ? true : false;
+                if (obj->valueCount >= 4) {
+                    doc["stirrerOutput"] = obj->additionalValues[0];
+                    doc["mfcOutput"] = obj->additionalValues[1];
+                    doc["error"] = obj->additionalValues[2];
+                    doc["setpoint"] = obj->additionalValues[3];
+                }
+                break;
+            
+            // ================================================================
+            // DEVICES (MFC, pH probe, DO probe, etc) - Add status field
+            // ================================================================
+            case OBJ_T_HAMILTON_PH_PROBE:
+            case OBJ_T_HAMILTON_DO_PROBE:
+            case OBJ_T_HAMILTON_OD_PROBE:
+            case OBJ_T_ALICAT_MFC:
+            case OBJ_T_DEVICE_CONTROL:
+                doc["value"] = obj->value;
+                doc["unit"] = obj->unit;
+                // Determine status from flags
+                if (obj->flags & IPC_SENSOR_FLAG_FAULT) {
+                    doc["status"] = "fault";
+                } else if (obj->flags & IPC_SENSOR_FLAG_CONNECTED) {
+                    doc["status"] = "connected";
+                } else {
+                    doc["status"] = "disconnected";
+                }
+                break;
+            
+            // ================================================================
+            // DEFAULT - Standard sensor format with additionalValues if present
+            // ================================================================
+            default:
+                doc["value"] = obj->value;
+                doc["unit"] = obj->unit;
+                // Add running/direction for motors
+                if (obj->flags & IPC_SENSOR_FLAG_RUNNING) {
+                    doc["running"] = true;
+                }
+                if (obj->objectType == OBJ_T_STEPPER_MOTOR || obj->objectType == OBJ_T_BDC_MOTOR) {
+                    doc["direction"] = (obj->flags & IPC_SENSOR_FLAG_DIRECTION) ? "forward" : "reverse";
+                }
+                // Add additional values array for other types
+                if (obj->valueCount > 0) {
+                    JsonArray additionalValues = doc.createNestedArray("additionalValues");
+                    JsonArray additionalUnits = doc.createNestedArray("additionalUnits");
+                    for (uint8_t j = 0; j < obj->valueCount && j < 4; j++) {
+                        additionalValues.add(obj->additionalValues[j]);
+                        additionalUnits.add(obj->additionalUnits[j]);
+                    }
+                }
+                break;
         }
 
         // Serialize and publish
-        char payload[256];
+        char payload[384];
         serializeJson(doc, payload, sizeof(payload));
         
         if (mqttClient.publish(fullTopic, payload)) {
