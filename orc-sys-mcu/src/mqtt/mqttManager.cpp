@@ -19,7 +19,9 @@ static unsigned long lastMqttReconnectAttempt = 0;
 static unsigned long lastMqttPublishTime = 0;
 static bool lwtConfigured = false;
 static char deviceTopicPrefix[64] = {0}; // e.g., "orcs/dev/AA:BB:CC:DD:EE:FF"
+static char controlTopicPrefix[64] = {0}; // e.g., "orc.AA:BB:CC:DD:EE:FF.control"
 static bool clientConfigured = false; // Track if client parameters have been set
+static bool controlSubscribed = false; // Track if we've subscribed to control topics
 
 // Forward declaration
 static void reconnect();
@@ -27,12 +29,39 @@ static void mqttPublishAllSensorData();
 static void mqttPublishIPCSensors();
 static void ensureTopicPrefix();
 static void mqttCallback(char* topic, byte* payload, unsigned int length);
+static void subscribeToControlTopics();
+static void handleControlMessage(const char* topic, const char* payload);
+static void publishControlAck(const char* controlTopic, bool success, const char* message);
 
-// MQTT callback function (required by PubSubClient even if we don't subscribe to anything)
+// Control message handlers (reuse existing IPC command functions from ipcManager)
+static void handleOutputControl(uint8_t index, JsonDocument& doc);
+static void handleDeviceControl(uint8_t index, JsonDocument& doc);
+static void handleStepperControl(JsonDocument& doc);
+static void handleDCMotorControl(uint8_t index, JsonDocument& doc);
+static void handleTempControllerControl(uint8_t index, JsonDocument& doc);
+static void handlepHControllerControl(JsonDocument& doc);
+static void handleFlowControllerControl(uint8_t index, JsonDocument& doc);
+static void handleDOControllerControl(JsonDocument& doc);
+
+// MQTT callback function - handles incoming control messages
 static void mqttCallback(char* topic, byte* payload, unsigned int length) {
-    // Currently we only publish, but this callback is required by the library
-    // Future: Handle incoming commands here
-    log(LOG_INFO, false, "MQTT message received on topic: %s\n", topic);
+    // Ignore our own ack messages to prevent infinite loop
+    if (strstr(topic, "/ack") != nullptr) {
+        return;
+    }
+    
+    // Convert payload to null-terminated string
+    char payloadStr[512];
+    size_t copyLen = (length < sizeof(payloadStr) - 1) ? length : sizeof(payloadStr) - 1;
+    memcpy(payloadStr, payload, copyLen);
+    payloadStr[copyLen] = '\0';
+    
+    log(LOG_INFO, false, "MQTT RX [%s]: %s\n", topic, payloadStr);
+    
+    // Check if this is a control topic (orc/{MAC}/control/...)
+    if (strstr(topic, "/control/") != nullptr) {
+        handleControlMessage(topic, payloadStr);
+    }
 }
 
 // Apply current config and attempt reconnect (call after API changes)
@@ -86,8 +115,9 @@ static void reconnect() {
         log(LOG_INFO, true, "MQTT connected successfully! Client state: %d\n", mqttClient.state());
         // Don't publish anything immediately after connecting - let the connection stabilize
         // The LWT will handle offline status automatically
-        // TODO: Add subscriptions for commands here in the future
-        // mqttClient.subscribe("orcs/system/command");
+        
+        // Subscribe to control topics
+        subscribeToControlTopics();
     } else {
         int state = mqttClient.state();
         const char* stateStr = "Unknown";
@@ -266,13 +296,23 @@ void manageMqtt() {
  */
 static void ensureTopicPrefix() {
     if (deviceTopicPrefix[0] != '\0') return;
-    if (strlen(networkConfig.mqttDevicePrefix) > 0) {
-        strlcpy(deviceTopicPrefix, networkConfig.mqttDevicePrefix, sizeof(deviceTopicPrefix));
-        return;
-    }
+    
     uint8_t mac[6];
     eth.macAddress(mac);
-    snprintf(deviceTopicPrefix, sizeof(deviceTopicPrefix), "orcs/dev/%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    char macStr[18];
+    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    
+    // Data topic prefix: orc/{MAC}/data or custom prefix
+    if (strlen(networkConfig.mqttDevicePrefix) > 0) {
+        strlcpy(deviceTopicPrefix, networkConfig.mqttDevicePrefix, sizeof(deviceTopicPrefix));
+    } else {
+        snprintf(deviceTopicPrefix, sizeof(deviceTopicPrefix), "orc/%s/data", macStr);
+    }
+    
+    // Control topic prefix: orc/{MAC}/control (always uses MAC for consistency)
+    snprintf(controlTopicPrefix, sizeof(controlTopicPrefix), "orc/%s/control", macStr);
+    
+    log(LOG_INFO, false, "MQTT topics: data=%s, control=%s\n", deviceTopicPrefix, controlTopicPrefix);
 }
 
 static void mqttPublishAllSensorData() {
@@ -874,3 +914,577 @@ static void mqttPublishIPCSensors() {
         }
     }
 
+// =============================================================================
+// MQTT CONTROL IMPLEMENTATION
+// =============================================================================
+
+/**
+ * @brief Subscribe to control topics after MQTT connection
+ * 
+ * Subscribes to wildcard control topics:
+ * - orc.{MAC}.control/output/#  - Output control (digital, DAC)
+ * - orc.{MAC}.control/device/#  - Device control (MFC setpoint)
+ * - orc.{MAC}.control/controller/# - Controller control (temp, pH, flow, DO)
+ */
+static void subscribeToControlTopics() {
+    ensureTopicPrefix();
+    
+    // Subscribe to all control topics with wildcard
+    char subTopic[96];
+    snprintf(subTopic, sizeof(subTopic), "%s/#", controlTopicPrefix);
+    
+    if (mqttClient.subscribe(subTopic)) {
+        log(LOG_INFO, true, "MQTT subscribed to: %s\n", subTopic);
+        controlSubscribed = true;
+    } else {
+        log(LOG_WARNING, true, "MQTT subscription failed: %s\n", subTopic);
+        controlSubscribed = false;
+    }
+}
+
+/**
+ * @brief Publish acknowledgment for a control command
+ */
+static void publishControlAck(const char* controlTopic, bool success, const char* message) {
+    if (!mqttClient.connected()) return;
+    
+    // Build ack topic by appending /ack to the control topic
+    char ackTopic[192];
+    snprintf(ackTopic, sizeof(ackTopic), "%s/ack", controlTopic);
+    
+    StaticJsonDocument<256> doc;
+    doc["success"] = success;
+    doc["message"] = message;
+    doc["timestamp"] = getISO8601Timestamp();
+    
+    char payload[256];
+    serializeJson(doc, payload, sizeof(payload));
+    
+    mqttClient.publish(ackTopic, payload);
+    log(LOG_INFO, false, "MQTT ACK [%s]: %s\n", ackTopic, success ? "OK" : "FAIL");
+}
+
+/**
+ * @brief Parse incoming control message and route to appropriate handler
+ * 
+ * Topic format: orc.{MAC}.control/{category}/{index}
+ * Categories: output, device, controller/temp, controller/ph, controller/flow, controller/do
+ */
+static void handleControlMessage(const char* topic, const char* payload) {
+    // Parse JSON payload
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (error) {
+        log(LOG_WARNING, false, "MQTT control: Invalid JSON: %s\n", error.c_str());
+        publishControlAck(topic, false, "Invalid JSON");
+        return;
+    }
+    
+    // Find the category and index in the topic
+    // Expected: orc/XX:XX:XX:XX:XX:XX/control/output/21
+    const char* controlPart = strstr(topic, "/control/");
+    if (!controlPart) {
+        log(LOG_WARNING, false, "MQTT control: Invalid topic format\n");
+        publishControlAck(topic, false, "Invalid topic format");
+        return;
+    }
+    
+    // Skip past "/control/"
+    const char* pathStart = controlPart + 9;
+    
+    // Parse path: category/index or category/subcategory/index
+    char category[32] = {0};
+    char subcategory[32] = {0};
+    int index = -1;
+    
+    // Try to parse as category/index
+    if (sscanf(pathStart, "%31[^/]/%d", category, &index) >= 1) {
+        // Check if there's a subcategory (e.g., controller/temp/40)
+        char* secondSlash = strchr(pathStart, '/');
+        if (secondSlash) {
+            char* thirdSlash = strchr(secondSlash + 1, '/');
+            if (thirdSlash) {
+                // Has subcategory: category/subcategory/index
+                sscanf(pathStart, "%31[^/]/%31[^/]/%d", category, subcategory, &index);
+            }
+        }
+    }
+    
+    log(LOG_INFO, false, "MQTT control: category=%s, subcategory=%s, index=%d\n", 
+        category, subcategory, index);
+    
+    // Route to appropriate handler
+    if (strcmp(category, "output") == 0 && index >= 0) {
+        handleOutputControl((uint8_t)index, doc);
+        publishControlAck(topic, true, "Output command sent");
+    }
+    else if (strcmp(category, "stepper") == 0) {
+        handleStepperControl(doc);
+        publishControlAck(topic, true, "Stepper command sent");
+    }
+    else if (strcmp(category, "motor") == 0 && index >= 27 && index <= 30) {
+        handleDCMotorControl((uint8_t)index, doc);
+        publishControlAck(topic, true, "DC motor command sent");
+    }
+    else if (strcmp(category, "device") == 0 && index >= 50 && index <= 69) {
+        handleDeviceControl((uint8_t)index, doc);
+        publishControlAck(topic, true, "Device command sent");
+    }
+    else if (strcmp(category, "controller") == 0) {
+        if (strcmp(subcategory, "temp") == 0 && index >= 40 && index <= 42) {
+            handleTempControllerControl((uint8_t)index, doc);
+            publishControlAck(topic, true, "Temp controller command sent");
+        }
+        else if (strcmp(subcategory, "ph") == 0 || index == 43) {
+            handlepHControllerControl(doc);
+            publishControlAck(topic, true, "pH controller command sent");
+        }
+        else if (strcmp(subcategory, "flow") == 0 && index >= 44 && index <= 47) {
+            handleFlowControllerControl((uint8_t)index, doc);
+            publishControlAck(topic, true, "Flow controller command sent");
+        }
+        else if (strcmp(subcategory, "do") == 0 || index == 48) {
+            handleDOControllerControl(doc);
+            publishControlAck(topic, true, "DO controller command sent");
+        }
+        else {
+            publishControlAck(topic, false, "Unknown controller type");
+        }
+    }
+    else {
+        publishControlAck(topic, false, "Unknown control category");
+    }
+}
+
+/**
+ * @brief Handle output control commands (digital outputs 21-25, DAC 8-9)
+ * 
+ * JSON payloads:
+ * - {"state": true/false}  - Digital ON/OFF
+ * - {"power": 0-100}       - PWM percentage
+ * - {"mV": 0-10240}        - DAC millivolts
+ */
+static void handleOutputControl(uint8_t index, JsonDocument& doc) {
+    bool sent = false;
+    
+    // Digital outputs (21-25)
+    if (index >= 21 && index <= 25) {
+        if (doc.containsKey("state")) {
+            bool state = doc["state"];
+            sent = sendDigitalOutputCommand(index, DOUT_CMD_SET_STATE, state, 0);
+            log(LOG_INFO, false, "MQTT: Output %d state -> %s\n", index, state ? "ON" : "OFF");
+        }
+        else if (doc.containsKey("power")) {
+            float power = doc["power"] | 0.0f;
+            if (power >= 0 && power <= 100) {
+                sent = sendDigitalOutputCommand(index, DOUT_CMD_SET_PWM, false, power);
+                log(LOG_INFO, false, "MQTT: Output %d PWM -> %.1f%%\n", index, power);
+            }
+        }
+    }
+    // DAC outputs (8-9)
+    else if (index >= 8 && index <= 9) {
+        if (doc.containsKey("mV")) {
+            float mV = doc["mV"] | 0.0f;
+            if (mV >= 0 && mV <= 10240) {
+                sent = sendAnalogOutputCommand(index, AOUT_CMD_SET_VALUE, mV);
+                log(LOG_INFO, false, "MQTT: DAC %d -> %.1f mV\n", index, mV);
+            }
+        }
+    }
+    
+    if (!sent) {
+        log(LOG_WARNING, false, "MQTT: Output %d command failed or invalid\n", index);
+    }
+}
+
+/**
+ * @brief Handle device control commands (MFC setpoint)
+ * 
+ * JSON payload: {"setpoint": value}
+ */
+static void handleDeviceControl(uint8_t index, JsonDocument& doc) {
+    // MFC devices are at indices 50-69
+    if (index < 50 || index > 69) {
+        log(LOG_WARNING, false, "MQTT: Invalid device index %d\n", index);
+        return;
+    }
+    
+    if (doc.containsKey("setpoint")) {
+        float setpoint = doc["setpoint"];
+        
+        // Send device control command via IPC
+        IPC_DeviceControlCmd_t cmd;
+        cmd.transactionId = generateTransactionId();
+        cmd.index = index;
+        cmd.objectType = OBJ_T_DEVICE_CONTROL;
+        cmd.command = DEV_CMD_SET_SETPOINT;
+        cmd.setpoint = setpoint;
+        memset(cmd.reserved, 0, sizeof(cmd.reserved));
+        
+        bool sent = ipc.sendPacket(IPC_MSG_DEVICE_CONTROL, (uint8_t*)&cmd, sizeof(cmd));
+        
+        if (sent) {
+            addPendingTransaction(cmd.transactionId, IPC_MSG_DEVICE_CONTROL, IPC_MSG_CONTROL_ACK, 1, index);
+            log(LOG_INFO, false, "MQTT: Device %d setpoint -> %.2f\n", index, setpoint);
+        } else {
+            log(LOG_WARNING, false, "MQTT: Device %d setpoint failed - IPC queue full\n", index);
+        }
+    }
+}
+
+/**
+ * @brief Handle stepper motor control commands (index 26)
+ * 
+ * JSON payloads:
+ * - {"start": true, "rpm": 100, "forward": true}  - Start motor
+ * - {"stop": true}                                 - Stop motor
+ * - {"rpm": 100}                                   - Set RPM (while running)
+ * - {"forward": true/false}                        - Set direction
+ */
+static void handleStepperControl(JsonDocument& doc) {
+    bool sent = false;
+    
+    if (doc.containsKey("stop") && doc["stop"].as<bool>()) {
+        sent = sendStepperCommand(STEPPER_CMD_STOP, 0, false);
+        log(LOG_INFO, false, "MQTT: Stepper stop\n");
+    }
+    else if (doc.containsKey("start") && doc["start"].as<bool>()) {
+        float rpm = doc["rpm"] | 0.0f;
+        bool forward = doc["forward"] | true;
+        
+        if (rpm > 0 && rpm <= ioConfig.stepperMotor.maxRPM) {
+            sent = sendStepperCommand(STEPPER_CMD_START, rpm, forward);
+            log(LOG_INFO, false, "MQTT: Stepper start RPM=%.1f, dir=%s\n", rpm, forward ? "FWD" : "REV");
+        } else {
+            log(LOG_WARNING, false, "MQTT: Stepper invalid RPM %.1f (max=%.1f)\n", rpm, ioConfig.stepperMotor.maxRPM);
+        }
+    }
+    else if (doc.containsKey("rpm")) {
+        float rpm = doc["rpm"] | 0.0f;
+        if (rpm >= 0 && rpm <= ioConfig.stepperMotor.maxRPM) {
+            sent = sendStepperCommand(STEPPER_CMD_SET_RPM, rpm, true);
+            log(LOG_INFO, false, "MQTT: Stepper RPM -> %.1f\n", rpm);
+        }
+    }
+    else if (doc.containsKey("forward")) {
+        bool forward = doc["forward"];
+        sent = sendStepperCommand(STEPPER_CMD_SET_DIR, 0, forward);
+        log(LOG_INFO, false, "MQTT: Stepper direction -> %s\n", forward ? "FWD" : "REV");
+    }
+    
+    if (!sent) {
+        log(LOG_WARNING, false, "MQTT: Stepper command failed or invalid\n");
+    }
+}
+
+/**
+ * @brief Handle DC motor control commands (indices 27-30)
+ * 
+ * JSON payloads:
+ * - {"start": true, "power": 50, "forward": true}  - Start motor
+ * - {"stop": true}                                  - Stop motor
+ * - {"power": 50}                                   - Set power (while running)
+ * - {"forward": true/false}                         - Set direction
+ */
+static void handleDCMotorControl(uint8_t index, JsonDocument& doc) {
+    if (index < 27 || index > 30) {
+        log(LOG_WARNING, false, "MQTT: Invalid DC motor index %d\n", index);
+        return;
+    }
+    
+    bool sent = false;
+    
+    if (doc.containsKey("stop") && doc["stop"].as<bool>()) {
+        sent = sendDCMotorCommand(index, DCMOTOR_CMD_STOP, 0, false);
+        log(LOG_INFO, false, "MQTT: DC motor %d stop\n", index);
+    }
+    else if (doc.containsKey("start") && doc["start"].as<bool>()) {
+        float power = doc["power"] | 0.0f;
+        bool forward = doc["forward"] | true;
+        
+        if (power >= 0 && power <= 100) {
+            sent = sendDCMotorCommand(index, DCMOTOR_CMD_START, power, forward);
+            log(LOG_INFO, false, "MQTT: DC motor %d start power=%.1f%%, dir=%s\n", 
+                index, power, forward ? "FWD" : "REV");
+        } else {
+            log(LOG_WARNING, false, "MQTT: DC motor %d invalid power %.1f\n", index, power);
+        }
+    }
+    else if (doc.containsKey("power")) {
+        float power = doc["power"] | 0.0f;
+        if (power >= 0 && power <= 100) {
+            sent = sendDCMotorCommand(index, DCMOTOR_CMD_SET_POWER, power, true);
+            log(LOG_INFO, false, "MQTT: DC motor %d power -> %.1f%%\n", index, power);
+        }
+    }
+    else if (doc.containsKey("forward")) {
+        bool forward = doc["forward"];
+        sent = sendDCMotorCommand(index, DCMOTOR_CMD_SET_DIR, 0, forward);
+        log(LOG_INFO, false, "MQTT: DC motor %d direction -> %s\n", index, forward ? "FWD" : "REV");
+    }
+    
+    if (!sent) {
+        log(LOG_WARNING, false, "MQTT: DC motor %d command failed or invalid\n", index);
+    }
+}
+
+/**
+ * @brief Handle temperature controller commands
+ * 
+ * JSON payloads:
+ * - {"enabled": true/false}
+ * - {"setpoint": value}
+ * - {"autotune": true}
+ * - {"kp": value, "ki": value, "kd": value}
+ * - {"hysteresis": value}
+ */
+static void handleTempControllerControl(uint8_t index, JsonDocument& doc) {
+    int ctrlIdx = index - 40;
+    if (ctrlIdx < 0 || ctrlIdx >= MAX_TEMP_CONTROLLERS) return;
+    
+    IPC_TempControllerControl_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.transactionId = generateTransactionId();
+    cmd.index = index;
+    cmd.objectType = OBJ_T_TEMPERATURE_CONTROL;
+    
+    bool sent = false;
+    
+    if (doc.containsKey("enabled")) {
+        cmd.command = doc["enabled"].as<bool>() ? TEMP_CTRL_CMD_ENABLE : TEMP_CTRL_CMD_DISABLE;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: Temp controller %d %s\n", index, 
+            doc["enabled"].as<bool>() ? "enabled" : "disabled");
+    }
+    else if (doc.containsKey("setpoint")) {
+        cmd.command = TEMP_CTRL_CMD_SET_SETPOINT;
+        cmd.setpoint = doc["setpoint"];
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        if (sent) {
+            ioConfig.tempControllers[ctrlIdx].setpoint = cmd.setpoint;
+        }
+        log(LOG_INFO, false, "MQTT: Temp controller %d setpoint -> %.1f\n", index, cmd.setpoint);
+    }
+    else if (doc.containsKey("autotune") && doc["autotune"].as<bool>()) {
+        cmd.command = TEMP_CTRL_CMD_START_AUTOTUNE;
+        cmd.setpoint = ioConfig.tempControllers[ctrlIdx].setpoint;
+        cmd.autotuneOutputStep = 100.0f;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: Temp controller %d autotune started\n", index);
+    }
+    else if (doc.containsKey("kp") || doc.containsKey("ki") || doc.containsKey("kd")) {
+        // Update PID values - need to send full config
+        if (doc.containsKey("kp")) ioConfig.tempControllers[ctrlIdx].kP = doc["kp"];
+        if (doc.containsKey("ki")) ioConfig.tempControllers[ctrlIdx].kI = doc["ki"];
+        if (doc.containsKey("kd")) ioConfig.tempControllers[ctrlIdx].kD = doc["kd"];
+        
+        // Send config update
+        IPC_ConfigTempController_t cfg;
+        memset(&cfg, 0, sizeof(cfg));
+        cfg.transactionId = generateTransactionId();
+        cfg.index = index;
+        cfg.isActive = ioConfig.tempControllers[ctrlIdx].isActive;
+        strncpy(cfg.name, ioConfig.tempControllers[ctrlIdx].name, sizeof(cfg.name) - 1);
+        cfg.enabled = ioConfig.tempControllers[ctrlIdx].enabled;
+        cfg.pvSourceIndex = ioConfig.tempControllers[ctrlIdx].pvSourceIndex;
+        cfg.outputIndex = ioConfig.tempControllers[ctrlIdx].outputIndex;
+        cfg.controlMethod = (uint8_t)ioConfig.tempControllers[ctrlIdx].controlMethod;
+        cfg.setpoint = ioConfig.tempControllers[ctrlIdx].setpoint;
+        cfg.hysteresis = ioConfig.tempControllers[ctrlIdx].hysteresis;
+        cfg.kP = ioConfig.tempControllers[ctrlIdx].kP;
+        cfg.kI = ioConfig.tempControllers[ctrlIdx].kI;
+        cfg.kD = ioConfig.tempControllers[ctrlIdx].kD;
+        cfg.integralWindup = ioConfig.tempControllers[ctrlIdx].integralWindup;
+        cfg.outputMin = ioConfig.tempControllers[ctrlIdx].outputMin;
+        cfg.outputMax = ioConfig.tempControllers[ctrlIdx].outputMax;
+        
+        sent = ipc.sendPacket(IPC_MSG_CONFIG_TEMP_CONTROLLER, (uint8_t*)&cfg, sizeof(cfg));
+        log(LOG_INFO, false, "MQTT: Temp controller %d PID updated: P=%.2f I=%.2f D=%.2f\n", 
+            index, cfg.kP, cfg.kI, cfg.kD);
+    }
+    else if (doc.containsKey("hysteresis")) {
+        ioConfig.tempControllers[ctrlIdx].hysteresis = doc["hysteresis"];
+        // Send config update (similar to PID)
+        log(LOG_INFO, false, "MQTT: Temp controller %d hysteresis -> %.2f\n", 
+            index, ioConfig.tempControllers[ctrlIdx].hysteresis);
+    }
+    
+    if (sent) {
+        addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    }
+}
+
+/**
+ * @brief Handle pH controller commands
+ * 
+ * JSON payloads:
+ * - {"enabled": true/false}
+ * - {"setpoint": value}
+ * - {"doseAcid": mL}
+ * - {"doseAlkaline": mL}
+ * - {"resetVolumes": true}
+ */
+static void handlepHControllerControl(JsonDocument& doc) {
+    IPC_pHControllerControl_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.transactionId = generateTransactionId();
+    cmd.index = 43;
+    cmd.objectType = OBJ_T_PH_CONTROL;
+    
+    bool sent = false;
+    
+    if (doc.containsKey("enabled")) {
+        cmd.command = doc["enabled"].as<bool>() ? PH_CMD_ENABLE : PH_CMD_DISABLE;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: pH controller %s\n", doc["enabled"].as<bool>() ? "enabled" : "disabled");
+    }
+    else if (doc.containsKey("setpoint")) {
+        cmd.command = PH_CMD_SET_SETPOINT;
+        cmd.setpoint = doc["setpoint"];
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        if (sent) {
+            ioConfig.phController.setpoint = cmd.setpoint;
+        }
+        log(LOG_INFO, false, "MQTT: pH controller setpoint -> %.2f\n", cmd.setpoint);
+    }
+    else if (doc.containsKey("doseAcid") && doc["doseAcid"].as<bool>()) {
+        // Trigger one dose at configured volume
+        cmd.command = PH_CMD_DOSE_ACID;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: pH controller dose acid triggered\n");
+    }
+    else if (doc.containsKey("doseAlkaline") && doc["doseAlkaline"].as<bool>()) {
+        // Trigger one dose at configured volume
+        cmd.command = PH_CMD_DOSE_ALKALINE;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: pH controller dose alkaline triggered\n");
+    }
+    else if (doc.containsKey("resetVolumes") && doc["resetVolumes"].as<bool>()) {
+        // Reset both acid and alkaline volumes
+        cmd.command = PH_CMD_RESET_ACID_VOLUME;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        cmd.command = PH_CMD_RESET_BASE_VOLUME;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: pH controller reset volumes\n");
+    }
+    
+    if (sent) {
+        addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 43);
+    }
+}
+
+/**
+ * @brief Handle flow controller commands
+ * 
+ * JSON payloads:
+ * - {"enabled": true/false}
+ * - {"setpoint": mL/min}
+ * - {"manualDose": mL}
+ * - {"resetVolume": true}
+ */
+static void handleFlowControllerControl(uint8_t index, JsonDocument& doc) {
+    int ctrlIdx = index - 44;
+    if (ctrlIdx < 0 || ctrlIdx >= MAX_FLOW_CONTROLLERS) return;
+    
+    IPC_FlowControllerControl_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.transactionId = generateTransactionId();
+    cmd.index = index;
+    cmd.objectType = OBJ_T_FLOW_CONTROL;
+    
+    bool sent = false;
+    
+    if (doc.containsKey("enabled")) {
+        cmd.command = doc["enabled"].as<bool>() ? FLOW_CMD_ENABLE : FLOW_CMD_DISABLE;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: Flow controller %d %s\n", index, 
+            doc["enabled"].as<bool>() ? "enabled" : "disabled");
+    }
+    else if (doc.containsKey("setpoint")) {
+        cmd.command = FLOW_CMD_SET_FLOW_RATE;
+        cmd.flowRate_mL_min = doc["setpoint"];
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        if (sent) {
+            ioConfig.flowControllers[ctrlIdx].flowRate_mL_min = cmd.flowRate_mL_min;
+        }
+        log(LOG_INFO, false, "MQTT: Flow controller %d setpoint -> %.2f mL/min\n", index, cmd.flowRate_mL_min);
+    }
+    else if (doc.containsKey("manualDose") && doc["manualDose"].as<bool>()) {
+        // Trigger one dose cycle
+        cmd.command = FLOW_CMD_MANUAL_DOSE;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: Flow controller %d manual dose triggered\n", index);
+    }
+    else if (doc.containsKey("resetVolume") && doc["resetVolume"].as<bool>()) {
+        cmd.command = FLOW_CMD_RESET_VOLUME;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: Flow controller %d reset volume\n", index);
+    }
+    
+    if (sent) {
+        addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, index);
+    }
+}
+
+/**
+ * @brief Handle DO controller commands
+ * 
+ * JSON payloads:
+ * - {"enabled": true/false}
+ * - {"setpoint": mg/L}
+ * - {"activeProfile": "name"} or {"activeProfileIndex": 0-2}
+ */
+static void handleDOControllerControl(JsonDocument& doc) {
+    IPC_DOControllerControl_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.transactionId = generateTransactionId();
+    cmd.index = 48;
+    cmd.objectType = OBJ_T_DISSOLVED_OXYGEN_CONTROL;
+    
+    bool sent = false;
+    
+    if (doc.containsKey("enabled")) {
+        cmd.command = doc["enabled"].as<bool>() ? DO_CMD_ENABLE : DO_CMD_DISABLE;
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        log(LOG_INFO, false, "MQTT: DO controller %s\n", doc["enabled"].as<bool>() ? "enabled" : "disabled");
+    }
+    else if (doc.containsKey("setpoint")) {
+        cmd.command = DO_CMD_SET_SETPOINT;
+        cmd.setpoint_mg_L = doc["setpoint"];
+        sent = ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd));
+        if (sent) {
+            ioConfig.doController.setpoint_mg_L = cmd.setpoint_mg_L;
+        }
+        log(LOG_INFO, false, "MQTT: DO controller setpoint -> %.2f mg/L\n", cmd.setpoint_mg_L);
+    }
+    else if (doc.containsKey("activeProfileIndex")) {
+        int8_t profileIdx = doc["activeProfileIndex"];
+        if (profileIdx >= 0 && profileIdx < MAX_DO_PROFILES) {
+            // Profile change requires sending full config with new profile
+            ioConfig.doController.activeProfileIndex = profileIdx;
+            log(LOG_INFO, false, "MQTT: DO controller profile -> %d\n", profileIdx);
+            // TODO: Send full DO config to apply profile change
+            sent = true;
+        }
+    }
+    else if (doc.containsKey("activeProfile")) {
+        // Find profile by name
+        const char* profileName = doc["activeProfile"];
+        for (int i = 0; i < MAX_DO_PROFILES; i++) {
+            if (ioConfig.doProfiles[i].isActive && 
+                strcmp(ioConfig.doProfiles[i].name, profileName) == 0) {
+                ioConfig.doController.activeProfileIndex = i;
+                log(LOG_INFO, false, "MQTT: DO controller profile -> %s (%d)\n", profileName, i);
+                // TODO: Send full DO config to apply profile change
+                sent = true;
+                break;
+            }
+        }
+    }
+    
+    if (sent) {
+        addPendingTransaction(cmd.transactionId, IPC_MSG_CONTROL_WRITE, IPC_MSG_CONTROL_ACK, 1, 48);
+    }
+}
