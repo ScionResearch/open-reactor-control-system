@@ -8,7 +8,7 @@ AlicatMFC::AlicatMFC(ModbusDriver_t *modbusDriver, uint8_t slaveID)
     : _modbusDriver(modbusDriver), _slaveID(slaveID), _setpoint(0.0),
       _maxFlowRate_mL_min(1250.0),  // Default to Alicat max (1250 mL/min)
       _fault(false), _newMessage(false), _newSetpoint(false),
-      _pendingSetpoint(0.0), _writeAttempts(0), 
+      _pendingSetpoint(0.0), _writeAttempts(0), _validationAttempts(0),
       _setpointUnitCode(0), _flowUnitCode(0), _pressureUnitCode(0),
       _firstConnect(true) {  // Initialize first connect flag for this instance
     // Initialize flow sensor
@@ -112,7 +112,8 @@ bool AlicatMFC::writeSetpoint(float setpoint, bool mLmin) {
         setpoint *= _flowConversionFactor;
     }
     _pendingSetpoint = setpoint;
-    _writeAttempts = 0;  // Reset attempts
+    _writeAttempts = 0;  // Reset write attempts
+    _validationAttempts = 0;  // Reset validation attempts for grace logic
     
     const uint8_t functionCode = 16;  // Write multiple registers
     const uint16_t address = 1349;    // Setpoint register address
@@ -224,26 +225,39 @@ void AlicatMFC::handleMfcResponse(bool valid, uint16_t *data) {
     _controlObj.actualValue = _flowSensor.flow;  // Primary feedback is flow
     strncpy(_controlObj.setpointUnit, _setpointUnit, sizeof(_controlObj.setpointUnit));
 
-    // If we just wrote a setpoint, validate it
+    // If we just wrote a setpoint, validate it with grace logic
     if (_newSetpoint) {
         if (fabs(_setpoint - _pendingSetpoint) > _adjustedAbsDevFlow) {
-            _fault = true;
-            _controlObj.fault = true;
-            snprintf(_message, sizeof(_message), 
-                    "Setpoint write validation failed for MFC (ID %d): expected %0.4f, got %0.4f", 
-                    _slaveID, _pendingSetpoint, _setpoint);
-            _newMessage = true;
+            // Setpoint mismatch - increment validation attempts
+            _validationAttempts++;
+            
+            if (_validationAttempts >= MAX_VALIDATION_ATTEMPTS) {
+                // Too many failed attempts - set fault
+                _fault = true;
+                _controlObj.fault = true;
+                snprintf(_message, sizeof(_message), 
+                        "Setpoint write validation failed for MFC (ID %d): expected %0.4f, got %0.4f after %d attempts", 
+                        _slaveID, _pendingSetpoint, _setpoint, _validationAttempts);
+                _newMessage = true;
+                _newSetpoint = false;  // Give up validation
+                _validationAttempts = 0;
+                _controlObj.newMessage = true;
+                strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
+            }
+            // else: keep _newSetpoint true to retry validation on next read
         } else {
-            _fault = false;  // Clear fault flag on successful validation
+            // Setpoint matches - success!
+            _fault = false;
             _controlObj.fault = false;
             snprintf(_message, sizeof(_message), 
                     "Setpoint write successful for MFC (ID %d): setpoint is now %0.4f", 
                     _slaveID, _setpoint);
             _newMessage = true;
+            _newSetpoint = false;
+            _validationAttempts = 0;
+            _controlObj.newMessage = true;
+            strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
         }
-        _newSetpoint = false;
-        _controlObj.newMessage = true;
-        strncpy(_controlObj.message, _message, sizeof(_controlObj.message));
     }
 }
 

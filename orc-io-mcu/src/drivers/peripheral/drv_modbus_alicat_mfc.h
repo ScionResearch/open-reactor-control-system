@@ -242,6 +242,8 @@ private:
     bool _newSetpoint;                       ///< Flag indicating a setpoint write is pending validation
     float _pendingSetpoint;                  ///< Pending setpoint value for validation
     int _writeAttempts;                      ///< Number of write attempts (for retry logic)
+    uint8_t _validationAttempts;             ///< Number of validation read attempts (grace logic)
+    static const uint8_t MAX_VALIDATION_ATTEMPTS = 3;  ///< Max attempts before fault
     
     // Unit tracking for each instance
     uint16_t _setpointUnitCode;              ///< Setpoint unit code (for change detection)
