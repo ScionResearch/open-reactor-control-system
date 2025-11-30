@@ -234,6 +234,11 @@ void handleGetControllers() {
         ctrl["outputIndex"] = ioConfig.flowControllers[i].outputIndex;
         ctrl["motorPower"] = ioConfig.flowControllers[i].motorPower;
         
+        // Calibration & dosing parameters
+        ctrl["dosingInterval_ms"] = ioConfig.flowControllers[i].minDosingInterval_ms;
+        ctrl["calibrationVolume_mL"] = ioConfig.flowControllers[i].calibrationVolume_mL;
+        ctrl["calibrationDoseTime_ms"] = ioConfig.flowControllers[i].calibrationDoseTime_ms;
+        
         ObjectCache::CachedObject* obj = objectCache.getObject(index);
         
         if (obj && obj->valid && obj->lastUpdate > 0) {
@@ -267,6 +272,14 @@ void handleGetControllers() {
         ctrl["stirrerEnabled"] = ioConfig.doController.stirrerEnabled;
         ctrl["mfcEnabled"] = ioConfig.doController.mfcEnabled;
         ctrl["stirrerUnit"] = (ioConfig.doController.stirrerType == 0) ? "%" : "RPM";
+        
+        // Get active profile name
+        int8_t profileIdx = ioConfig.doController.activeProfileIndex;
+        if (profileIdx >= 0 && profileIdx < MAX_DO_PROFILES && ioConfig.doProfiles[profileIdx].isActive) {
+            ctrl["activeProfileName"] = ioConfig.doProfiles[profileIdx].name;
+        } else {
+            ctrl["activeProfileName"] = "None";
+        }
         
         ObjectCache::CachedObject* obj = objectCache.getObject(index);
         

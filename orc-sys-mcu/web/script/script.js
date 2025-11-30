@@ -5558,6 +5558,13 @@ let autotuneJustCompleted = new Map();  // Track which controllers just complete
 async function initControllersTab() {
     console.log('[CONTROLLERS] Initializing Controllers tab');
     
+    // Load DO profiles first so profile dropdowns can be populated
+    try {
+        await loadDOProfiles();
+    } catch (e) {
+        console.warn('[CONTROLLERS] Failed to load DO profiles:', e);
+    }
+    
     // Use PollingManager - polls every 2 seconds while controllers tab is active
     PollingManager.startPolling('controllers-api', loadControllers, 2000);
 }

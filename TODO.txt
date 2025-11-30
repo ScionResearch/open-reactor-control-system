@@ -1,6 +1,0 @@
-ORC TODO (Bug fixes and improvements as I notice them!):
-
-Modbus:
-1. DONE - Better queue management - at the moment an offline device can flood the queue with unresponded requests, limit per device requests in modbus library!
-2. More config (1.5 stop bits option, timout value)
-3. Show stats - queue size, errors, dropped requests (queue full) etc
