@@ -8,7 +8,8 @@
  * - /api/dashboard - Get all dashboard-visible objects with live data
  * - /api/dashboard/layout - Get/save tile layout configuration
  * - /api/dashboard/alarms - Get active alarms and fault summary
- * - /api/dashboard/enable-all - Global enable for outputs/controllers
+ * - /api/dashboard/enable-all - Global enable for outputs/controllers (returns RTC timestamp)
+ * - /api/dashboard/pause - Pause non-temperature controllers (pH, flow, DO)
  * - /api/dashboard/disable-all - Global disable for outputs/controllers
  * - /api/dashboard/clear-volumes - Clear all cumulative dosing volumes
  * 
@@ -72,8 +73,17 @@ void handleSaveDashboardLayout(void);
  * @brief POST /api/dashboard/enable-all - Enable all outputs and controllers
  * 
  * Sends enable commands to all dashboard-visible outputs and controllers.
+ * Returns current RTC timestamp for run timer tracking.
  */
 void handleEnableAll(void);
+
+/**
+ * @brief POST /api/dashboard/pause - Pause non-temperature controllers
+ * 
+ * Disables pH, flow, and DO controllers while keeping temperature control active.
+ * Used to pause a run without losing temperature regulation.
+ */
+void handlePauseControllers(void);
 
 /**
  * @brief POST /api/dashboard/disable-all - Disable all outputs and controllers

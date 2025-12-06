@@ -37,12 +37,16 @@
                     
                     <!-- Global Controls -->
                     <div class="dashboard-controls">
-                        <button class="dashboard-btn dashboard-btn-success" onclick="enableAllControllers()">
-                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10,17L5,12L6.41,10.58L10,14.17L17.59,6.58L19,8M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/></svg>
+                        <button id="run-all-btn" class="dashboard-btn dashboard-btn-success" onclick="runAllControllers()">
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8,5.14V19.14L19,12.14L8,5.14Z"/></svg>
                             Run All
                         </button>
-                        <button class="dashboard-btn dashboard-btn-danger" onclick="disableAllControllers()">
-                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z"/></svg>
+                        <button id="pause-btn" class="dashboard-btn dashboard-btn-warning" onclick="togglePauseResume()" disabled>
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M14,19H18V5H14M6,19H10V5H6V19Z"/></svg>
+                            Pause
+                        </button>
+                        <button id="stop-all-btn" class="dashboard-btn dashboard-btn-danger" onclick="stopAllControllers()">
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18,18H6V6H18V18Z"/></svg>
                             Stop All
                         </button>
                         <button class="dashboard-btn dashboard-btn-secondary" onclick="clearAllVolumes()">
@@ -53,6 +57,18 @@
                             <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"/></svg>
                             Save Layout
                         </button>
+                        
+                        <!-- Run Timer Display -->
+                        <div class="run-timer-display">
+                            <div class="timer-field">
+                                <span class="timer-label">Started:</span>
+                                <span id="run-start-time" class="timer-value">--:--:--</span>
+                            </div>
+                            <div class="timer-field">
+                                <span class="timer-label">Runtime:</span>
+                                <span id="run-duration" class="timer-value">00:00:00</span>
+                            </div>
+                        </div>
                     </div>
                     
                     <!-- Dashboard Tiles Container -->

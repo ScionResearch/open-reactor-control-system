@@ -9463,6 +9463,13 @@ let layoutModified = false;
 let dashboardUserInteracting = false;  // Track if user is interacting with dashboard
 let dashboardDragging = false;         // Track if user is dragging tiles
 
+// Run Timer State
+let runState = 'idle';  // 'idle', 'running', 'paused', 'stopped'
+let runStartTime = null;  // RTC timestamp string when run started
+let runStartEpoch = null; // JS epoch time when run started (for duration calc)
+let runAccumulatedMs = 0; // Accumulated runtime in ms (for pause/resume)
+let runTimerInterval = null; // Interval ID for timer updates
+
 // Dashboard Initialization
 async function initDashboardTab() {
     
@@ -10001,37 +10008,142 @@ function updateAlarmBadge() {
     }
 }
 
-// Dashboard Global Controls
-async function enableAllControllers() {
-    if (!confirm('Enable all controllers?')) return;
+// Dashboard Global Controls - Run/Pause/Stop State Machine
+async function runAllControllers() {
+    if (runState === 'running') return;
+    
+    if (!confirm('Start all controllers?')) return;
     
     try {
         const response = await fetch('/api/dashboard/enable-all', { method: 'POST' });
         if (response.ok) {
-            showToast('success', 'Enable All', 'All controllers enabled');
+            const data = await response.json();
+            
+            // Set run state
+            runState = 'running';
+            runStartTime = data.startTime || new Date().toLocaleTimeString();
+            runStartEpoch = Date.now();
+            runAccumulatedMs = 0;
+            
+            // Start the timer
+            startRunTimer();
+            updateRunControlButtons();
+            updateTimerDisplay();
+            
+            showToast('success', 'Run Started', 'All controllers enabled');
         } else {
             throw new Error('Failed to enable all');
         }
     } catch (error) {
-        console.error('[DASHBOARD] Enable all error:', error);
-        showToast('error', 'Error', 'Failed to enable controllers');
+        console.error('[DASHBOARD] Run all error:', error);
+        showToast('error', 'Error', 'Failed to start controllers');
     }
 }
 
-async function disableAllControllers() {
-    if (!confirm('Disable all controllers?')) return;
+async function pauseControllers() {
+    if (runState !== 'running') return;
+    
+    try {
+        const response = await fetch('/api/dashboard/pause', { method: 'POST' });
+        if (response.ok) {
+            // Pause the timer - save accumulated time
+            runAccumulatedMs += Date.now() - runStartEpoch;
+            runState = 'paused';
+            
+            stopRunTimer();
+            updateRunControlButtons();
+            updateTimerDisplay();
+            
+            showToast('warning', 'Paused', 'pH, flow, and DO controllers paused (temperature still active)');
+        } else {
+            throw new Error('Failed to pause');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Pause error:', error);
+        showToast('error', 'Error', 'Failed to pause controllers');
+    }
+}
+
+async function resumeControllers() {
+    if (runState !== 'paused') return;
+    
+    try {
+        const response = await fetch('/api/dashboard/enable-all', { method: 'POST' });
+        if (response.ok) {
+            // Resume the timer from where we left off
+            runState = 'running';
+            runStartEpoch = Date.now();
+            
+            startRunTimer();
+            updateRunControlButtons();
+            updateTimerDisplay();
+            
+            showToast('success', 'Resumed', 'All controllers re-enabled');
+        } else {
+            throw new Error('Failed to resume');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Resume error:', error);
+        showToast('error', 'Error', 'Failed to resume controllers');
+    }
+}
+
+function togglePauseResume() {
+    if (runState === 'running') {
+        pauseControllers();
+    } else if (runState === 'paused') {
+        resumeControllers();
+    }
+}
+
+async function stopAllControllers() {
+    if (runState === 'idle') return;
+    
+    if (!confirm('Stop all controllers?')) return;
     
     try {
         const response = await fetch('/api/dashboard/disable-all', { method: 'POST' });
         if (response.ok) {
-            showToast('success', 'Disable All', 'All controllers disabled');
+            // Stop the timer but keep display values
+            if (runState === 'running') {
+                runAccumulatedMs += Date.now() - runStartEpoch;
+            }
+            runState = 'stopped';
+            
+            stopRunTimer();
+            updateRunControlButtons();
+            updateTimerDisplay();
+            
+            showToast('info', 'Stopped', 'All controllers disabled');
         } else {
-            throw new Error('Failed to disable all');
+            throw new Error('Failed to stop all');
         }
     } catch (error) {
-        console.error('[DASHBOARD] Disable all error:', error);
-        showToast('error', 'Error', 'Failed to disable controllers');
+        console.error('[DASHBOARD] Stop all error:', error);
+        showToast('error', 'Error', 'Failed to stop controllers');
     }
+}
+
+function updateRunControlButtons() {
+    const runBtn = document.getElementById('run-all-btn');
+    const pauseBtn = document.getElementById('pause-btn');
+    const stopBtn = document.getElementById('stop-all-btn');
+    
+    if (runBtn) runBtn.disabled = runState === 'running';
+    if (pauseBtn) {
+        pauseBtn.disabled = runState !== 'running' && runState !== 'paused';
+        // Toggle button appearance between Pause and Resume
+        if (runState === 'paused') {
+            pauseBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8,5.14V19.14L19,12.14L8,5.14Z"/></svg> Resume`;
+            pauseBtn.classList.remove('dashboard-btn-warning');
+            pauseBtn.classList.add('dashboard-btn-success');
+        } else {
+            pauseBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M14,19H18V5H14M6,19H10V5H6V19Z"/></svg> Pause`;
+            pauseBtn.classList.remove('dashboard-btn-success');
+            pauseBtn.classList.add('dashboard-btn-warning');
+        }
+    }
+    if (stopBtn) stopBtn.disabled = runState === 'idle';
 }
 
 async function clearAllVolumes() {
@@ -10049,6 +10161,62 @@ async function clearAllVolumes() {
         showToast('error', 'Error', 'Failed to clear volumes');
     }
 }
+
+// Run Timer Functions
+function startRunTimer() {
+    stopRunTimer(); // Clear any existing interval
+    runTimerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+function stopRunTimer() {
+    if (runTimerInterval) {
+        clearInterval(runTimerInterval);
+        runTimerInterval = null;
+    }
+}
+
+function updateTimerDisplay() {
+    const startTimeEl = document.getElementById('run-start-time');
+    const durationEl = document.getElementById('run-duration');
+    const timerDisplay = document.querySelector('.run-timer-display');
+    
+    if (!startTimeEl || !durationEl || !timerDisplay) return;
+    
+    // Update display class based on state
+    timerDisplay.className = 'run-timer-display ' + runState;
+    
+    if (runState === 'idle') {
+        startTimeEl.textContent = '--:--:--';
+        durationEl.textContent = '00:00:00';
+    } else {
+        // Show start time (just time portion)
+        if (runStartTime) {
+            const timePart = runStartTime.includes(' ') ? runStartTime.split(' ')[1] : runStartTime;
+            startTimeEl.textContent = timePart;
+        }
+        
+        // Calculate duration
+        let totalMs = runAccumulatedMs;
+        if (runState === 'running') {
+            totalMs += Date.now() - runStartEpoch;
+        }
+        
+        durationEl.textContent = formatDuration(totalMs);
+    }
+}
+
+function formatDuration(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Legacy function names for backward compatibility
+function enableAllControllers() { return runAllControllers(); }
+function disableAllControllers() { return stopAllControllers(); }
 
 // Dashboard Layout Management
 function onTileOrderChanged() {
@@ -10103,7 +10271,6 @@ function initDragAndDrop() {
     const container = document.getElementById('dashboard-tiles');
     if (!container) return;
     
-    // Remove old listeners by cloning
     const tiles = container.querySelectorAll('.dashboard-tile');
     
     tiles.forEach(tile => {
@@ -10121,13 +10288,12 @@ function handleDragStart(e) {
     dragState.tile = this;
     this.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', ''); // Required for Firefox
+    e.dataTransfer.setData('text/plain', '');
 }
 
 function handleDragEnd(e) {
     dashboardDragging = false;
     this.classList.remove('dragging');
-    // Clear all drag-over states
     document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
     dragState.tile = null;
     dragState.dropTarget = null;
@@ -10141,7 +10307,6 @@ function handleDragOver(e) {
 function handleDragEnter(e) {
     e.preventDefault();
     if (this !== dragState.tile && !this.classList.contains('dragging')) {
-        // Clear previous target
         if (dragState.dropTarget && dragState.dropTarget !== this) {
             dragState.dropTarget.classList.remove('drag-over');
         }
@@ -10151,7 +10316,6 @@ function handleDragEnter(e) {
 }
 
 function handleDragLeave(e) {
-    // Only remove if leaving the tile entirely
     if (!this.contains(e.relatedTarget)) {
         this.classList.remove('drag-over');
     }
@@ -10170,7 +10334,6 @@ function handleDrop(e) {
         const dropIdx = tiles.indexOf(this);
         
         if (dragIdx !== -1 && dropIdx !== -1) {
-            // Swap positions
             if (dragIdx < dropIdx) {
                 container.insertBefore(dragState.tile, this.nextSibling);
             } else {
@@ -10242,6 +10405,11 @@ async function dashboardDisableController(type, index) {
 
 // Export dashboard functions to window
 window.initDashboardTab = initDashboardTab;
+window.runAllControllers = runAllControllers;
+window.pauseControllers = pauseControllers;
+window.resumeControllers = resumeControllers;
+window.togglePauseResume = togglePauseResume;
+window.stopAllControllers = stopAllControllers;
 window.enableAllControllers = enableAllControllers;
 window.disableAllControllers = disableAllControllers;
 window.clearAllVolumes = clearAllVolumes;

@@ -322,16 +322,26 @@ void handleRestoreConfig() {
         return;
     }
     
-    log(LOG_INFO, true, "Restoring configuration from backup\n");
+    // Get payload length first without copying the full string
+    size_t payloadLen = server.arg("plain").length();
+    log(LOG_INFO, true, "Restoring configuration from backup (%d bytes, free heap: %d)\n", 
+        payloadLen, rp2040.getFreeHeap());
     
-    DynamicJsonDocument doc(32768);
+    // Calculate buffer size: payload * 2 for JSON overhead, minimum 16KB, maximum 40KB
+    size_t bufferSize = payloadLen * 2;
+    if (bufferSize < 16384) bufferSize = 16384;
+    if (bufferSize > 40960) bufferSize = 40960;  // Max 40KB to leave heap space
+    
+    DynamicJsonDocument doc(bufferSize);
     DeserializationError error = deserializeJson(doc, server.arg("plain"));
     
     if (error) {
-        log(LOG_WARNING, true, "Failed to parse backup JSON: %s\n", error.c_str());
-        server.send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+        log(LOG_WARNING, true, "Failed to parse backup JSON: %s (payload: %d, buffer: %d, heap: %d)\n", 
+            error.c_str(), payloadLen, bufferSize, rp2040.getFreeHeap());
+        server.send(400, "application/json", "{\"error\":\"JSON parse failed - not enough memory\"}");
         return;
     }
+    log(LOG_DEBUG, true, "JSON parsed, using %d bytes\n", doc.memoryUsage());
     
     // Get the backup data and import options
     JsonObject backupData = doc["data"].as<JsonObject>();
@@ -412,14 +422,64 @@ void handleRestoreConfig() {
     // =========================================================================
     // Restore IO Configuration (always)
     // =========================================================================
+    log(LOG_DEBUG, true, "Starting IO config restore (heap: %d)\n", rp2040.getFreeHeap());
     JsonObject ioConfig_json = backupData["io_config"];
     
-    // Write IO config directly to file
+    // Debug: check if io_config was retrieved successfully
+    if (ioConfig_json.isNull()) {
+        log(LOG_WARNING, true, "io_config is null in backup data!\n");
+        server.send(400, "application/json", "{\"error\":\"io_config missing or null in backup\"}");
+        return;
+    }
+    
+    // Serialize to String first, then write (more reliable than direct file write)
+    String ioConfigStr;
+    size_t serializedSize = serializeJson(ioConfig_json, ioConfigStr);
+    log(LOG_DEBUG, true, "Serialized IO config to string: %d bytes\n", serializedSize);
+    
+    if (serializedSize == 0 || ioConfigStr.length() == 0) {
+        log(LOG_WARNING, true, "Failed to serialize IO config to string!\n");
+        server.send(500, "application/json", "{\"error\":\"Failed to serialize IO config\"}");
+        return;
+    }
+    
+    // Check LittleFS space
+    FSInfo fsInfo;
+    LittleFS.info(fsInfo);
+    size_t freeSpace = fsInfo.totalBytes - fsInfo.usedBytes;
+    log(LOG_INFO, true, "LittleFS: %d/%d bytes used, %d free\n", 
+        fsInfo.usedBytes, fsInfo.totalBytes, freeSpace);
+    
+    if (freeSpace < serializedSize + 1024) {
+        log(LOG_WARNING, true, "Not enough space on LittleFS! Need %d, have %d\n", 
+            serializedSize, freeSpace);
+        server.send(507, "application/json", "{\"error\":\"Not enough storage space\"}");
+        return;
+    }
+    
+    // Delete existing file first to avoid corruption
+    if (LittleFS.exists(IO_CONFIG_FILENAME)) {
+        LittleFS.remove(IO_CONFIG_FILENAME);
+        log(LOG_DEBUG, true, "Removed existing IO config file\n");
+    }
+    
+    // Write string to file
     File ioFile = LittleFS.open(IO_CONFIG_FILENAME, "w");
     if (ioFile) {
-        serializeJson(ioConfig_json, ioFile);
+        size_t bytesWritten = ioFile.print(ioConfigStr);
         ioFile.close();
-        log(LOG_INFO, true, "IO configuration file written from backup\n");
+        log(LOG_INFO, true, "IO configuration file written from backup (%d bytes)\n", bytesWritten);
+        
+        // Verify file was written correctly
+        File verifyFile = LittleFS.open(IO_CONFIG_FILENAME, "r");
+        if (verifyFile) {
+            size_t fileSize = verifyFile.size();
+            verifyFile.close();
+            log(LOG_INFO, true, "Verified IO config file size: %d bytes\n", fileSize);
+            if (fileSize != bytesWritten) {
+                log(LOG_WARNING, true, "File size mismatch! Written: %d, On disk: %d\n", bytesWritten, fileSize);
+            }
+        }
         
         // Reload IO config into memory
         loadIOConfig();
@@ -458,11 +518,18 @@ void handleSaveBackupToSD() {
         return;
     }
     
-    DynamicJsonDocument doc(32768);
+    // Calculate buffer based on payload size
+    size_t payloadLen = server.arg("plain").length();
+    size_t bufferSize = payloadLen * 2;
+    if (bufferSize < 16384) bufferSize = 16384;
+    if (bufferSize > 40960) bufferSize = 40960;
+    
+    DynamicJsonDocument doc(bufferSize);
     DeserializationError error = deserializeJson(doc, server.arg("plain"));
     
     if (error) {
-        server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+        log(LOG_WARNING, true, "Failed to parse SD backup JSON: %s (heap: %d)\n", error.c_str(), rp2040.getFreeHeap());
+        server.send(400, "application/json", "{\"error\":\"Invalid JSON - not enough memory\"}");
         return;
     }
     

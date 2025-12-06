@@ -12,6 +12,7 @@
 #include "../utils/logger.h"
 #include "../utils/objectCache.h"
 #include "../utils/ipcManager.h"
+#include "../utils/timeManager.h"
 #include <ArduinoJson.h>
 
 // =============================================================================
@@ -30,6 +31,7 @@ void setupDashboardAPI(void)
     
     // Global controls
     server.on("/api/dashboard/enable-all", HTTP_POST, handleEnableAll);
+    server.on("/api/dashboard/pause", HTTP_POST, handlePauseControllers);
     server.on("/api/dashboard/disable-all", HTTP_POST, handleDisableAll);
     server.on("/api/dashboard/clear-volumes", HTTP_POST, handleClearVolumes);
     
@@ -554,6 +556,88 @@ void handleEnableAll()
     DynamicJsonDocument doc(256);
     doc["success"] = true;
     doc["enabled"] = enabledCount;
+    doc["failed"] = failedCount;
+    
+    // Return current RTC timestamp for run timer
+    DateTime dt;
+    if (getGlobalDateTime(dt)) {
+        char timestampStr[20];
+        snprintf(timestampStr, sizeof(timestampStr), "%04d-%02d-%02d %02d:%02d:%02d",
+                 dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+        doc["startTime"] = timestampStr;
+    }
+    
+    String response;
+    serializeJson(doc, response);
+    server.send(200, "application/json", response);
+}
+
+void handlePauseControllers()
+{
+    log(LOG_INFO, false, "[DASHBOARD] Pause Controllers requested (keeps temp running)\n");
+    
+    uint8_t pausedCount = 0;
+    uint8_t failedCount = 0;
+    
+    // Disable pH controller via IPC (but NOT temperature)
+    if (ioConfig.phController.isActive) {
+        IPC_pHControllerControl_t cmd;
+        memset(&cmd, 0, sizeof(cmd));
+        cmd.transactionId = generateTransactionId();
+        cmd.index = 43;
+        cmd.objectType = OBJ_T_PH_CONTROL;
+        cmd.command = PH_CMD_DISABLE;
+        
+        if (ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd))) {
+            ioConfig.phController.enabled = false;
+            pausedCount++;
+            log(LOG_INFO, false, "  Paused pH controller\n");
+        } else {
+            failedCount++;
+        }
+    }
+    
+    // Disable flow controllers via IPC
+    for (uint8_t i = 0; i < MAX_FLOW_CONTROLLERS; i++) {
+        if (ioConfig.flowControllers[i].isActive) {
+            IPC_FlowControllerControl_t cmd;
+            memset(&cmd, 0, sizeof(cmd));
+            cmd.transactionId = generateTransactionId();
+            cmd.index = 44 + i;
+            cmd.objectType = OBJ_T_FLOW_CONTROL;
+            cmd.command = FLOW_CMD_DISABLE;
+            
+            if (ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd))) {
+                ioConfig.flowControllers[i].enabled = false;
+                pausedCount++;
+                log(LOG_INFO, false, "  Paused flow controller %d\n", 44 + i);
+            } else {
+                failedCount++;
+            }
+        }
+    }
+    
+    // Disable DO controller via IPC
+    if (ioConfig.doController.isActive) {
+        IPC_DOControllerControl_t cmd;
+        memset(&cmd, 0, sizeof(cmd));
+        cmd.transactionId = generateTransactionId();
+        cmd.index = 48;
+        cmd.objectType = OBJ_T_DISSOLVED_OXYGEN_CONTROL;
+        cmd.command = DO_CMD_DISABLE;
+        
+        if (ipc.sendPacket(IPC_MSG_CONTROL_WRITE, (uint8_t*)&cmd, sizeof(cmd))) {
+            ioConfig.doController.enabled = false;
+            pausedCount++;
+            log(LOG_INFO, false, "  Paused DO controller\n");
+        } else {
+            failedCount++;
+        }
+    }
+    
+    DynamicJsonDocument doc(256);
+    doc["success"] = true;
+    doc["paused"] = pausedCount;
     doc["failed"] = failedCount;
     
     String response;
