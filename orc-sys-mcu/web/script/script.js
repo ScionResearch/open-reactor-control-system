@@ -9430,30 +9430,30 @@ window.getLoadConfigIconSVG = getLoadConfigIconSVG;
 // Dashboard SVG Icons (embedded for offline use)
 const DASHBOARD_ICONS = {
     // Object type icons
-    sensor: '<svg viewBox="0 0 24 24"><path d="M7.705 2.344c-1.274.013-2.667.439-3.646 1.562-2.014 2.31-2.068 6.129.03 8.533.95 1.087 1.995 1.875 2.696 2.637.702.763 1.064 1.372.998 2.39-.057.886-.457 1.312-.892 1.624-.436.312-.83.404-.83.404a1 1 0 0 0-.754 1.195 1 1 0 0 0 1.195.754s.778-.173 1.553-.728a4.153 4.153 0 0 0 1.724-3.12c.106-1.634-.64-2.915-1.521-3.872-.88-.957-1.89-1.717-2.66-2.6-1.339-1.533-1.276-4.477-.032-5.904.55-.631 1.44-.902 2.329-.873.887.029 1.681.465 1.804.629.291.388.393.53.524.707.245.333.357.488.357.488a1 1 0 0 0 .256.281.993.993 0 0 1-.256-.281s-.112-.155-.357-.488a.86.86 0 0 0-.244.408l-.276 1.066a.86.86 0 0 0 .086.637l1.627 2.867a.86.86 0 0 0 .49.397l.85.265 5.455 9.614a.86.86 0 0 0 .6.421l1.156.202a.86.86 0 0 0 .947-.536l.406-1.043a.86.86 0 0 0-.054-.736l-5.487-9.67.178-.69a.86.86 0 0 0-.084-.638l-1.68-2.959a.86.86 0 0 0-.523-.406l-1.127-.305a.86.86 0 0 0-.605.065c-.15-.208-.306-.424-.637-.866-.752-1.001-2.003-1.386-3.342-1.43a5.969 5.969 0 0 0-.254-.001Zm4.59 2.799c.021.035.04.072.057.109a1 1 0 0 0-.057-.11zm.066.136c.01.023.018.046.026.069a1 1 0 0 0-.026-.069zm.065.23.004.034a1 1 0 0 0-.004-.033zm.01.178c0 .015-.003.029-.004.043a1 1 0 0 0 .004-.043zm-.09.38-.012.027a1 1 0 0 0 .012-.028zm.1.263.429.117 1.33 2.344-.178.69a.86.86 0 0 0 .086.638l5.457 9.617-.004.008-.06-.01-5.422-9.554a.86.86 0 0 0-.49-.395l-.85-.267-1.289-2.27.1-.387Zm-.323.05c-.017.017-.034.034-.053.05a1 1 0 0 0 .053-.05zm-.068.061a1 1 0 0 1-1.207.021 1 1 0 0 0 .347.163 1 1 0 0 0 .389.02 1 1 0 0 0 .367-.131 1 1 0 0 0 .104-.073z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
-    input: '<svg viewBox="0 0 24 24"><path d="M8.895 2.87a1 1 0 0 0-1 1v3.136a1 1 0 0 0 2 0V4.869h9.136v14.262H9.895v-2.445a1 1 0 1 0-2 0v3.445a1 1 0 0 0 1 1H20.03a1 1 0 0 0 1-1V3.869a1 1 0 0 0-1-1zm4.447 4.368a1.05 1.05 0 0 0-1.014 1.05v1.169h-8.59c-.58 0-1.05.47-1.05 1.049v2.974c-.001.581.47 1.052 1.05 1.051h8.58v1.182c.003.987 1.244 1.425 1.866.658l3.021-3.744a1.05 1.05 0 0 0-.004-1.324l-3.01-3.68a1.05 1.05 0 0 0-.85-.385Z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
-    output: '<svg viewBox="0 0 24 24"><path d="M3.8 2.87a1 1 0 0 0-1 1v16.26a1 1 0 0 0 1 1h11.138a1 1 0 0 0 1-1v-3.444a1 1 0 1 0-2 0v2.445H4.8V4.869h9.136v2.137a1 1 0 1 0 2 0V3.869a1 1 0 0 0-1-1zm13.698 4.368a1.05 1.05 0 0 0-1.014 1.05v1.169h-8.59c-.58 0-1.05.47-1.05 1.049v2.974c0 .581.47 1.052 1.05 1.051h8.58v1.182c.004.987 1.244 1.425 1.866.658l3.021-3.744a1.05 1.05 0 0 0-.004-1.324l-3.01-3.68a1.05 1.05 0 0 0-.849-.385Z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
-    motor: '<svg viewBox="0 0 24 24"><path d="M12 2.502c-4.998 0-9.082 4.084-9.082 9.082 0 1.238.252 2.42.705 3.498v5.414a1 1 0 0 0 1 1H8.35a1 1 0 0 0 1-1v-.228a9.011 9.011 0 0 0 5.298.002v.226a1 1 0 0 0 1 1h3.729a1 1 0 0 0 1-1v-5.414a9.004 9.004 0 0 0 .705-3.498c0-4.998-4.084-9.082-9.082-9.082zm0 3a6.06 6.06 0 0 1 4.557 2.043 1.739 1.739 0 0 0-1.92 1.71c0 .94.784 1.722 1.722 1.722.659 0 1.24-.386 1.528-.94.128.494.195 1.012.195 1.547a6.057 6.057 0 0 1-4.67 5.918c.194-.278.309-.615.309-.975 0-.922-.755-1.692-1.672-1.718a3.241 3.241 0 0 0 3.176-3.225A3.24 3.24 0 0 0 12 8.359a3.24 3.24 0 0 0-3.225 3.225 3.241 3.241 0 0 0 3.176 3.225 1.735 1.735 0 0 0-1.672 1.718c0 .36.115.697.309.975a6.057 6.057 0 0 1-4.67-5.918c0-.535.067-1.053.195-1.547.289.554.869.94 1.528.94.938 0 1.72-.782 1.72-1.721a1.737 1.737 0 0 0-1.918-1.711A6.06 6.06 0 0 1 12 5.502ZM7.64 8.977c.143 0 .28.137.28.279a.295.295 0 0 1-.28.277.295.295 0 0 1-.279-.277c0-.142.138-.28.28-.28zm8.72 0c.141 0 .277.137.277.279a.293.293 0 0 1-.278.277.295.295 0 0 1-.279-.277c0-.142.137-.28.28-.28zM12 10.359a1.21 1.21 0 0 1 1.225 1.225A1.21 1.21 0 0 1 12 12.809a1.21 1.21 0 0 1-1.225-1.225A1.21 1.21 0 0 1 12 10.359zm0 5.889c.142 0 .28.137.28.28 0 .141-.138.279-.28.279a.297.297 0 0 1-.28-.28c0-.142.138-.279.28-.279zm-6.377 1.79a9.174 9.174 0 0 0 1.727 1.339v.12H5.623Zm12.754 0v1.458h-1.729v-.117a9.175 9.175 0 0 0 1.729-1.342z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
-    controller: '<svg viewBox="0 0 24 24"><path d="M14.73 0c-.428-.002-.857.012-1.272.04-1.106.073-2.037.193-2.709.505-1.103.512-1.823 1.475-1.871 2.522-.041.91.406 1.797 1.24 2.486.392.324.416.992.416.992a.75.75 0 0 0 0 .024v.974H7.741c-.023-.055-.178-.441-.472-.904-.107-.168-.323-.25-.592-.307a4.667 4.667 0 0 0-.94-.082c-.68 0-1.4.096-1.785.264-.285.125-.597.467-.945.955a14.593 14.593 0 0 0-1.078 1.826C1.215 10.703.566 12.39.335 13.748.058 15.377-.051 16.7.022 17.715c.074 1.015.332 1.73.815 2.115a1.474 1.474 0 0 0 1.826 0c.548-.445.953-1.087 1.287-1.779.328-.678.633-1.11.633-1.11a.102.102 0 0 0 .004-.005l.014-.01a.34.34 0 0 1 .115-.053c.127-.036.37-.059.803.028.89.178 1.388.19 1.388.19h4.244a.1.1 0 0 0 .07-.03c.019.017.044.03.071.03h4.244s.497-.012 1.387-.19c.432-.087.677-.064.805-.028a.34.34 0 0 1 .115.053l.012.01a8.604 8.604 0 0 0 .639 1.115c.334.692.738 1.334 1.286 1.78.49.398 1.268.445 1.827 0 .482-.386.738-1.101.812-2.116.074-1.015-.035-2.338-.312-3.967-.232-1.358-.879-3.045-1.592-4.453a14.61 14.61 0 0 0-1.078-1.826c-.348-.488-.66-.83-.946-.955-.385-.168-1.106-.264-1.787-.264-.34 0-.668.025-.937.082-.27.058-.488.14-.594.307-.295.463-.45.849-.473.904h-2.666v-.95s.087-1.332-.959-2.196c-.603-.499-.718-.8-.697-1.264.015-.328.357-.928 1.004-1.228.203-.095 1.163-.302 2.174-.37 1.01-.067 2.146-.037 2.93.114 1.9.367 3.53.197 3.53.197a.75.75 0 0 0 .67-.822.75.75 0 0 0-.822-.67S18.432.497 16.77.176C16.147.056 15.441.004 14.73 0Zm2.828 7.803a.976.976 0 1 1-.002 1.951.976.976 0 0 1 .002-1.951zM4.8 8.225a.75.75 0 0 1 .75.75v.633h.793a.75.75 0 1 1 0 1.5H5.55v.633a.75.75 0 1 1-1.5 0v-.633h-.793a.75.75 0 0 1 0-1.5h.793v-.633a.75.75 0 0 1 .75-.75zm5.734.281a.75.75 0 0 0 .055.28.742.742 0 0 1-.055-.28zm1.5 0a.75.75 0 0 1-.055.28.75.75 0 0 0 .055-.28zm-.058.291a.744.744 0 0 1-.155.233.75.75 0 0 0 .155-.233zm-1.375.01a.75.75 0 0 0 .136.207.742.742 0 0 1-.136-.207zm1.2.238a.753.753 0 0 1-.228.153.75.75 0 0 0 .229-.153zm-1.025.008a.75.75 0 0 0 .196.129.751.751 0 0 1-.196-.129zm.79.148a.745.745 0 0 1-.274.055h-.008c-.011 0-.022-.003-.033-.004a.746.746 0 0 1-.236-.049.75.75 0 0 0 .27.053.75.75 0 0 0 .28-.055zm4.382.165a.976.976 0 1 1-.002 1.95.976.976 0 0 1 .002-1.95zm3.281 0a.976.976 0 1 1-.002 1.95.976.976 0 0 1 .002-1.95zm-10.523.431h1.188a.6.6 0 0 1 0 1.2H8.737a.6.6 0 0 1-.031-1.2Zm3.74 0h1.19a.6.6 0 0 1 0 1.2h-1.158a.6.6 0 0 1-.032-1.2zm5.112 1.162a.976.976 0 1 1-.002 1.952.976.976 0 0 1 .002-1.952zm-9.899 1.604c1.055 0 1.922.865 1.922 1.92a1.93 1.93 0 0 1-1.922 1.922 1.928 1.928 0 0 1-1.92-1.922c0-1.055.865-1.92 1.92-1.92zm6.95 0c1.054 0 1.921.865 1.921 1.92a1.93 1.93 0 0 1-1.922 1.922 1.928 1.928 0 0 1-1.92-1.922c0-1.055.865-1.92 1.92-1.92zm-6.95 1a.912.912 0 0 0-.92.92c0 .514.406.922.92.922a.915.915 0 0 0 .922-.922.913.913 0 0 0-.922-.92zm6.95 0a.912.912 0 0 0-.92.92c0 .514.405.922.92.922a.915.915 0 0 0 .921-.922.913.913 0 0 0-.922-.92zm3.331 3.322s.078.108.198.303c-.12-.195-.198-.303-.198-.303z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
-    energy: '<svg viewBox="0 0 24 24"><path d="M11.32 3.648a9.376 9.376 0 0 0-3.847 1.149l.869 1.506a.5.5 0 1 1-.867.5l-.852-1.475a9.483 9.483 0 0 0-2.482 2.565c.039.01.077.026.113.046l1.437.83a.5.5 0 0 1-.5.866l-1.437-.828a.493.493 0 0 1-.102-.078 9.372 9.372 0 0 0-1.011 3.49h2.093a.75.75 0 1 1 0 1.5H2.625A9.391 9.391 0 0 0 4.02 18.03h4.927a3.106 3.106 0 0 1 2.979-3.062l5.347-6.694a.5.5 0 0 1 .852.506l-3.332 7.885c.21.412.334.875.338 1.365h4.928a9.392 9.392 0 0 0 1.392-4.279c-.014 0-.027.004-.04.004h-2.145a.75.75 0 1 1 0-1.5h2.144c.01 0 .02.003.031.004a9.374 9.374 0 0 0-.96-3.424l-1.413.816a.5.5 0 1 1-.5-.867l1.418-.818a9.472 9.472 0 0 0-2.47-2.592l-.82 1.422a.5.5 0 1 1-.866-.5l.842-1.46a9.382 9.382 0 0 0-3.852-1.183v2.133a.75.75 0 0 1-1.5 0z" style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers;enable-background:accumulate;stop-color:#000;stop-opacity:1" transform="translate(-2.625 -3.648)"/><path d="M12.04 15.963a2.094 2.094 0 0 0-2.095 2.094 2.094 2.094 0 0 0 2.094 2.093 2.094 2.094 0 0 0 2.094-2.093 2.094 2.094 0 0 0-2.094-2.094z" style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers;enable-background:accumulate;stop-color:#000;stop-opacity:1" transform="translate(-2.625 -3.648)"/><path d="m12.031 18 5.375-8.969-4.093 8.688z" style="fill:#000;stroke:none;stroke-width:1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;paint-order:stroke fill markers" transform="translate(-2.625 -3.648)"/></svg>',
+    sensor: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M7.705 2.344c-1.274.013-2.667.439-3.646 1.562-2.014 2.31-2.068 6.129.03 8.533.95 1.087 1.995 1.875 2.696 2.637.702.763 1.064 1.372.998 2.39-.057.886-.457 1.312-.892 1.624-.436.312-.83.404-.83.404a1 1 0 0 0-.754 1.195 1 1 0 0 0 1.195.754s.778-.173 1.553-.728a4.153 4.153 0 0 0 1.724-3.12c.106-1.634-.64-2.915-1.521-3.872-.88-.957-1.89-1.717-2.66-2.6-1.339-1.533-1.276-4.477-.032-5.904.55-.631 1.44-.902 2.329-.873.887.029 1.681.465 1.804.629.291.388.393.53.524.707.245.333.357.488.357.488a1 1 0 0 0 .256.281.993.993 0 0 1-.256-.281s-.112-.155-.357-.488a.86.86 0 0 0-.244.408l-.276 1.066a.86.86 0 0 0 .086.637l1.627 2.867a.86.86 0 0 0 .49.397l.85.265 5.455 9.614a.86.86 0 0 0 .6.421l1.156.202a.86.86 0 0 0 .947-.536l.406-1.043a.86.86 0 0 0-.054-.736l-5.487-9.67.178-.69a.86.86 0 0 0-.084-.638l-1.68-2.959a.86.86 0 0 0-.523-.406l-1.127-.305a.86.86 0 0 0-.605.065c-.15-.208-.306-.424-.637-.866-.752-1.001-2.003-1.386-3.342-1.43a5.969 5.969 0 0 0-.254-.001Zm4.59 2.799c.021.035.04.072.057.109a1 1 0 0 0-.057-.11zm.066.136c.01.023.018.046.026.069a1 1 0 0 0-.026-.069zm.065.23.004.034a1 1 0 0 0-.004-.033zm.01.178c0 .015-.003.029-.004.043a1 1 0 0 0 .004-.043zm-.09.38-.012.027a1 1 0 0 0 .012-.028zm.1.263.429.117 1.33 2.344-.178.69a.86.86 0 0 0 .086.638l5.457 9.617-.004.008-.06-.01-5.422-9.554a.86.86 0 0 0-.49-.395l-.85-.267-1.289-2.27.1-.387Zm-.323.05c-.017.017-.034.034-.053.05a1 1 0 0 0 .053-.05zm-.068.061a1 1 0 0 1-1.207.021 1 1 0 0 0 .347.163 1 1 0 0 0 .389.02 1 1 0 0 0 .367-.131 1 1 0 0 0 .104-.073z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    input: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M8.895 2.87a1 1 0 0 0-1 1v3.136a1 1 0 0 0 2 0V4.869h9.136v14.262H9.895v-2.445a1 1 0 1 0-2 0v3.445a1 1 0 0 0 1 1H20.03a1 1 0 0 0 1-1V3.869a1 1 0 0 0-1-1zm4.447 4.368a1.05 1.05 0 0 0-1.014 1.05v1.169h-8.59c-.58 0-1.05.47-1.05 1.049v2.974c-.001.581.47 1.052 1.05 1.051h8.58v1.182c.003.987 1.244 1.425 1.866.658l3.021-3.744a1.05 1.05 0 0 0-.004-1.324l-3.01-3.68a1.05 1.05 0 0 0-.85-.385Z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    output: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M3.8 2.87a1 1 0 0 0-1 1v16.26a1 1 0 0 0 1 1h11.138a1 1 0 0 0 1-1v-3.444a1 1 0 1 0-2 0v2.445H4.8V4.869h9.136v2.137a1 1 0 1 0 2 0V3.869a1 1 0 0 0-1-1zm13.698 4.368a1.05 1.05 0 0 0-1.014 1.05v1.169h-8.59c-.58 0-1.05.47-1.05 1.049v2.974c0 .581.47 1.052 1.05 1.051h8.58v1.182c.004.987 1.244 1.425 1.866.658l3.021-3.744a1.05 1.05 0 0 0-.004-1.324l-3.01-3.68a1.05 1.05 0 0 0-.849-.385Z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    motor: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M12 2.502c-4.998 0-9.082 4.084-9.082 9.082 0 1.238.252 2.42.705 3.498v5.414a1 1 0 0 0 1 1H8.35a1 1 0 0 0 1-1v-.228a9.011 9.011 0 0 0 5.298.002v.226a1 1 0 0 0 1 1h3.729a1 1 0 0 0 1-1v-5.414a9.004 9.004 0 0 0 .705-3.498c0-4.998-4.084-9.082-9.082-9.082zm0 3a6.06 6.06 0 0 1 4.557 2.043 1.739 1.739 0 0 0-1.92 1.71c0 .94.784 1.722 1.722 1.722.659 0 1.24-.386 1.528-.94.128.494.195 1.012.195 1.547a6.057 6.057 0 0 1-4.67 5.918c.194-.278.309-.615.309-.975 0-.922-.755-1.692-1.672-1.718a3.241 3.241 0 0 0 3.176-3.225A3.24 3.24 0 0 0 12 8.359a3.24 3.24 0 0 0-3.225 3.225 3.241 3.241 0 0 0 3.176 3.225 1.735 1.735 0 0 0-1.672 1.718c0 .36.115.697.309.975a6.057 6.057 0 0 1-4.67-5.918c0-.535.067-1.053.195-1.547.289.554.869.94 1.528.94.938 0 1.72-.782 1.72-1.721a1.737 1.737 0 0 0-1.918-1.711A6.06 6.06 0 0 1 12 5.502ZM7.64 8.977c.143 0 .28.137.28.279a.295.295 0 0 1-.28.277.295.295 0 0 1-.279-.277c0-.142.138-.28.28-.28zm8.72 0c.141 0 .277.137.277.279a.293.293 0 0 1-.278.277.295.295 0 0 1-.279-.277c0-.142.137-.28.28-.28zM12 10.359a1.21 1.21 0 0 1 1.225 1.225A1.21 1.21 0 0 1 12 12.809a1.21 1.21 0 0 1-1.225-1.225A1.21 1.21 0 0 1 12 10.359zm0 5.889c.142 0 .28.137.28.28 0 .141-.138.279-.28.279a.297.297 0 0 1-.28-.28c0-.142.138-.279.28-.279zm-6.377 1.79a9.174 9.174 0 0 0 1.727 1.339v.12H5.623Zm12.754 0v1.458h-1.729v-.117a9.175 9.175 0 0 0 1.729-1.342z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    controller: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M14.73 0c-.428-.002-.857.012-1.272.04-1.106.073-2.037.193-2.709.505-1.103.512-1.823 1.475-1.871 2.522-.041.91.406 1.797 1.24 2.486.392.324.416.992.416.992a.75.75 0 0 0 0 .024v.974H7.741c-.023-.055-.178-.441-.472-.904-.107-.168-.323-.25-.592-.307a4.667 4.667 0 0 0-.94-.082c-.68 0-1.4.096-1.785.264-.285.125-.597.467-.945.955a14.593 14.593 0 0 0-1.078 1.826C1.215 10.703.566 12.39.335 13.748.058 15.377-.051 16.7.022 17.715c.074 1.015.332 1.73.815 2.115a1.474 1.474 0 0 0 1.826 0c.548-.445.953-1.087 1.287-1.779.328-.678.633-1.11.633-1.11a.102.102 0 0 0 .004-.005l.014-.01a.34.34 0 0 1 .115-.053c.127-.036.37-.059.803.028.89.178 1.388.19 1.388.19h4.244a.1.1 0 0 0 .07-.03c.019.017.044.03.071.03h4.244s.497-.012 1.387-.19c.432-.087.677-.064.805-.028a.34.34 0 0 1 .115.053l.012.01a8.604 8.604 0 0 0 .639 1.115c.334.692.738 1.334 1.286 1.78.49.398 1.268.445 1.827 0 .482-.386.738-1.101.812-2.116.074-1.015-.035-2.338-.312-3.967-.232-1.358-.879-3.045-1.592-4.453a14.61 14.61 0 0 0-1.078-1.826c-.348-.488-.66-.83-.946-.955-.385-.168-1.106-.264-1.787-.264-.34 0-.668.025-.937.082-.27.058-.488.14-.594.307-.295.463-.45.849-.473.904h-2.666v-.95s.087-1.332-.959-2.196c-.603-.499-.718-.8-.697-1.264.015-.328.357-.928 1.004-1.228.203-.095 1.163-.302 2.174-.37 1.01-.067 2.146-.037 2.93.114 1.9.367 3.53.197 3.53.197a.75.75 0 0 0 .67-.822.75.75 0 0 0-.822-.67S18.432.497 16.77.176C16.147.056 15.441.004 14.73 0Zm2.828 7.803a.976.976 0 1 1-.002 1.951.976.976 0 0 1 .002-1.951zM4.8 8.225a.75.75 0 0 1 .75.75v.633h.793a.75.75 0 1 1 0 1.5H5.55v.633a.75.75 0 1 1-1.5 0v-.633h-.793a.75.75 0 0 1 0-1.5h.793v-.633a.75.75 0 0 1 .75-.75zm5.734.281a.75.75 0 0 0 .055.28.742.742 0 0 1-.055-.28zm1.5 0a.75.75 0 0 1-.055.28.75.75 0 0 0 .055-.28zm-.058.291a.744.744 0 0 1-.155.233.75.75 0 0 0 .155-.233zm-1.375.01a.75.75 0 0 0 .136.207.742.742 0 0 1-.136-.207zm1.2.238a.753.753 0 0 1-.228.153.75.75 0 0 0 .229-.153zm-1.025.008a.75.75 0 0 0 .196.129.751.751 0 0 1-.196-.129zm.79.148a.745.745 0 0 1-.274.055h-.008c-.011 0-.022-.003-.033-.004a.746.746 0 0 1-.236-.049.75.75 0 0 0 .27.053.75.75 0 0 0 .28-.055zm4.382.165a.976.976 0 1 1-.002 1.95.976.976 0 0 1 .002-1.95zm3.281 0a.976.976 0 1 1-.002 1.95.976.976 0 0 1 .002-1.95zm-10.523.431h1.188a.6.6 0 0 1 0 1.2H8.737a.6.6 0 0 1-.031-1.2Zm3.74 0h1.19a.6.6 0 0 1 0 1.2h-1.158a.6.6 0 0 1-.032-1.2zm5.112 1.162a.976.976 0 1 1-.002 1.952.976.976 0 0 1 .002-1.952zm-9.899 1.604c1.055 0 1.922.865 1.922 1.92a1.93 1.93 0 0 1-1.922 1.922 1.928 1.928 0 0 1-1.92-1.922c0-1.055.865-1.92 1.92-1.92zm6.95 0c1.054 0 1.921.865 1.921 1.92a1.93 1.93 0 0 1-1.922 1.922 1.928 1.928 0 0 1-1.92-1.922c0-1.055.865-1.92 1.92-1.92zm-6.95 1a.912.912 0 0 0-.92.92c0 .514.406.922.92.922a.915.915 0 0 0 .922-.922.913.913 0 0 0-.922-.92zm6.95 0a.912.912 0 0 0-.92.92c0 .514.405.922.92.922a.915.915 0 0 0 .921-.922.913.913 0 0 0-.922-.92zm3.331 3.322s.078.108.198.303c-.12-.195-.198-.303-.198-.303z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    energy: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M11.32 3.648a9.376 9.376 0 0 0-3.847 1.149l.869 1.506a.5.5 0 1 1-.867.5l-.852-1.475a9.483 9.483 0 0 0-2.482 2.565c.039.01.077.026.113.046l1.437.83a.5.5 0 0 1-.5.866l-1.437-.828a.493.493 0 0 1-.102-.078 9.372 9.372 0 0 0-1.011 3.49h2.093a.75.75 0 1 1 0 1.5H2.625A9.391 9.391 0 0 0 4.02 18.03h4.927a3.106 3.106 0 0 1 2.979-3.062l5.347-6.694a.5.5 0 0 1 .852.506l-3.332 7.885c.21.412.334.875.338 1.365h4.928a9.392 9.392 0 0 0 1.392-4.279c-.014 0-.027.004-.04.004h-2.145a.75.75 0 1 1 0-1.5h2.144c.01 0 .02.003.031.004a9.374 9.374 0 0 0-.96-3.424l-1.413.816a.5.5 0 1 1-.5-.867l1.418-.818a9.472 9.472 0 0 0-2.47-2.592l-.82 1.422a.5.5 0 1 1-.866-.5l.842-1.46a9.382 9.382 0 0 0-3.852-1.183v2.133a.75.75 0 0 1-1.5 0z" transform="translate(-2.625 -3.648)"/><path fill="#5a6268" d="M12.04 15.963a2.094 2.094 0 0 0-2.095 2.094 2.094 2.094 0 0 0 2.094 2.093 2.094 2.094 0 0 0 2.094-2.093 2.094 2.094 0 0 0-2.094-2.094z" transform="translate(-2.625 -3.648)"/><path fill="#5a6268" d="m12.031 18 5.375-8.969-4.093 8.688z" transform="translate(-2.625 -3.648)"/></svg>',
     
     // Status icons
     ok: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M10,17L5,12L6.41,10.58L10,14.17L17.59,6.58L19,8M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/></svg>',
-    run: '<svg viewBox="0 0 24 24"><path d="m13.683 7.388 8.367 4.83-8.367 4.83v2.324l12.393-7.154-12.393-7.154Z" style="stroke:#000;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers" transform="matrix(.79856 0 0 1.0072 -3.663 -4.596)"/><path d="M.2 13.828V-.482l12.393 7.155Z" style="fill:#000;stroke:#000;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers" transform="matrix(.79856 0 0 1.0072 .24 .989)"/></svg>',
-    stopped: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M18,18H6V6H18V18Z"/></svg>',
+    run: '<svg viewBox="0 0 24 24"><path d="m13.683 7.388 8.367 4.83-8.367 4.83v2.324l12.393-7.154-12.393-7.154Z" style="fill:#28a745;stroke:#28a745;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers" transform="matrix(.79856 0 0 1.0072 -3.663 -4.596)"/><path d="M.2 13.828V-.482l12.393 7.155Z" style="fill:#28a745;stroke:#28a745;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers" transform="matrix(.79856 0 0 1.0072 .24 .989)"/></svg>',
+    stopped: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M18,18H6V6H18V18Z"/></svg>',
     fault: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/></svg>',
-    offline: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4M9,9V15H15V9"/></svg>',
+    offline: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4M9,9V15H15V9"/></svg>',
     
     // Action icons
-    clearVolumes: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19.36,2.72L20.78,4.14L15.06,9.85C16.13,11.39 16.28,13.24 15.38,14.44L9.06,8.12C10.26,7.22 12.11,7.37 13.65,8.44L19.36,2.72M5.93,17.57C3.92,15.56 2.69,13.16 2.35,10.92L7.23,8.83L14.67,16.27L12.58,21.15C10.34,20.81 7.94,19.58 5.93,17.57Z"/></svg>',
-    saveLayout: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"/></svg>',
+    clearVolumes: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M19.36,2.72L20.78,4.14L15.06,9.85C16.13,11.39 16.28,13.24 15.38,14.44L9.06,8.12C10.26,7.22 12.11,7.37 13.65,8.44L19.36,2.72M5.93,17.57C3.92,15.56 2.69,13.16 2.35,10.92L7.23,8.83L14.67,16.27L12.58,21.15C10.34,20.81 7.94,19.58 5.93,17.57Z"/></svg>',
+    saveLayout: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"/></svg>',
     
     // Direction indicators
-    forward: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"/></svg>',
-    reverse: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"/></svg>',
+    forward: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"/></svg>',
+    reverse: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"/></svg>',
     
     // Drag handle
-    drag: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z"/></svg>'
+    drag: '<svg viewBox="0 0 24 24"><path fill="#5a6268" d="M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z"/></svg>'
 };
 
 // Dashboard State
@@ -9462,6 +9462,120 @@ let dashboardLayout = [];
 let layoutModified = false;
 let dashboardUserInteracting = false;  // Track if user is interacting with dashboard
 let dashboardDragging = false;         // Track if user is dragging tiles
+
+// Sparkline data storage - stores last N points for each controller
+const SPARKLINE_MAX_POINTS = 30;
+const sparklineData = {};  // Key: "type-index", Value: { pv: [], sp: [] }
+
+// Update sparkline data for a controller
+function updateSparklineData(obj) {
+    const key = `${obj.type}-${obj.index}`;
+    if (!sparklineData[key]) {
+        sparklineData[key] = { pv: [], sp: [] };
+    }
+    
+    const data = sparklineData[key];
+    const pv = obj.processValue !== undefined ? obj.processValue : obj.value;
+    const sp = obj.setpoint !== undefined ? obj.setpoint : null;
+    
+    // Add new values
+    if (pv !== undefined && pv !== null && !isNaN(pv)) {
+        data.pv.push(pv);
+        if (data.pv.length > SPARKLINE_MAX_POINTS) data.pv.shift();
+    }
+    if (sp !== undefined && sp !== null && !isNaN(sp)) {
+        data.sp.push(sp);
+        if (data.sp.length > SPARKLINE_MAX_POINTS) data.sp.shift();
+    }
+}
+
+// Render SVG sparkline for a controller with Y-axis labels
+function renderSparkline(type, index, width = 180, height = 100) {
+    const key = `${type}-${index}`;
+    const data = sparklineData[key];
+    
+    // Layout constants
+    const marginLeft = 26;   // Space for Y-axis labels
+    const marginRight = 0;   // Trend extends to right edge
+    const marginTop = 12;    // More room for top/bottom values toward center
+    const marginBottom = 12;
+    const chartWidth = width - marginLeft - marginRight;
+    const chartHeight = height - marginTop - marginBottom;
+    
+    if (!data || data.pv.length < 2) {
+        return `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+            <text x="${marginLeft + chartWidth/2}" y="${height/2}" text-anchor="middle" fill="#bdc3c7" font-size="10">Collecting data...</text>
+        </svg>`;
+    }
+    
+    // Combine PV and SP to find global min/max for consistent scaling
+    const allValues = [...data.pv, ...data.sp.filter(v => v !== null)];
+    const min = Math.min(...allValues);
+    const max = Math.max(...allValues);
+    const range = max - min || 1;  // Avoid division by zero
+    
+    // Add 10% padding to range
+    const padding = range * 0.1;
+    const yMin = min - padding;
+    const yMax = max + padding;
+    const yRange = yMax - yMin;
+    
+    // Format axis value (compact)
+    const formatAxisValue = (v) => {
+        if (Math.abs(v) >= 100) return v.toFixed(0);
+        if (Math.abs(v) >= 10) return v.toFixed(1);
+        return v.toFixed(2);
+    };
+    
+    // Y-axis tics (top, middle, bottom)
+    const yMid = (yMin + yMax) / 2;
+    const yToPixel = (v) => marginTop + chartHeight - ((v - yMin) / yRange) * chartHeight;
+    
+    // Generate paths - always use SPARKLINE_MAX_POINTS for consistent X spacing
+    const pvPath = generateSparklinePath(data.pv, chartWidth, chartHeight, yMin, yRange, marginLeft, marginTop);
+    const spPath = data.sp.length >= 2 ? generateSparklinePath(data.sp, chartWidth, chartHeight, yMin, yRange, marginLeft, marginTop) : '';
+    
+    // Grid lines
+    const gridLines = `
+        <line x1="${marginLeft}" y1="${yToPixel(yMax)}" x2="${marginLeft + chartWidth}" y2="${yToPixel(yMax)}" stroke="#e9ecef" stroke-width="1"/>
+        <line x1="${marginLeft}" y1="${yToPixel(yMid)}" x2="${marginLeft + chartWidth}" y2="${yToPixel(yMid)}" stroke="#e9ecef" stroke-width="1" stroke-dasharray="2,2"/>
+        <line x1="${marginLeft}" y1="${yToPixel(yMin)}" x2="${marginLeft + chartWidth}" y2="${yToPixel(yMin)}" stroke="#e9ecef" stroke-width="1"/>
+    `;
+    
+    // Y-axis labels
+    const labelX = marginLeft - 1;
+    const axisLabels = `
+        <text x="${labelX}" y="${yToPixel(yMax)}" text-anchor="end" fill="#7f8c8d" font-size="9" dominant-baseline="middle">${formatAxisValue(yMax)}</text>
+        <text x="${labelX}" y="${yToPixel(yMid)}" text-anchor="end" fill="#7f8c8d" font-size="9" dominant-baseline="middle">${formatAxisValue(yMid)}</text>
+        <text x="${labelX}" y="${yToPixel(yMin)}" text-anchor="end" fill="#7f8c8d" font-size="9" dominant-baseline="middle">${formatAxisValue(yMin)}</text>
+    `;
+    
+    return `
+        <svg class="sparkline" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+            ${gridLines}
+            ${axisLabels}
+            ${spPath ? `<path d="${spPath}" fill="none" stroke="#6c757d" stroke-width="1" stroke-dasharray="3,2" opacity="0.7"/>` : ''}
+            <path d="${pvPath}" fill="none" stroke="#0d6efd" stroke-width="1.5"/>
+        </svg>
+    `;
+}
+
+// Generate SVG path from data points
+function generateSparklinePath(values, chartWidth, chartHeight, yMin, yRange, offsetX = 0, offsetY = 0) {
+    if (values.length < 2) return '';
+    
+    // Use SPARKLINE_MAX_POINTS for consistent X spacing regardless of data length
+    const xStep = chartWidth / (SPARKLINE_MAX_POINTS - 1);
+    const startX = chartWidth - (values.length - 1) * xStep; // Right-align data
+    
+    const points = values.map((v, i) => {
+        const x = offsetX + startX + i * xStep;
+        const y = offsetY + chartHeight - ((v - yMin) / yRange) * chartHeight;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    
+    return `M${points.join(' L')}`;
+}
 
 // Run Timer State
 let runState = 'idle';  // 'idle', 'running', 'paused', 'stopped'
@@ -9632,6 +9746,15 @@ function updateDashboardValues() {
             if (statusIndicator) {
                 statusIndicator.className = 'ctrl-status-indicator ' + (obj.enabled ? 'enabled' : 'disabled');
                 statusIndicator.innerHTML = obj.enabled ? DASHBOARD_ICONS.run : DASHBOARD_ICONS.stopped;
+            }
+            
+            // Update sparkline (skip flow controllers - no feedback)
+            if (obj.type !== 'flow_controller') {
+                updateSparklineData(obj);
+                const sparklineEl = tile.querySelector('.ctrl-sparkline');
+                if (sparklineEl) {
+                    sparklineEl.innerHTML = renderSparkline(obj.type, obj.index, 180, 100);
+                }
             }
             
             // Update enable/disable button states - use 'running' or 'enabled'
@@ -9827,6 +9950,9 @@ function formatDashboardControllerDisplay(obj) {
     const type = obj.type;
     const index = obj.index;
     const inputId = `sp-input-${type}-${index}`;
+    
+    // Update sparkline data
+    updateSparklineData(obj);
 
     // Control rows: SP input + Update on one line, Enable/Disable on separate line at bottom
     const controlRows = (unitOverride) => `
@@ -9842,16 +9968,26 @@ function formatDashboardControllerDisplay(obj) {
             <button class="ctrl-disable-btn" onclick="dashboardDisableController('${type}', ${index})" ${!obj.enabled ? 'disabled' : ''}>Disable</button>
         </div>
     `;
+    
+    // Sparkline container - only for controllers with feedback (not flow controllers)
+    const hasSparkline = type !== 'flow_controller';
+    const sparklineHtml = hasSparkline ? 
+        `<div class="ctrl-sparkline" data-sparkline="${type}-${index}">${renderSparkline(type, index, 180, 100)}</div>` : '';
 
     // Build display based on controller type
     if (type === 'temp_controller') {
         return `
             <div class="controller-display">
-                <div class="ctrl-data-rows">
-                    <div class="ctrl-row"><span class="label">Value:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
-                    <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+                <div class="ctrl-main-row">
+                    <div class="ctrl-data-rows">
+                        <div class="ctrl-row"><span class="label">Value:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                        <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+                    </div>
+                    ${sparklineHtml}
                 </div>
-                ${controlRows()}
+                <div class="ctrl-controls">
+                    ${controlRows()}
+                </div>
             </div>
         `;
     } else if (type === 'ph_controller') {
@@ -9859,37 +9995,51 @@ function formatDashboardControllerDisplay(obj) {
         const dosedBase = formatDashboardValue(obj.cumulativeBaseVolume);
         return `
             <div class="controller-display">
-                <div class="ctrl-data-rows">
-                    <div class="ctrl-row"><span class="label">Value:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
-                    <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
-                    <div class="ctrl-row"><span class="label">Dosed Acid:</span> <span class="value ctrl-dosed-value">${dosedAcid}</span> <span class="unit">mL</span></div>
-                    <div class="ctrl-row"><span class="label">Dosed Base:</span> <span class="value ctrl-dosed-value">${dosedBase}</span> <span class="unit">mL</span></div>
+                <div class="ctrl-main-row">
+                    <div class="ctrl-data-rows">
+                        <div class="ctrl-row"><span class="label">Value:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                        <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+                        <div class="ctrl-row"><span class="label">Acid:</span> <span class="value ctrl-dosed-value">${dosedAcid}</span> <span class="unit">mL</span></div>
+                        <div class="ctrl-row"><span class="label">Base:</span> <span class="value ctrl-dosed-value">${dosedBase}</span> <span class="unit">mL</span></div>
+                    </div>
+                    ${sparklineHtml}
                 </div>
-                ${controlRows()}
+                <div class="ctrl-controls">
+                    ${controlRows()}
+                </div>
             </div>
         `;
     } else if (type === 'flow_controller') {
         const dosed = formatDashboardValue(obj.cumulativeVolume);
         return `
             <div class="controller-display">
-                <div class="ctrl-data-rows">
-                    <div class="ctrl-row"><span class="label">Flow:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
-                    <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">mL/min</span></div>
-                    <div class="ctrl-row"><span class="label">Dosed Volume:</span> <span class="value ctrl-dosed-value">${dosed}</span> <span class="unit">mL</span></div>
+                <div class="ctrl-main-row">
+                    <div class="ctrl-data-rows">
+                        <div class="ctrl-row"><span class="label">Flow:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                        <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">mL/min</span></div>
+                        <div class="ctrl-row"><span class="label">Dosed:</span> <span class="value ctrl-dosed-value">${dosed}</span> <span class="unit">mL</span></div>
+                    </div>
                 </div>
-                ${controlRows('mL/min')}
+                <div class="ctrl-controls">
+                    ${controlRows('mL/min')}
+                </div>
             </div>
         `;
     } else if (type === 'do_controller') {
         const stirrerRpm = formatDashboardValue(obj.stirrerRpm);
         return `
             <div class="controller-display">
-                <div class="ctrl-data-rows">
-                    <div class="ctrl-row"><span class="label">DO:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
-                    <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
-                    <div class="ctrl-row"><span class="label">Stirrer RPM:</span> <span class="value ctrl-rpm-value">${stirrerRpm}</span> <span class="unit">RPM</span></div>
+                <div class="ctrl-main-row">
+                    <div class="ctrl-data-rows">
+                        <div class="ctrl-row"><span class="label">DO:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                        <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+                        <div class="ctrl-row"><span class="label">Stirrer:</span> <span class="value ctrl-rpm-value">${stirrerRpm}</span> <span class="unit">RPM</span></div>
+                    </div>
+                    ${sparklineHtml}
                 </div>
-                ${controlRows()}
+                <div class="ctrl-controls">
+                    ${controlRows()}
+                </div>
             </div>
         `;
     }
@@ -9897,11 +10047,15 @@ function formatDashboardControllerDisplay(obj) {
     // Fallback
     return `
         <div class="controller-display">
-            <div class="ctrl-data-rows">
-                <div class="ctrl-row"><span class="label">PV:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
-                <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+            <div class="ctrl-main-row">
+                <div class="ctrl-data-rows">
+                    <div class="ctrl-row"><span class="label">PV:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                    <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+                </div>
             </div>
-            ${controlRows()}
+            <div class="ctrl-controls">
+                ${controlRows()}
+            </div>
         </div>
     `;
 }
