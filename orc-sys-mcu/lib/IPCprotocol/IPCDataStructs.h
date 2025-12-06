@@ -753,7 +753,7 @@ typedef struct __attribute__((packed)) {
     uint16_t index;          // Object index (10-12 for RTD sensors)
     uint8_t wireConfig;      // 2, 3, or 4 wire configuration
     uint8_t _padding;        // Alignment padding
-    char unit[8];            // Unit string (e.g., "C", "F", "K")
+    char unit[8];            // Unit string (e.g., "°C", "°F", "°K")
     float calScale;          // Calibration scale
     float calOffset;         // Calibration offset
     uint16_t nominalOhms;    // 100 (PT100) or 1000 (PT1000)

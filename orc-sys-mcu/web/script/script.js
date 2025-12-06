@@ -191,7 +191,11 @@ function openTab(evt, tabName) {
     evt.currentTarget.classList.add("active");
     
     // Initialize specific page content if needed - each tab manages its own polling
-    if (tabName === 'system') {
+    if (tabName === 'dashboard') {
+        if (typeof initDashboardTab === 'function') {
+            initDashboardTab();
+        }
+    } else if (tabName === 'system') {
         initSystemTab();
     } else if (tabName === 'filemanager') {
         initFileManager();
@@ -999,6 +1003,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const controlTab = document.querySelector('#control');
     if (controlTab && controlTab.classList.contains('active')) {
         initControlBoard();
+    }
+    
+    // Initialize dashboard if it's the default/active tab on load
+    const dashboardTab = document.querySelector('#dashboard');
+    if (dashboardTab && dashboardTab.classList.contains('active')) {
+        setTimeout(() => {
+            if (typeof initDashboardTab === 'function') {
+                initDashboardTab();
+            } else {
+                console.error('[INIT] initDashboardTab not available!');
+            }
+        }, 100);
     }
 });
 
@@ -2900,7 +2916,7 @@ async function openRTDConfigModal(index) {
         // Populate form
         document.getElementById('rtdConfigIndex').textContent = `[${index}]`;
         document.getElementById('rtdConfigName').value = rtdConfigData.name || '';
-        document.getElementById('rtdConfigUnit').value = rtdConfigData.unit || 'C';
+        document.getElementById('rtdConfigUnit').value = rtdConfigData.unit || '°C';
         document.getElementById('rtdConfigWires').value = rtdConfigData.wires || '3';
         document.getElementById('rtdConfigType').value = rtdConfigData.type || '100';
         document.getElementById('calScaleRTD').value = rtdConfigData.cal.scale || 1.0;
@@ -2925,7 +2941,7 @@ function closeRTDConfigModal() {
     
     // Reset form
     document.getElementById('rtdConfigName').value = '';
-    document.getElementById('rtdConfigUnit').value = 'C';
+    document.getElementById('rtdConfigUnit').value = '°C';
     document.getElementById('rtdConfigWires').value = '3';
     document.getElementById('rtdConfigType').value = '100';
     document.getElementById('calP1RawRTD').value = '';
@@ -3022,7 +3038,7 @@ function calculateTwoPointCalRTD() {
     // Get current calibration and unit
     const currentScale = rtdConfigData.cal.scale || 1.0;
     const currentOffset = rtdConfigData.cal.offset || 0.0;
-    const currentUnit = rtdConfigData.unit || 'C';
+    const currentUnit = rtdConfigData.unit || '°C';
     
     // For RTD, we need to reverse any temperature unit conversion
     // Calibration is done in base unit (Celsius in IO MCU)
@@ -6890,7 +6906,7 @@ async function createTempController(index) {
         isActive: true,
         name: document.getElementById('ctrlName').value,
         showOnDashboard: document.getElementById('ctrlShowDashboard').checked,
-        unit: 'C',
+        unit: '°C',
         pvSourceIndex: parseInt(document.getElementById('ctrlTempSensor').value),
         outputIndex: parseInt(document.getElementById('ctrlOutput').value),
         controlMethod: parseInt(document.getElementById('ctrlMode').value),
@@ -7694,7 +7710,7 @@ async function saveControllerConfig() {
         isActive: true,
         name: document.getElementById('ctrlName').value,
         showOnDashboard: document.getElementById('ctrlShowDashboard').checked,
-        unit: 'C',
+        unit: '°C',
         pvSourceIndex: parseInt(document.getElementById('ctrlTempSensor').value),
         outputIndex: parseInt(document.getElementById('ctrlOutput').value),
         controlMethod: parseInt(document.getElementById('ctrlMode').value),
@@ -9387,7 +9403,7 @@ function loadConfigFromFile(path) {
 }
 
 function getLoadConfigIconSVG() {
-    return `<svg viewBox="0 0 24 24"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,19L8,15H10.5V12H13.5V15H16L12,19Z" /></svg>`;
+    return `<svg viewBox="0 0 24 24"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18C18.45,22 18.85,21.85 19.19,21.6L14.76,17.17C13.79,17.69 12.7,18 11.5,18A6.5,6.5 0 0,1 5,11.5A6.5,6.5 0 0,1 11.5,5C14.59,5 17.16,7.18 17.8,10.08L20,12.28V19.59Z"/></svg>`;
 }
 
 window.openBackupRestoreModal = openBackupRestoreModal;
@@ -9402,3 +9418,835 @@ window.selectSDBackup = selectSDBackup;
 window.confirmImport = confirmImport;
 window.loadConfigFromFile = loadConfigFromFile;
 window.getLoadConfigIconSVG = getLoadConfigIconSVG;
+
+// =============================================================================
+// DASHBOARD MODULE
+// =============================================================================
+
+/* Downloaded SVGs (temp)
+
+*/
+
+// Dashboard SVG Icons (embedded for offline use)
+const DASHBOARD_ICONS = {
+    // Object type icons
+    sensor: '<svg viewBox="0 0 24 24"><path d="M7.705 2.344c-1.274.013-2.667.439-3.646 1.562-2.014 2.31-2.068 6.129.03 8.533.95 1.087 1.995 1.875 2.696 2.637.702.763 1.064 1.372.998 2.39-.057.886-.457 1.312-.892 1.624-.436.312-.83.404-.83.404a1 1 0 0 0-.754 1.195 1 1 0 0 0 1.195.754s.778-.173 1.553-.728a4.153 4.153 0 0 0 1.724-3.12c.106-1.634-.64-2.915-1.521-3.872-.88-.957-1.89-1.717-2.66-2.6-1.339-1.533-1.276-4.477-.032-5.904.55-.631 1.44-.902 2.329-.873.887.029 1.681.465 1.804.629.291.388.393.53.524.707.245.333.357.488.357.488a1 1 0 0 0 .256.281.993.993 0 0 1-.256-.281s-.112-.155-.357-.488a.86.86 0 0 0-.244.408l-.276 1.066a.86.86 0 0 0 .086.637l1.627 2.867a.86.86 0 0 0 .49.397l.85.265 5.455 9.614a.86.86 0 0 0 .6.421l1.156.202a.86.86 0 0 0 .947-.536l.406-1.043a.86.86 0 0 0-.054-.736l-5.487-9.67.178-.69a.86.86 0 0 0-.084-.638l-1.68-2.959a.86.86 0 0 0-.523-.406l-1.127-.305a.86.86 0 0 0-.605.065c-.15-.208-.306-.424-.637-.866-.752-1.001-2.003-1.386-3.342-1.43a5.969 5.969 0 0 0-.254-.001Zm4.59 2.799c.021.035.04.072.057.109a1 1 0 0 0-.057-.11zm.066.136c.01.023.018.046.026.069a1 1 0 0 0-.026-.069zm.065.23.004.034a1 1 0 0 0-.004-.033zm.01.178c0 .015-.003.029-.004.043a1 1 0 0 0 .004-.043zm-.09.38-.012.027a1 1 0 0 0 .012-.028zm.1.263.429.117 1.33 2.344-.178.69a.86.86 0 0 0 .086.638l5.457 9.617-.004.008-.06-.01-5.422-9.554a.86.86 0 0 0-.49-.395l-.85-.267-1.289-2.27.1-.387Zm-.323.05c-.017.017-.034.034-.053.05a1 1 0 0 0 .053-.05zm-.068.061a1 1 0 0 1-1.207.021 1 1 0 0 0 .347.163 1 1 0 0 0 .389.02 1 1 0 0 0 .367-.131 1 1 0 0 0 .104-.073z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    input: '<svg viewBox="0 0 24 24"><path d="M8.895 2.87a1 1 0 0 0-1 1v3.136a1 1 0 0 0 2 0V4.869h9.136v14.262H9.895v-2.445a1 1 0 1 0-2 0v3.445a1 1 0 0 0 1 1H20.03a1 1 0 0 0 1-1V3.869a1 1 0 0 0-1-1zm4.447 4.368a1.05 1.05 0 0 0-1.014 1.05v1.169h-8.59c-.58 0-1.05.47-1.05 1.049v2.974c-.001.581.47 1.052 1.05 1.051h8.58v1.182c.003.987 1.244 1.425 1.866.658l3.021-3.744a1.05 1.05 0 0 0-.004-1.324l-3.01-3.68a1.05 1.05 0 0 0-.85-.385Z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    output: '<svg viewBox="0 0 24 24"><path d="M3.8 2.87a1 1 0 0 0-1 1v16.26a1 1 0 0 0 1 1h11.138a1 1 0 0 0 1-1v-3.444a1 1 0 1 0-2 0v2.445H4.8V4.869h9.136v2.137a1 1 0 1 0 2 0V3.869a1 1 0 0 0-1-1zm13.698 4.368a1.05 1.05 0 0 0-1.014 1.05v1.169h-8.59c-.58 0-1.05.47-1.05 1.049v2.974c0 .581.47 1.052 1.05 1.051h8.58v1.182c.004.987 1.244 1.425 1.866.658l3.021-3.744a1.05 1.05 0 0 0-.004-1.324l-3.01-3.68a1.05 1.05 0 0 0-.849-.385Z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    motor: '<svg viewBox="0 0 24 24"><path d="M12 2.502c-4.998 0-9.082 4.084-9.082 9.082 0 1.238.252 2.42.705 3.498v5.414a1 1 0 0 0 1 1H8.35a1 1 0 0 0 1-1v-.228a9.011 9.011 0 0 0 5.298.002v.226a1 1 0 0 0 1 1h3.729a1 1 0 0 0 1-1v-5.414a9.004 9.004 0 0 0 .705-3.498c0-4.998-4.084-9.082-9.082-9.082zm0 3a6.06 6.06 0 0 1 4.557 2.043 1.739 1.739 0 0 0-1.92 1.71c0 .94.784 1.722 1.722 1.722.659 0 1.24-.386 1.528-.94.128.494.195 1.012.195 1.547a6.057 6.057 0 0 1-4.67 5.918c.194-.278.309-.615.309-.975 0-.922-.755-1.692-1.672-1.718a3.241 3.241 0 0 0 3.176-3.225A3.24 3.24 0 0 0 12 8.359a3.24 3.24 0 0 0-3.225 3.225 3.241 3.241 0 0 0 3.176 3.225 1.735 1.735 0 0 0-1.672 1.718c0 .36.115.697.309.975a6.057 6.057 0 0 1-4.67-5.918c0-.535.067-1.053.195-1.547.289.554.869.94 1.528.94.938 0 1.72-.782 1.72-1.721a1.737 1.737 0 0 0-1.918-1.711A6.06 6.06 0 0 1 12 5.502ZM7.64 8.977c.143 0 .28.137.28.279a.295.295 0 0 1-.28.277.295.295 0 0 1-.279-.277c0-.142.138-.28.28-.28zm8.72 0c.141 0 .277.137.277.279a.293.293 0 0 1-.278.277.295.295 0 0 1-.279-.277c0-.142.137-.28.28-.28zM12 10.359a1.21 1.21 0 0 1 1.225 1.225A1.21 1.21 0 0 1 12 12.809a1.21 1.21 0 0 1-1.225-1.225A1.21 1.21 0 0 1 12 10.359zm0 5.889c.142 0 .28.137.28.28 0 .141-.138.279-.28.279a.297.297 0 0 1-.28-.28c0-.142.138-.279.28-.279zm-6.377 1.79a9.174 9.174 0 0 0 1.727 1.339v.12H5.623Zm12.754 0v1.458h-1.729v-.117a9.175 9.175 0 0 0 1.729-1.342z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    controller: '<svg viewBox="0 0 24 24"><path d="M14.73 0c-.428-.002-.857.012-1.272.04-1.106.073-2.037.193-2.709.505-1.103.512-1.823 1.475-1.871 2.522-.041.91.406 1.797 1.24 2.486.392.324.416.992.416.992a.75.75 0 0 0 0 .024v.974H7.741c-.023-.055-.178-.441-.472-.904-.107-.168-.323-.25-.592-.307a4.667 4.667 0 0 0-.94-.082c-.68 0-1.4.096-1.785.264-.285.125-.597.467-.945.955a14.593 14.593 0 0 0-1.078 1.826C1.215 10.703.566 12.39.335 13.748.058 15.377-.051 16.7.022 17.715c.074 1.015.332 1.73.815 2.115a1.474 1.474 0 0 0 1.826 0c.548-.445.953-1.087 1.287-1.779.328-.678.633-1.11.633-1.11a.102.102 0 0 0 .004-.005l.014-.01a.34.34 0 0 1 .115-.053c.127-.036.37-.059.803.028.89.178 1.388.19 1.388.19h4.244a.1.1 0 0 0 .07-.03c.019.017.044.03.071.03h4.244s.497-.012 1.387-.19c.432-.087.677-.064.805-.028a.34.34 0 0 1 .115.053l.012.01a8.604 8.604 0 0 0 .639 1.115c.334.692.738 1.334 1.286 1.78.49.398 1.268.445 1.827 0 .482-.386.738-1.101.812-2.116.074-1.015-.035-2.338-.312-3.967-.232-1.358-.879-3.045-1.592-4.453a14.61 14.61 0 0 0-1.078-1.826c-.348-.488-.66-.83-.946-.955-.385-.168-1.106-.264-1.787-.264-.34 0-.668.025-.937.082-.27.058-.488.14-.594.307-.295.463-.45.849-.473.904h-2.666v-.95s.087-1.332-.959-2.196c-.603-.499-.718-.8-.697-1.264.015-.328.357-.928 1.004-1.228.203-.095 1.163-.302 2.174-.37 1.01-.067 2.146-.037 2.93.114 1.9.367 3.53.197 3.53.197a.75.75 0 0 0 .67-.822.75.75 0 0 0-.822-.67S18.432.497 16.77.176C16.147.056 15.441.004 14.73 0Zm2.828 7.803a.976.976 0 1 1-.002 1.951.976.976 0 0 1 .002-1.951zM4.8 8.225a.75.75 0 0 1 .75.75v.633h.793a.75.75 0 1 1 0 1.5H5.55v.633a.75.75 0 1 1-1.5 0v-.633h-.793a.75.75 0 0 1 0-1.5h.793v-.633a.75.75 0 0 1 .75-.75zm5.734.281a.75.75 0 0 0 .055.28.742.742 0 0 1-.055-.28zm1.5 0a.75.75 0 0 1-.055.28.75.75 0 0 0 .055-.28zm-.058.291a.744.744 0 0 1-.155.233.75.75 0 0 0 .155-.233zm-1.375.01a.75.75 0 0 0 .136.207.742.742 0 0 1-.136-.207zm1.2.238a.753.753 0 0 1-.228.153.75.75 0 0 0 .229-.153zm-1.025.008a.75.75 0 0 0 .196.129.751.751 0 0 1-.196-.129zm.79.148a.745.745 0 0 1-.274.055h-.008c-.011 0-.022-.003-.033-.004a.746.746 0 0 1-.236-.049.75.75 0 0 0 .27.053.75.75 0 0 0 .28-.055zm4.382.165a.976.976 0 1 1-.002 1.95.976.976 0 0 1 .002-1.95zm3.281 0a.976.976 0 1 1-.002 1.95.976.976 0 0 1 .002-1.95zm-10.523.431h1.188a.6.6 0 0 1 0 1.2H8.737a.6.6 0 0 1-.031-1.2Zm3.74 0h1.19a.6.6 0 0 1 0 1.2h-1.158a.6.6 0 0 1-.032-1.2zm5.112 1.162a.976.976 0 1 1-.002 1.952.976.976 0 0 1 .002-1.952zm-9.899 1.604c1.055 0 1.922.865 1.922 1.92a1.93 1.93 0 0 1-1.922 1.922 1.928 1.928 0 0 1-1.92-1.922c0-1.055.865-1.92 1.92-1.92zm6.95 0c1.054 0 1.921.865 1.921 1.92a1.93 1.93 0 0 1-1.922 1.922 1.928 1.928 0 0 1-1.92-1.922c0-1.055.865-1.92 1.92-1.92zm-6.95 1a.912.912 0 0 0-.92.92c0 .514.406.922.92.922a.915.915 0 0 0 .922-.922.913.913 0 0 0-.922-.92zm6.95 0a.912.912 0 0 0-.92.92c0 .514.405.922.92.922a.915.915 0 0 0 .921-.922.913.913 0 0 0-.922-.92zm3.331 3.322s.078.108.198.303c-.12-.195-.198-.303-.198-.303z" style="stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers"/></svg>',
+    energy: '<svg viewBox="0 0 24 24"><path d="M11.32 3.648a9.376 9.376 0 0 0-3.847 1.149l.869 1.506a.5.5 0 1 1-.867.5l-.852-1.475a9.483 9.483 0 0 0-2.482 2.565c.039.01.077.026.113.046l1.437.83a.5.5 0 0 1-.5.866l-1.437-.828a.493.493 0 0 1-.102-.078 9.372 9.372 0 0 0-1.011 3.49h2.093a.75.75 0 1 1 0 1.5H2.625A9.391 9.391 0 0 0 4.02 18.03h4.927a3.106 3.106 0 0 1 2.979-3.062l5.347-6.694a.5.5 0 0 1 .852.506l-3.332 7.885c.21.412.334.875.338 1.365h4.928a9.392 9.392 0 0 0 1.392-4.279c-.014 0-.027.004-.04.004h-2.145a.75.75 0 1 1 0-1.5h2.144c.01 0 .02.003.031.004a9.374 9.374 0 0 0-.96-3.424l-1.413.816a.5.5 0 1 1-.5-.867l1.418-.818a9.472 9.472 0 0 0-2.47-2.592l-.82 1.422a.5.5 0 1 1-.866-.5l.842-1.46a9.382 9.382 0 0 0-3.852-1.183v2.133a.75.75 0 0 1-1.5 0z" style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers;enable-background:accumulate;stop-color:#000;stop-opacity:1" transform="translate(-2.625 -3.648)"/><path d="M12.04 15.963a2.094 2.094 0 0 0-2.095 2.094 2.094 2.094 0 0 0 2.094 2.093 2.094 2.094 0 0 0 2.094-2.093 2.094 2.094 0 0 0-2.094-2.094z" style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers;enable-background:accumulate;stop-color:#000;stop-opacity:1" transform="translate(-2.625 -3.648)"/><path d="m12.031 18 5.375-8.969-4.093 8.688z" style="fill:#000;stroke:none;stroke-width:1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;paint-order:stroke fill markers" transform="translate(-2.625 -3.648)"/></svg>',
+    
+    // Status icons
+    ok: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M10,17L5,12L6.41,10.58L10,14.17L17.59,6.58L19,8M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/></svg>',
+    run: '<svg viewBox="0 0 24 24"><path d="m13.683 7.388 8.367 4.83-8.367 4.83v2.324l12.393-7.154-12.393-7.154Z" style="stroke:#000;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers" transform="matrix(.79856 0 0 1.0072 -3.663 -4.596)"/><path d="M.2 13.828V-.482l12.393 7.155Z" style="fill:#000;stroke:#000;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers" transform="matrix(.79856 0 0 1.0072 .24 .989)"/></svg>',
+    stopped: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M18,18H6V6H18V18Z"/></svg>',
+    fault: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/></svg>',
+    offline: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4M9,9V15H15V9"/></svg>',
+    
+    // Action icons
+    clearVolumes: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19.36,2.72L20.78,4.14L15.06,9.85C16.13,11.39 16.28,13.24 15.38,14.44L9.06,8.12C10.26,7.22 12.11,7.37 13.65,8.44L19.36,2.72M5.93,17.57C3.92,15.56 2.69,13.16 2.35,10.92L7.23,8.83L14.67,16.27L12.58,21.15C10.34,20.81 7.94,19.58 5.93,17.57Z"/></svg>',
+    saveLayout: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"/></svg>',
+    
+    // Direction indicators
+    forward: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"/></svg>',
+    reverse: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"/></svg>',
+    
+    // Drag handle
+    drag: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z"/></svg>'
+};
+
+// Dashboard State
+let dashboardData = null;
+let dashboardLayout = [];
+let layoutModified = false;
+let dashboardUserInteracting = false;  // Track if user is interacting with dashboard
+let dashboardDragging = false;         // Track if user is dragging tiles
+
+// Dashboard Initialization
+async function initDashboardTab() {
+    
+    // IMPORTANT: Set active tab so PollingManager knows to continue polling
+    PollingManager.setActiveTab('dashboard');
+    
+    const container = document.getElementById('dashboard-tiles');
+    if (container) {
+        container.innerHTML = '<div class="loading">Loading dashboard...</div>';
+    }
+    
+    try {
+        // Load layout first, then fetch data immediately (not just start polling)
+        await loadDashboardLayout();
+        await fetchAndRenderDashboard();
+        
+        // Then start polling for updates
+        PollingManager.startPolling('dashboard-api', fetchAndRenderDashboard, 2000);
+    } catch (error) {
+        console.error('[DASHBOARD] Init error:', error);
+    }
+}
+
+// Track user interactions to prevent refresh interruptions
+function markDashboardInteracting(isInteracting) {
+    dashboardUserInteracting = isInteracting;
+}
+
+// Dashboard Data Fetching
+async function fetchAndRenderDashboard() {
+    const ENDPOINT = '/api/dashboard';
+    
+    try {
+        const response = await fetch(ENDPOINT);
+        if (!response.ok) throw new Error('Failed to fetch dashboard data');
+        
+        dashboardData = await response.json();
+        PollingManager.recordSuccess(ENDPOINT, dashboardData);
+        
+        renderDashboard();
+        renderAlarmSummary();
+        
+    } catch (error) {
+        console.error('[DASHBOARD] Fetch error:', error);
+        PollingManager.recordError(ENDPOINT);
+        
+        if (PollingManager.shouldShowError(ENDPOINT)) {
+            const container = document.getElementById('dashboard-tiles');
+            if (container) {
+                container.innerHTML = '<div class="error-message">Failed to load dashboard data. Retrying...</div>';
+            }
+        } else {
+            const cached = PollingManager.getCachedData(ENDPOINT);
+            if (cached) {
+                dashboardData = cached;
+                renderDashboard();
+                renderAlarmSummary();
+            }
+        }
+    } // Added closing bracket here
+}
+
+async function loadDashboardLayout() {
+    try {
+        const response = await fetch('/api/dashboard/layout');
+        if (response.ok) {
+            const data = await response.json();
+            dashboardLayout = data.tiles || [];
+            layoutModified = false;
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Failed to load layout:', error);
+        dashboardLayout = [];
+    }
+}
+
+function renderDashboard() {
+    const container = document.getElementById('dashboard-tiles');
+    if (!container || !dashboardData) return;
+    
+    // Skip full re-render if user is interacting (dragging or editing)
+    if (dashboardDragging || dashboardUserInteracting) {
+        // Only update non-interactive values
+        updateDashboardValues();
+        return;
+    }
+    
+    const objects = dashboardData.objects || [];
+    
+    if (objects.length === 0) {
+        container.innerHTML = `
+            <div class="dashboard-empty">
+                <p>No objects configured for dashboard display.</p>
+                <p class="hint">Enable "Show on Dashboard" in each object's configuration.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Check if any input is focused - don't re-render
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.closest('.dashboard-tile') && activeEl.tagName === 'INPUT') {
+        updateDashboardValues();
+        return;
+    }
+    
+    // Sort objects by layout if available
+    let sortedObjects = [...objects];
+    if (dashboardLayout.length > 0) {
+        sortedObjects.sort((a, b) => {
+            const aPos = dashboardLayout.findIndex(t => t.type === a.type && t.index === a.index);
+            const bPos = dashboardLayout.findIndex(t => t.type === b.type && t.index === b.index);
+            if (aPos === -1 && bPos === -1) return 0;
+            if (aPos === -1) return 1;
+            if (bPos === -1) return -1;
+            return aPos - bPos;
+        });
+    }
+    
+    container.innerHTML = sortedObjects.map(obj => createDashboardTile(obj)).join('');
+    
+    // Make tiles draggable
+    container.querySelectorAll('.dashboard-tile').forEach(tile => {
+        tile.draggable = true;
+    });
+    initDragAndDrop();
+    
+    updateAlarmBadge();
+}
+
+// Update only the values without full re-render (preserves user interactions)
+function updateDashboardValues() {
+    if (!dashboardData) return;
+    
+    const objects = dashboardData.objects || [];
+    objects.forEach(obj => {
+        const tile = document.querySelector(`.dashboard-tile[data-type="${obj.type}"][data-index="${obj.index}"]`);
+        if (!tile) return;
+        
+        // Update status class
+        tile.className = tile.className.replace(/tile-(normal|running|fault|offline)/g, '').trim();
+        tile.classList.add(getDashboardStatusClass(obj));
+        
+        // Update values based on type - skip input fields
+        const isController = ['temp_controller', 'ph_controller', 'flow_controller', 'do_controller'].includes(obj.type);
+        
+        if (isController) {
+            // Update controller-specific values (but not input fields)
+            const pvEl = tile.querySelector('.ctrl-pv-value');
+            const spEl = tile.querySelector('.ctrl-sp-value');
+            const dosedEl = tile.querySelector('.ctrl-dosed-value');
+            const rpmEl = tile.querySelector('.ctrl-rpm-value');
+            const statusIndicator = tile.querySelector('.ctrl-status-indicator');
+            
+            if (pvEl) pvEl.textContent = formatDashboardValue(obj.processValue !== undefined ? obj.processValue : obj.value);
+            if (spEl) spEl.textContent = formatDashboardValue(obj.setpoint);
+            if (dosedEl) dosedEl.textContent = formatDashboardValue(obj.cumulativeVolume);
+            if (rpmEl) rpmEl.textContent = formatDashboardValue(obj.stirrerRpm);
+            
+            if (statusIndicator) {
+                statusIndicator.className = 'ctrl-status-indicator ' + (obj.enabled ? 'enabled' : 'disabled');
+                statusIndicator.innerHTML = obj.enabled ? DASHBOARD_ICONS.run : DASHBOARD_ICONS.stopped;
+            }
+            
+            // Update enable/disable button states - use 'running' or 'enabled'
+            const enableBtn = tile.querySelector('.ctrl-enable-btn');
+            const disableBtn = tile.querySelector('.ctrl-disable-btn');
+            if (enableBtn) enableBtn.disabled = obj.enabled;
+            if (disableBtn) disableBtn.disabled = !obj.enabled;
+        } else {
+            // Update simple value display
+            const valueEl = tile.querySelector('.tile-value');
+            if (valueEl && obj.online) {
+                valueEl.textContent = formatDashboardValue(obj.value);
+            }
+        }
+        
+        // Update footer badge for non-controllers
+        if (!isController) {
+            const footer = tile.querySelector('.tile-footer');
+            if (footer) {
+                if (obj.type === 'stepper' || obj.type === 'dc_motor') {
+                    footer.innerHTML = getMotorStatusBadge(obj);
+                } else {
+                    footer.innerHTML = getDashboardStatusBadge(obj);
+                }
+            }
+        }
+    });
+}
+
+function createDashboardTile(obj) {
+    const icon = getDashboardObjectTypeIcon(obj.type);
+    const statusClass = getDashboardStatusClass(obj);
+    
+    // Wide tiles for controllers only
+    const isController = ['temp_controller', 'ph_controller', 'flow_controller', 'do_controller'].includes(obj.type);
+    const sizeClass = isController ? 'tile-wide' : '';
+    
+    let valueDisplay = '';
+    let statusBadge = '';
+    
+    if (obj.online) {
+        if (obj.type === 'energy') {
+            valueDisplay = formatDashboardEnergyDisplay(obj);
+        } else if (obj.type === 'stepper' || obj.type === 'dc_motor') {
+            valueDisplay = formatDashboardMotorDisplay(obj);
+            // For motors, combine direction with running status
+            statusBadge = getMotorStatusBadge(obj);
+        } else if (isController) {
+            valueDisplay = formatDashboardControllerDisplay(obj);
+            statusBadge = getControllerStatusBadge(obj);
+        } else {
+            valueDisplay = `<span class="tile-value">${formatDashboardValue(obj.value)}</span>
+                           <span class="tile-unit">${obj.unit || ''}</span>`;
+        }
+    } else {
+        valueDisplay = '<span class="tile-offline">OFFLINE</span>';
+        statusBadge = `<span class="tile-badge tile-badge-offline">${DASHBOARD_ICONS.offline} OFFLINE</span>`;
+    }
+    
+    // For non-motor/controller, use standard status badge
+    if (!statusBadge && obj.online) {
+        statusBadge = getDashboardStatusBadge(obj);
+    }
+    
+    // For controllers, add status indicator at top right instead of footer badge
+    const statusIndicator = isController ? 
+        `<div class="ctrl-status-indicator ${obj.enabled ? 'enabled' : 'disabled'}" title="${obj.enabled ? 'Running' : 'Stopped'}">
+            ${obj.enabled ? DASHBOARD_ICONS.run : DASHBOARD_ICONS.stopped}
+        </div>` : '';
+    
+    return `
+        <div class="dashboard-tile ${statusClass} ${sizeClass}" data-type="${obj.type}" data-index="${obj.index}">
+            <div class="tile-drag-handle" title="Drag to reorder">
+                ${DASHBOARD_ICONS.drag}
+            </div>
+            ${statusIndicator}
+            <div class="tile-header">
+                <span class="tile-icon">${icon}</span>
+                <span class="tile-name">${obj.name}</span>
+            </div>
+            <div class="tile-content">
+                ${valueDisplay}
+            </div>
+            ${!isController ? `<div class="tile-footer">${statusBadge}</div>` : ''}
+        </div>
+    `;
+}
+
+function getMotorStatusBadge(obj) {
+    if (!obj.online) return `<span class="tile-badge tile-badge-offline">${DASHBOARD_ICONS.offline} OFFLINE</span>`;
+    if (obj.fault) return `<span class="tile-badge tile-badge-fault">${DASHBOARD_ICONS.fault} FAULT</span>`;
+    if (obj.running) {
+        const dirIcon = obj.direction ? DASHBOARD_ICONS.forward : DASHBOARD_ICONS.reverse;
+        const dirText = obj.direction ? 'FWD' : 'REV';
+        return `<span class="tile-badge tile-badge-running">${dirIcon} ${dirText}</span>`;
+    }
+    return '';
+}
+
+function getControllerStatusBadge(obj) {
+    if (!obj.online) return `<span class="tile-badge tile-badge-offline">${DASHBOARD_ICONS.offline} OFFLINE</span>`;
+    if (obj.fault) return `<span class="tile-badge tile-badge-fault">${DASHBOARD_ICONS.fault} FAULT</span>`;
+    if (obj.enabled) return `<span class="tile-badge tile-badge-running">${DASHBOARD_ICONS.run} ENABLED</span>`;
+    return '';
+}
+
+function getDashboardObjectTypeIcon(type) {
+    switch (type) {
+        case 'adc':
+        case 'gpio':
+            return DASHBOARD_ICONS.input;
+        case 'rtd':
+        case 'device_sensor':
+            return DASHBOARD_ICONS.sensor;
+        case 'dac':
+        case 'digital_output':
+            return DASHBOARD_ICONS.output;
+        case 'stepper':
+        case 'dc_motor':
+            return DASHBOARD_ICONS.motor;
+        case 'temp_controller':
+        case 'ph_controller':
+        case 'flow_controller':
+        case 'do_controller':
+            return DASHBOARD_ICONS.controller;
+        case 'energy':
+            return DASHBOARD_ICONS.energy;
+        default:
+            return DASHBOARD_ICONS.sensor;
+    }
+}
+
+function getDashboardStatusClass(obj) {
+    if (!obj.online) return 'tile-offline';
+    if (obj.fault) return 'tile-fault';
+    if (obj.running || obj.enabled) return 'tile-running';
+    return 'tile-normal';
+}
+
+function getDashboardStatusBadge(obj) {
+    if (!obj.online) {
+        return `<span class="tile-badge tile-badge-offline">${DASHBOARD_ICONS.offline} OFFLINE</span>`;
+    }
+    if (obj.fault) {
+        return `<span class="tile-badge tile-badge-fault">${DASHBOARD_ICONS.fault} FAULT</span>`;
+    }
+    if (obj.running || obj.enabled) {
+        return `<span class="tile-badge tile-badge-running">${DASHBOARD_ICONS.ok} RUNNING</span>`;
+    }
+    return '';
+}
+
+// Dashboard Value Formatting
+function formatDashboardValue(value) {
+    if (value === null || value === undefined || isNaN(value)) return '--';
+    return Number(value).toFixed(2);
+}
+
+function formatDashboardEnergyDisplay(obj) {
+    const voltage = formatDashboardValue(obj.value);
+    let current = '--';
+    let power = '--';
+    
+    if (obj.additionalValues && obj.additionalValues.length >= 2) {
+        current = formatDashboardValue(obj.additionalValues[0].value);
+        power = formatDashboardValue(obj.additionalValues[1].value);
+    }
+    
+    return `
+        <div class="energy-display">
+            <div class="energy-row"><span class="label">Voltage:</span> <span class="value">${voltage}</span> <span class="unit">V</span></div>
+            <div class="energy-row"><span class="label">Current:</span> <span class="value">${current}</span> <span class="unit">A</span></div>
+            <div class="energy-row"><span class="label">Power:</span> <span class="value">${power}</span> <span class="unit">W</span></div>
+        </div>
+    `;
+}
+
+function formatDashboardMotorDisplay(obj) {
+    const valueLabel = obj.type === 'stepper' ? 'RPM' : 'Power';
+    const valueUnit = obj.type === 'stepper' ? 'RPM' : '%';
+    
+    return `
+        <span class="tile-value">${formatDashboardValue(obj.value)}</span>
+        <span class="tile-unit">${valueUnit}</span>
+    `;
+}
+
+function formatDashboardControllerDisplay(obj) {
+    const pv = formatDashboardValue(obj.processValue !== undefined ? obj.processValue : obj.value);
+    const sp = obj.setpoint !== undefined ? obj.setpoint : 0;
+    const spDisplay = formatDashboardValue(sp);
+    const unit = obj.unit || '';
+    const type = obj.type;
+    const index = obj.index;
+    const inputId = `sp-input-${type}-${index}`;
+
+    // Control rows: SP input + Update on one line, Enable/Disable on separate line at bottom
+    const controlRows = (unitOverride) => `
+        <div class="ctrl-setpoint-row">
+            <span class="label">Setpoint:</span>
+            <input type="number" id="${inputId}" value="${sp}" step="0.1" 
+                   onfocus="markDashboardInteracting(true)" onblur="markDashboardInteracting(false)" />
+            <span class="unit">${unitOverride || unit}</span>
+            <button class="ctrl-setpoint-btn" onclick="submitControllerSetpoint('${type}', ${index}, '${inputId}')">Update</button>
+        </div>
+        <div class="ctrl-action-row">
+            <button class="ctrl-enable-btn" onclick="dashboardEnableController('${type}', ${index})" ${obj.enabled ? 'disabled' : ''}>Enable</button>
+            <button class="ctrl-disable-btn" onclick="dashboardDisableController('${type}', ${index})" ${!obj.enabled ? 'disabled' : ''}>Disable</button>
+        </div>
+    `;
+
+    // Build display based on controller type
+    if (type === 'temp_controller') {
+        return `
+            <div class="controller-display">
+                <div class="ctrl-data-rows">
+                    <div class="ctrl-row"><span class="label">Value:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                    <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+                </div>
+                ${controlRows()}
+            </div>
+        `;
+    } else if (type === 'ph_controller') {
+        const dosedAcid = formatDashboardValue(obj.cumulativeAcidVolume);
+        const dosedBase = formatDashboardValue(obj.cumulativeBaseVolume);
+        return `
+            <div class="controller-display">
+                <div class="ctrl-data-rows">
+                    <div class="ctrl-row"><span class="label">Value:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                    <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+                    <div class="ctrl-row"><span class="label">Dosed Acid:</span> <span class="value ctrl-dosed-value">${dosedAcid}</span> <span class="unit">mL</span></div>
+                    <div class="ctrl-row"><span class="label">Dosed Base:</span> <span class="value ctrl-dosed-value">${dosedBase}</span> <span class="unit">mL</span></div>
+                </div>
+                ${controlRows()}
+            </div>
+        `;
+    } else if (type === 'flow_controller') {
+        const dosed = formatDashboardValue(obj.cumulativeVolume);
+        return `
+            <div class="controller-display">
+                <div class="ctrl-data-rows">
+                    <div class="ctrl-row"><span class="label">Flow:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                    <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">mL/min</span></div>
+                    <div class="ctrl-row"><span class="label">Dosed Volume:</span> <span class="value ctrl-dosed-value">${dosed}</span> <span class="unit">mL</span></div>
+                </div>
+                ${controlRows('mL/min')}
+            </div>
+        `;
+    } else if (type === 'do_controller') {
+        const stirrerRpm = formatDashboardValue(obj.stirrerRpm);
+        return `
+            <div class="controller-display">
+                <div class="ctrl-data-rows">
+                    <div class="ctrl-row"><span class="label">DO:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                    <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+                    <div class="ctrl-row"><span class="label">Stirrer RPM:</span> <span class="value ctrl-rpm-value">${stirrerRpm}</span> <span class="unit">RPM</span></div>
+                </div>
+                ${controlRows()}
+            </div>
+        `;
+    }
+    
+    // Fallback
+    return `
+        <div class="controller-display">
+            <div class="ctrl-data-rows">
+                <div class="ctrl-row"><span class="label">PV:</span> <span class="value ctrl-pv-value">${pv}</span> <span class="unit">${unit}</span></div>
+                <div class="ctrl-row"><span class="label">SP:</span> <span class="value ctrl-sp-value">${spDisplay}</span> <span class="unit">${unit}</span></div>
+            </div>
+            ${controlRows()}
+        </div>
+    `;
+}
+
+// Controller Setpoint Submit from input field
+function submitControllerSetpoint(type, index, inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) {
+        showToast('error', 'Error', 'Could not find setpoint input');
+        return;
+    }
+    
+    const newValue = parseFloat(input.value);
+    if (isNaN(newValue)) {
+        showToast('error', 'Invalid Input', 'Please enter a valid number');
+        return;
+    }
+    
+    updateControllerSetpoint(type, index, newValue);
+}
+
+async function updateControllerSetpoint(type, index, setpoint) {
+    // Map controller type to API endpoint (using object indices)
+    // Temp controllers: 40-42, pH: 43, Flow: 44-47, DO: 48
+    let endpoint = '';
+    let body = {};
+    
+    if (type === 'temp_controller') {
+        endpoint = `/api/controller/${index}/setpoint`;
+        body = { setpoint: setpoint };
+    } else if (type === 'ph_controller') {
+        endpoint = '/api/phcontroller/43/setpoint';
+        body = { setpoint: setpoint };
+    } else if (type === 'flow_controller') {
+        endpoint = `/api/flowcontroller/${index}/flowrate`;
+        body = { flowRate: setpoint };
+    } else if (type === 'do_controller') {
+        endpoint = '/api/docontroller/48/setpoint';
+        body = { setpoint: setpoint };
+    } else {
+        showToast('error', 'Error', 'Unknown controller type');
+        return;
+    }
+    
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        
+        if (response.ok) {
+            showToast('success', 'Setpoint Updated', `New setpoint: ${setpoint}`);
+        } else {
+            throw new Error('Failed to update setpoint');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Setpoint update error:', error);
+        showToast('error', 'Error', 'Failed to update setpoint');
+    }
+}
+
+// Alarm Summary
+function renderAlarmSummary() {
+    const container = document.getElementById('alarm-summary');
+    if (!container || !dashboardData) return;
+    
+    const faultCount = dashboardData.faultCount || 0;
+    const alarms = dashboardData.alarms || [];
+    
+    if (faultCount === 0) {
+        container.innerHTML = `
+            <div class="alarm-summary alarm-ok">
+                <span class="alarm-icon">${DASHBOARD_ICONS.ok}</span>
+                <span class="alarm-text">All systems normal</span>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = `
+        <div class="alarm-summary alarm-fault">
+            <div class="alarm-header">
+                <span class="alarm-icon">${DASHBOARD_ICONS.fault}</span>
+                <span class="alarm-count">${faultCount} Active Alarm${faultCount > 1 ? 's' : ''}</span>
+            </div>
+            <ul class="alarm-list">
+                ${alarms.map(a => `<li><strong>${a.name}</strong>: ${a.message || 'Fault detected'}</li>`).join('')}
+            </ul>
+        </div>
+    `;
+}
+
+function updateAlarmBadge() {
+    const badge = document.getElementById('alarm-badge');
+    if (!badge || !dashboardData) return;
+    
+    const faultCount = dashboardData.faultCount || 0;
+    if (faultCount > 0) {
+        badge.textContent = faultCount;
+        badge.classList.add('visible');
+    } else {
+        badge.classList.remove('visible');
+    }
+}
+
+// Dashboard Global Controls
+async function enableAllControllers() {
+    if (!confirm('Enable all controllers?')) return;
+    
+    try {
+        const response = await fetch('/api/dashboard/enable-all', { method: 'POST' });
+        if (response.ok) {
+            showToast('success', 'Enable All', 'All controllers enabled');
+        } else {
+            throw new Error('Failed to enable all');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Enable all error:', error);
+        showToast('error', 'Error', 'Failed to enable controllers');
+    }
+}
+
+async function disableAllControllers() {
+    if (!confirm('Disable all controllers?')) return;
+    
+    try {
+        const response = await fetch('/api/dashboard/disable-all', { method: 'POST' });
+        if (response.ok) {
+            showToast('success', 'Disable All', 'All controllers disabled');
+        } else {
+            throw new Error('Failed to disable all');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Disable all error:', error);
+        showToast('error', 'Error', 'Failed to disable controllers');
+    }
+}
+
+async function clearAllVolumes() {
+    if (!confirm('Clear all cumulative dosing volumes?')) return;
+    
+    try {
+        const response = await fetch('/api/dashboard/clear-volumes', { method: 'POST' });
+        if (response.ok) {
+            showToast('success', 'Clear Volumes', 'All cumulative volumes reset');
+        } else {
+            throw new Error('Failed to clear volumes');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Clear volumes error:', error);
+        showToast('error', 'Error', 'Failed to clear volumes');
+    }
+}
+
+// Dashboard Layout Management
+function onTileOrderChanged() {
+    const container = document.getElementById('dashboard-tiles');
+    if (!container) return;
+    
+    const tiles = container.querySelectorAll('.dashboard-tile');
+    dashboardLayout = Array.from(tiles).map(tile => ({
+        type: tile.dataset.type,
+        index: parseInt(tile.dataset.index)
+    }));
+    
+    layoutModified = true;
+    updateSaveLayoutButton();
+}
+
+function updateSaveLayoutButton() {
+    const btn = document.getElementById('save-layout-btn');
+    if (btn) {
+        btn.disabled = !layoutModified;
+        btn.classList.toggle('modified', layoutModified);
+    }
+}
+
+async function saveDashboardLayout() {
+    if (!layoutModified) return;
+    
+    try {
+        const response = await fetch('/api/dashboard/layout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tiles: dashboardLayout })
+        });
+        
+        if (response.ok) {
+            layoutModified = false;
+            updateSaveLayoutButton();
+            showToast('success', 'Layout Saved', 'Dashboard layout saved to flash');
+        } else {
+            throw new Error('Failed to save layout');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Save layout error:', error);
+        showToast('error', 'Error', 'Failed to save layout');
+    }
+}
+
+// Dashboard Drag and Drop - optimized for grid layout
+let dragState = { tile: null, dropTarget: null };
+
+function initDragAndDrop() {
+    const container = document.getElementById('dashboard-tiles');
+    if (!container) return;
+    
+    // Remove old listeners by cloning
+    const tiles = container.querySelectorAll('.dashboard-tile');
+    
+    tiles.forEach(tile => {
+        tile.addEventListener('dragstart', handleDragStart);
+        tile.addEventListener('dragend', handleDragEnd);
+        tile.addEventListener('dragover', handleDragOver);
+        tile.addEventListener('dragenter', handleDragEnter);
+        tile.addEventListener('dragleave', handleDragLeave);
+        tile.addEventListener('drop', handleDrop);
+    });
+}
+
+function handleDragStart(e) {
+    dashboardDragging = true;
+    dragState.tile = this;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', ''); // Required for Firefox
+}
+
+function handleDragEnd(e) {
+    dashboardDragging = false;
+    this.classList.remove('dragging');
+    // Clear all drag-over states
+    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    dragState.tile = null;
+    dragState.dropTarget = null;
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+}
+
+function handleDragEnter(e) {
+    e.preventDefault();
+    if (this !== dragState.tile && !this.classList.contains('dragging')) {
+        // Clear previous target
+        if (dragState.dropTarget && dragState.dropTarget !== this) {
+            dragState.dropTarget.classList.remove('drag-over');
+        }
+        this.classList.add('drag-over');
+        dragState.dropTarget = this;
+    }
+}
+
+function handleDragLeave(e) {
+    // Only remove if leaving the tile entirely
+    if (!this.contains(e.relatedTarget)) {
+        this.classList.remove('drag-over');
+    }
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    this.classList.remove('drag-over');
+    
+    if (dragState.tile && dragState.tile !== this) {
+        const container = document.getElementById('dashboard-tiles');
+        const tiles = Array.from(container.querySelectorAll('.dashboard-tile'));
+        const dragIdx = tiles.indexOf(dragState.tile);
+        const dropIdx = tiles.indexOf(this);
+        
+        if (dragIdx !== -1 && dropIdx !== -1) {
+            // Swap positions
+            if (dragIdx < dropIdx) {
+                container.insertBefore(dragState.tile, this.nextSibling);
+            } else {
+                container.insertBefore(dragState.tile, this);
+            }
+            onTileOrderChanged();
+        }
+    }
+}
+
+// Dashboard individual controller enable/disable
+async function dashboardEnableController(type, index) {
+    let endpoint = '';
+    
+    if (type === 'temp_controller') {
+        endpoint = `/api/controller/${index}/enable`;
+    } else if (type === 'ph_controller') {
+        endpoint = '/api/phcontroller/43/enable';
+    } else if (type === 'flow_controller') {
+        endpoint = `/api/flowcontroller/${index}/enable`;
+    } else if (type === 'do_controller') {
+        endpoint = '/api/docontroller/48/enable';
+    } else {
+        showToast('error', 'Error', 'Unknown controller type');
+        return;
+    }
+    
+    try {
+        const response = await fetch(endpoint, { method: 'POST' });
+        if (response.ok) {
+            showToast('success', 'Controller Enabled', 'Controller has been enabled');
+        } else {
+            throw new Error('Failed to enable controller');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Enable controller error:', error);
+        showToast('error', 'Error', 'Failed to enable controller');
+    }
+}
+
+async function dashboardDisableController(type, index) {
+    let endpoint = '';
+    
+    if (type === 'temp_controller') {
+        endpoint = `/api/controller/${index}/disable`;
+    } else if (type === 'ph_controller') {
+        endpoint = '/api/phcontroller/43/disable';
+    } else if (type === 'flow_controller') {
+        endpoint = `/api/flowcontroller/${index}/disable`;
+    } else if (type === 'do_controller') {
+        endpoint = '/api/docontroller/48/disable';
+    } else {
+        showToast('error', 'Error', 'Unknown controller type');
+        return;
+    }
+    
+    try {
+        const response = await fetch(endpoint, { method: 'POST' });
+        if (response.ok) {
+            showToast('success', 'Controller Disabled', 'Controller has been disabled');
+        } else {
+            throw new Error('Failed to disable controller');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Disable controller error:', error);
+        showToast('error', 'Error', 'Failed to disable controller');
+    }
+}
+
+// Export dashboard functions to window
+window.initDashboardTab = initDashboardTab;
+window.enableAllControllers = enableAllControllers;
+window.disableAllControllers = disableAllControllers;
+window.clearAllVolumes = clearAllVolumes;
+window.saveDashboardLayout = saveDashboardLayout;
+window.submitControllerSetpoint = submitControllerSetpoint;
+window.dashboardEnableController = dashboardEnableController;
+window.dashboardDisableController = dashboardDisableController;
+window.markDashboardInteracting = markDashboardInteracting;

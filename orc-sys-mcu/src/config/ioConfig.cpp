@@ -47,7 +47,7 @@ void setDefaultIOConfig() {
     for (int i = 0; i < MAX_RTD_SENSORS; i++) {
         snprintf(ioConfig.rtdSensors[i].name, sizeof(ioConfig.rtdSensors[i].name), 
                  "RTD Temperature %d", i + 1);
-        strcpy(ioConfig.rtdSensors[i].unit, "C");
+        strcpy(ioConfig.rtdSensors[i].unit, "°C");
         ioConfig.rtdSensors[i].cal.scale = 1.0;
         ioConfig.rtdSensors[i].cal.offset = 0.0;
         ioConfig.rtdSensors[i].wireConfig = 3;      // 3-wire by default
@@ -131,7 +131,7 @@ void setDefaultIOConfig() {
                  "Temperature Controller %d", i + 1);
         ioConfig.tempControllers[i].enabled = false;
         ioConfig.tempControllers[i].showOnDashboard = false;
-        strlcpy(ioConfig.tempControllers[i].unit, "C", sizeof(ioConfig.tempControllers[i].unit));
+        strlcpy(ioConfig.tempControllers[i].unit, "°C", sizeof(ioConfig.tempControllers[i].unit));
         
         ioConfig.tempControllers[i].pvSourceIndex = 0;    // Default: no sensor assigned
         ioConfig.tempControllers[i].outputIndex = 0;      // Default: no output assigned
@@ -267,6 +267,11 @@ void setDefaultIOConfig() {
         ioConfig.deviceSensors[i].showOnDashboard = false;
         ioConfig.deviceSensors[i].nameOverridden = false;
     }
+    
+    // ========================================================================
+    // Dashboard Layout (empty by default - user saves manually)
+    // ========================================================================
+    memset(&ioConfig.dashboardLayout, 0, sizeof(ioConfig.dashboardLayout));
 }
 
 /**
@@ -373,7 +378,7 @@ bool loadIOConfig() {
             JsonObject rtd = rtdArray[i];
             strlcpy(ioConfig.rtdSensors[i].name, rtd["name"] | "", 
                     sizeof(ioConfig.rtdSensors[i].name));
-            strlcpy(ioConfig.rtdSensors[i].unit, rtd["unit"] | "C", 
+            strlcpy(ioConfig.rtdSensors[i].unit, rtd["unit"] | "°C", 
                     sizeof(ioConfig.rtdSensors[i].unit));
             ioConfig.rtdSensors[i].cal.scale = rtd["cal"]["scale"] | 1.0;
             ioConfig.rtdSensors[i].cal.offset = rtd["cal"]["offset"] | 0.0;
@@ -479,7 +484,7 @@ bool loadIOConfig() {
                     sizeof(ioConfig.tempControllers[i].name));
             ioConfig.tempControllers[i].enabled = ctrl["enabled"] | false;
             ioConfig.tempControllers[i].showOnDashboard = ctrl["showOnDashboard"] | false;
-            strlcpy(ioConfig.tempControllers[i].unit, ctrl["unit"] | "C", 
+            strlcpy(ioConfig.tempControllers[i].unit, ctrl["unit"] | "°C", 
                     sizeof(ioConfig.tempControllers[i].unit));
             
             ioConfig.tempControllers[i].pvSourceIndex = ctrl["pvSourceIndex"] | 0;
@@ -694,6 +699,24 @@ bool loadIOConfig() {
             ioConfig.deviceSensors[i].showOnDashboard = sensor["showOnDashboard"] | false;
             ioConfig.deviceSensors[i].nameOverridden = sensor["nameOverridden"] | false;
         }
+    }
+    
+    // ========================================================================
+    // Parse Dashboard Layout (user-saved tile order)
+    // ========================================================================
+    JsonArray dashboardTiles = doc["dashboard_layout"];
+    if (dashboardTiles) {
+        for (JsonObject tile : dashboardTiles) {
+            uint8_t position = tile["position"] | 0;
+            if (position < MAX_DASHBOARD_TILES) {
+                strlcpy(ioConfig.dashboardLayout.tiles[position].objectType, 
+                        tile["type"] | "", 
+                        sizeof(ioConfig.dashboardLayout.tiles[position].objectType));
+                ioConfig.dashboardLayout.tiles[position].objectIndex = tile["index"] | 0;
+                ioConfig.dashboardLayout.tiles[position].inUse = true;
+            }
+        }
+        log(LOG_INFO, false, "  Loaded %d dashboard tiles\n", dashboardTiles.size());
     }
     
     log(LOG_INFO, true, "IO configuration loaded successfully\n");
@@ -1025,6 +1048,19 @@ void saveIOConfig() {
         sensor["showOnDashboard"] = ioConfig.deviceSensors[i].showOnDashboard;
         sensor["nameOverridden"] = ioConfig.deviceSensors[i].nameOverridden;
     }    
+    
+    // ========================================================================
+    // Serialize Dashboard Layout (user-saved tile order)
+    // ========================================================================
+    JsonArray dashboardTiles = doc.createNestedArray("dashboard_layout");
+    for (int i = 0; i < MAX_DASHBOARD_TILES; i++) {
+        if (ioConfig.dashboardLayout.tiles[i].inUse) {
+            JsonObject tile = dashboardTiles.createNestedObject();
+            tile["type"] = ioConfig.dashboardLayout.tiles[i].objectType;
+            tile["index"] = ioConfig.dashboardLayout.tiles[i].objectIndex;
+            tile["position"] = i;
+        }
+    }
     
     // Prepare IPC for long blocking operation (flash write can take 400-500ms)
     // This pauses polling, clears pending transactions, and flushes UART buffers

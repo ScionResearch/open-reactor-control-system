@@ -30,8 +30,35 @@
             <main id="main-content">
                 <!-- Dashboard Tab -->
                 <div id="dashboard" class="tab-content active">
-                    <h2>Live Status & Controls</h2>
-                    <!-- Add dashboard content here -->
+                    <h2>Live Status & Controls <span id="alarm-badge" class="alarm-badge"></span></h2>
+                    
+                    <!-- Alarm Summary -->
+                    <div id="alarm-summary" class="alarm-container"></div>
+                    
+                    <!-- Global Controls -->
+                    <div class="dashboard-controls">
+                        <button class="dashboard-btn dashboard-btn-success" onclick="enableAllControllers()">
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10,17L5,12L6.41,10.58L10,14.17L17.59,6.58L19,8M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/></svg>
+                            Run All
+                        </button>
+                        <button class="dashboard-btn dashboard-btn-danger" onclick="disableAllControllers()">
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z"/></svg>
+                            Stop All
+                        </button>
+                        <button class="dashboard-btn dashboard-btn-secondary" onclick="clearAllVolumes()">
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19.36,2.72L20.78,4.14L15.06,9.85C16.13,11.39 16.28,13.24 15.38,14.44L9.06,8.12C10.26,7.22 12.11,7.37 13.65,8.44L19.36,2.72M5.93,17.57C3.92,15.56 2.69,13.16 2.35,10.92L7.23,8.83L14.67,16.27L12.58,21.15C10.34,20.81 7.94,19.58 5.93,17.57Z"/></svg>
+                            Clear Volumes
+                        </button>
+                        <button id="save-layout-btn" class="dashboard-btn dashboard-btn-primary" onclick="saveDashboardLayout()" disabled>
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"/></svg>
+                            Save Layout
+                        </button>
+                    </div>
+                    
+                    <!-- Dashboard Tiles Container -->
+                    <div id="dashboard-tiles" class="dashboard-grid">
+                        <div class="loading">Loading dashboard...</div>
+                    </div>
                 </div>
 
                 <!-- Inputs Tab -->
@@ -787,9 +814,9 @@
                     <div class="form-group">
                         <label for="rtdConfigUnit">Unit:</label>
                         <select id="rtdConfigUnit">
-                            <option value="C">°C (Celsius)</option>
-                            <option value="F">°F (Fahrenheit)</option>
-                            <option value="K">K (Kelvin)</option>
+                            <option value="°C">°C (Celsius)</option>
+                            <option value="°F">°F (Fahrenheit)</option>
+                            <option value="°K">K (Kelvin)</option>
                         </select>
                     </div>
                     

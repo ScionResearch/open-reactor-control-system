@@ -675,7 +675,7 @@ bool ipc_sendSensorData(uint16_t index, uint16_t transactionId) {
         case OBJ_T_TEMPERATURE_CONTROL: {
             TemperatureControl_t *ctrl = (TemperatureControl_t*)obj;
             data.value = ctrl->currentTemp;  // Process value (temperature)
-            strncpy(data.unit, "C", sizeof(data.unit) - 1);
+            strncpy(data.unit, "°C", sizeof(data.unit) - 1);
             
             // Flags
             if (ctrl->fault) data.flags |= IPC_SENSOR_FLAG_FAULT;

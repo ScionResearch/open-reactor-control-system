@@ -37,7 +37,7 @@ bool init_rtdDriver(void) {
         
         // Initialize temperature sensor object
         rtd_sensor[i].temperature = 0;
-        strcpy(rtd_sensor[i].unit, "C");
+        strcpy(rtd_sensor[i].unit, "°C");
         rtd_sensor[i].fault = false;
         rtd_sensor[i].newMessage = false;
         rtd_sensor[i].cal = &calTable[i + CAL_RTD_PTR];
@@ -126,7 +126,7 @@ bool readRtdSensor(RTDDriver_t *sensorObj) {
         // Convert Celsius to Kelvin: K = C + 273.15
         finalTemperature = tempCelsius + 273.15;
     } else {
-        // Default to Celsius (or if unit is explicitly "C")
+        // Default to Celsius (or if unit is explicitly "°C")
         finalTemperature = tempCelsius;
     }
     

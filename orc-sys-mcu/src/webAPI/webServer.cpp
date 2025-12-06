@@ -19,6 +19,7 @@
 #include "apiControllers.h"
 #include "apiDevices.h"
 #include "apiFileManager.h"
+#include "apiDashboard.h"
 
 // =============================================================================
 // Web Server Setup
@@ -43,6 +44,7 @@ void setupWebServer()
     setupControllersAPI();
     setupDevicesAPI();
     setupFileManagerAPI();
+    setupDashboardAPI();
 
     // Root and static file handlers
     server.on("/", HTTP_GET, handleRoot);

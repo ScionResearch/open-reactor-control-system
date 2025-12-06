@@ -3293,3 +3293,627 @@ input:checked + .slider:before { transform: translateX(26px); }
     vertical-align: middle;
     margin-left: 20px 0;
 }
+
+/* =============================================================================
+   DASHBOARD STYLES
+   ============================================================================= */
+
+/* Dashboard Controls Bar */
+.dashboard-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    max-width: 1140px;  /* 3 controller tiles (372px) + 2 gaps (12px) */
+}
+
+.dashboard-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dashboard-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.dashboard-btn-primary {
+    background-color: #3498db;
+    color: white;
+}
+
+.dashboard-btn-primary:hover:not(:disabled) {
+    background-color: #2980b9;
+}
+
+.dashboard-btn-success {
+    background-color: #27ae60;
+    color: white;
+}
+
+.dashboard-btn-success:hover:not(:disabled) {
+    background-color: #219a52;
+}
+
+.dashboard-btn-danger {
+    background-color: #e74c3c;
+    color: white;
+}
+
+.dashboard-btn-danger:hover:not(:disabled) {
+    background-color: #c0392b;
+}
+
+.dashboard-btn-secondary {
+    background-color: #95a5a6;
+    color: white;
+}
+
+.dashboard-btn-secondary:hover:not(:disabled) {
+    background-color: #7f8c8d;
+}
+
+.dashboard-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.dashboard-btn.modified {
+    animation: pulse 1.5s infinite;
+}
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(52, 152, 219, 0); }
+        }
+
+        /* Dashboard Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, 180px);
+            gap: 12px;
+            justify-content: start;
+        }
+
+        /* Dashboard Tile */
+        .dashboard-tile {
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 2px solid transparent;
+            position: relative;
+            cursor: grab;
+            width: 180px;
+            height: 120px;
+            box-sizing: border-box;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Large tiles for controllers (2x width AND 2x height = 4x area) */
+        .dashboard-tile.tile-wide {
+            width: 372px; /* 180*2 + gap */
+            height: 252px; /* 120*2 + gap */
+            grid-column: span 2;
+            grid-row: span 2;
+        }
+
+        .dashboard-tile:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+
+        .dashboard-tile.dragging {
+            opacity: 0.4;
+            cursor: grabbing;
+            z-index: 1000;
+        }
+
+        .dashboard-tile.drag-over {
+            border-color: #3498db;
+            background: #f0f8ff;
+        }
+
+        /* Tile Status Colors */
+        .dashboard-tile.tile-normal {
+            border-color: #e9ecef;
+        }
+
+        .dashboard-tile.tile-running {
+            border-color: #27ae60;
+            background: linear-gradient(135deg, #ffffff 0%, #f0fff4 100%);
+        }
+
+        .dashboard-tile.tile-fault {
+            border-color: #e74c3c;
+            background: linear-gradient(135deg, #ffffff 0%, #fff5f5 100%);
+        }
+
+        .dashboard-tile.tile-offline {
+            border-color: #bdc3c7;
+            background: #f8f9fa;
+            opacity: 0.7;
+        }
+
+        /* Tile Header */
+        .tile-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+            flex-shrink: 0;
+        }
+
+        .tile-icon {
+            width: 20px;
+            height: 20px;
+            min-width: 20px;
+            color: #3498db;
+        }
+
+        .tile-icon svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .tile-name {
+            font-weight: 600;
+            font-size: 0.85em;
+            color: #2c3e50;
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Tile Badges */
+        .tile-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+
+        .tile-badge svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        .tile-badge-running {
+            background: #27ae60;
+            color: white;
+        }
+
+        .tile-badge-fault {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .tile-badge-offline {
+            background: #bdc3c7;
+            color: #7f8c8d;
+        }
+
+        /* Tile Content */
+        .tile-content {
+            height: 50px;
+            overflow: hidden;
+        }
+
+        /* Wide tile content layout - vertical for controller cards */
+        .tile-wide .tile-content {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            height: calc(100% - 30px); /* Account for header */
+            overflow: hidden;
+        }
+
+        .tile-value {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #2c3e50;
+            line-height: 1.2;
+        }
+
+        .tile-unit {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            margin-left: 2px;
+        }
+
+        .tile-offline {
+            font-size: 0.9em;
+            color: #bdc3c7;
+            font-style: italic;
+        }
+
+        .tile-message {
+            margin-top: 4px;
+            padding: 4px 6px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            font-size: 0.7em;
+            color: #7f8c8d;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Tile Footer (status at bottom) */
+        .tile-footer {
+            position: absolute;
+            bottom: 8px;
+            left: 12px;
+            right: 12px;
+        }
+
+        /* Editable Setpoint */
+        .ctrl-setpoint {
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .ctrl-setpoint:hover {
+            background: #e8f4fc;
+        }
+
+        .ctrl-setpoint-input {
+            width: 60px;
+            padding: 2px 4px;
+            font-size: 1em;
+            font-weight: 600;
+            border: 1px solid #3498db;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        /* Controller display in large tiles - fill card height */
+        .controller-display {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            gap: 2px;
+        }
+
+        .ctrl-data-rows {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        /* Spacer to push control rows to bottom */
+        .ctrl-data-rows + .ctrl-setpoint-row {
+            margin-top: auto;
+        }
+
+        .ctrl-section {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .ctrl-section-title {
+            font-size: 0.7em;
+            color: #95a5a6;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+
+        /* Setpoint control row - aligned at bottom */
+        .ctrl-setpoint-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding-top: 4px;
+            flex-shrink: 0;
+        }
+
+        .ctrl-setpoint-row .label {
+            font-size: 0.85em;
+            color: #7f8c8d;
+            white-space: nowrap;
+        }
+
+        .ctrl-setpoint-row input {
+            flex: 1;
+            min-width: 50px;
+            padding: 6px 8px;
+            font-size: 0.9em;
+            font-weight: 600;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: right;
+        }
+
+        .ctrl-setpoint-row input:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+
+        .ctrl-setpoint-row .unit {
+            font-size: 0.85em;
+            color: #7f8c8d;
+            min-width: 40px;
+        }
+
+        .ctrl-buttons {
+            display: flex;
+            gap: 6px;
+        }
+
+        .ctrl-setpoint-btn, .ctrl-enable-btn, .ctrl-disable-btn {
+            padding: 6px 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s, opacity 0.2s;
+        }
+
+        .ctrl-setpoint-btn {
+            background: #3498db;
+            flex-shrink: 0;
+        }
+
+        .ctrl-setpoint-btn:hover {
+            background: #2980b9;
+        }
+
+        .ctrl-enable-btn {
+            background: #27ae60;
+            flex: 1;
+        }
+
+        .ctrl-enable-btn:hover:not(:disabled) {
+            background: #219a52;
+        }
+
+        .ctrl-disable-btn {
+            background: #e74c3c;
+            flex: 1;
+        }
+
+        .ctrl-disable-btn:hover:not(:disabled) {
+            background: #c0392b;
+        }
+
+        .ctrl-setpoint-btn:disabled, .ctrl-enable-btn:disabled, .ctrl-disable-btn:disabled {
+            background: #bdc3c7 !important;
+            color: #7f8c8d;
+            cursor: not-allowed;
+        }
+
+        /* Action row for enable/disable buttons at bottom */
+        .ctrl-action-row {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+            margin-top: 6px;
+        }
+
+        /* Controller status indicator at top right */
+        .ctrl-status-indicator {
+            position: absolute;
+            top: 8px;
+            right: 28px;
+            width: 20px;
+            height: 20px;
+        }
+
+        .ctrl-status-indicator svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .ctrl-status-indicator.enabled {
+            color: #27ae60;
+        }
+
+        .ctrl-status-indicator.disabled {
+            color: #bdc3c7;
+        }
+
+        /* Drag Handle */
+        .tile-drag-handle {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 16px;
+            height: 16px;
+            color: #bdc3c7;
+            cursor: grab;
+            opacity: 0.4;
+        }
+
+        .tile-drag-handle:hover {
+            opacity: 1;
+            color: #7f8c8d;
+        }
+
+        .tile-drag-handle svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Energy Display - compact for tile height */
+        .energy-display {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+
+        .motor-display {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .energy-row, .motor-value, .ctrl-row {
+            display: flex;
+            align-items: baseline;
+            gap: 3px;
+            line-height: 1.2;
+        }
+
+        .energy-row .label {
+            font-size: 0.7em;
+            color: #7f8c8d;
+            min-width: 42px;
+        }
+
+        .motor-value .label, .ctrl-row .label {
+            font-size: 0.75em;
+            color: #7f8c8d;
+            min-width: 45px;
+        }
+
+        .energy-row .value {
+            font-size: 0.85em;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .motor-value .value, .ctrl-row .value {
+            font-size: 0.95em;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .energy-row .unit {
+            font-size: 0.65em;
+            color: #95a5a6;
+        }
+
+        .motor-value .unit, .ctrl-row .unit {
+            font-size: 0.75em;
+            color: #95a5a6;
+        }
+
+        /* Alarm Summary */
+        .alarm-container {
+            margin-bottom: 20px;
+            max-width: 1140px;  /* 3 controller tiles (372px) + 2 gaps (12px) */
+        }
+
+        .alarm-summary {
+            padding: 16px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .alarm-ok {
+            background: linear-gradient(135deg, #f0fff4 0%, #e8f8f5 100%);
+            border: 1px solid #27ae60;
+            flex-direction: row;
+            align-items: center;
+        }
+
+.alarm-ok .alarm-icon {
+    color: #27ae60;
+}
+
+.alarm-ok .alarm-text {
+    color: #27ae60;
+    font-weight: 500;
+}
+
+.alarm-fault {
+    background: linear-gradient(135deg, #fff5f5 0%, #ffe8e8 100%);
+    border: 1px solid #e74c3c;
+}
+
+.alarm-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.alarm-icon {
+    width: 24px;
+    height: 24px;
+}
+
+.alarm-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.alarm-fault .alarm-icon {
+    color: #e74c3c;
+}
+
+.alarm-count {
+    font-weight: 600;
+    font-size: 1.1em;
+    color: #e74c3c;
+}
+
+.alarm-list {
+    margin: 0;
+    padding-left: 20px;
+    color: #7f8c8d;
+}
+
+.alarm-list li {
+    margin-bottom: 4px;
+}
+
+.alarm-list strong {
+    color: #2c3e50;
+}
+
+/* Alarm Badge in Header */
+.alarm-badge {
+    display: none;
+    background: #e74c3c;
+    color: white;
+    font-size: 0.7em;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    vertical-align: middle;
+    margin-left: 10px;
+}
+
+.alarm-badge.visible {
+    display: inline-block;
+}
+
+/* Dashboard Empty State */
+.dashboard-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: #7f8c8d;
+}
+
+.dashboard-empty p {
+    margin: 10px 0;
+}
+
+.dashboard-empty .hint {
+    font-size: 0.9em;
+    font-style: italic;
+}

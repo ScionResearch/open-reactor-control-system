@@ -162,7 +162,7 @@ struct TemperatureControllerConfig {
     char name[40];                  // User-defined name
     bool enabled;                   // Enable/disable controller
     bool showOnDashboard;           // Dashboard visibility
-    char unit[8];                   // Temperature unit: "C", "F", "K"
+    char unit[8];                   // Temperature unit: "°C", "°F", "°K"
     
     // Input/Output Connections
     uint8_t pvSourceIndex;          // Process value source (sensor index)
@@ -280,6 +280,7 @@ struct DOProfilePoint {
  */
 #define MAX_DO_PROFILES 3
 #define MAX_DO_PROFILE_POINTS 20
+#define MAX_DASHBOARD_TILES 50  // Maximum tiles on dashboard layout
 
 struct DOProfileConfig {
     bool isActive;              // Profile slot in use
@@ -328,6 +329,25 @@ struct ComPortConfig {
     uint8_t parity;          // 0=none, 1=odd, 2=even
     bool enabled;
     bool showOnDashboard;
+};
+
+/**
+ * @brief Single tile in dashboard layout
+ * Stores object type and index for rendering order
+ */
+struct DashboardTile {
+    char objectType[20];     // e.g., "adc", "rtd", "stepper", "temp_controller"
+    uint8_t objectIndex;     // Object index in its category
+    bool inUse;              // Slot is active
+};
+
+/**
+ * @brief Dashboard layout configuration
+ * Stores user-arranged tile order. Saved to flash only on explicit user action.
+ * Layout persistence is intentional to protect flash write cycles.
+ */
+struct DashboardLayoutConfig {
+    DashboardTile tiles[MAX_DASHBOARD_TILES];
 };
 
 /**
@@ -430,6 +450,9 @@ struct IOConfig {
     
     // Device sensor object configurations (indices 70-99)
     DeviceSensorConfig deviceSensors[MAX_DEVICE_SENSORS];
+    
+    // Dashboard layout (tile order - saved only on explicit user action)
+    DashboardLayoutConfig dashboardLayout;
 };
 
 // Function prototypes

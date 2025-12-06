@@ -372,7 +372,7 @@ void handleSaveTempControllerConfig(uint8_t index) {
     strlcpy(ioConfig.tempControllers[ctrlIdx].name, doc["name"] | "", sizeof(ioConfig.tempControllers[ctrlIdx].name));
     ioConfig.tempControllers[ctrlIdx].enabled = false;
     if (doc.containsKey("showOnDashboard")) ioConfig.tempControllers[ctrlIdx].showOnDashboard = doc["showOnDashboard"];
-    strlcpy(ioConfig.tempControllers[ctrlIdx].unit, doc["unit"] | "C", sizeof(ioConfig.tempControllers[ctrlIdx].unit));
+    strlcpy(ioConfig.tempControllers[ctrlIdx].unit, doc["unit"] | "°C", sizeof(ioConfig.tempControllers[ctrlIdx].unit));
     ioConfig.tempControllers[ctrlIdx].pvSourceIndex = doc["pvSourceIndex"] | 0;
     ioConfig.tempControllers[ctrlIdx].outputIndex = doc["outputIndex"] | 0;
     ioConfig.tempControllers[ctrlIdx].controlMethod = (ControlMethod)(doc["controlMethod"] | CONTROL_METHOD_PID);
